@@ -37,6 +37,55 @@
     "cached": "キャッシュヒットトークン",
     "hitRate": "キャッシュヒット率"
   },
+  "cacheHit": {
+    "title": "キャッシュヒット分析",
+    "description": "チャネルとモデルごとのプロンプトキャッシュ再利用状況を確認します。",
+    "filters": {
+      "site": "チャネルを絞り込む",
+      "searchSite": "チャネルを検索",
+      "emptySite": "チャネルデータがありません",
+      "model": "モデルを絞り込む",
+      "searchModel": "モデルを検索",
+      "emptyModel": "モデルデータがありません",
+      "selected": "選択済み",
+      "clear": "クリア",
+      "dateFrom": "開始日",
+      "dateTo": "終了日"
+    },
+    "ranges": {
+      "days": "{{count}} 日"
+    },
+    "loadFailed": "キャッシュヒット分析の読み込みに失敗しました",
+    "loading": "キャッシュヒット分析を読み込んでいます",
+    "empty": "選択した期間に集計可能なキャッシュ使用データがありません",
+    "hitRate": "キャッシュヒット率",
+    "metrics": {
+      "hitRate": "キャッシュヒット率",
+      "cachedTokens": "キャッシュヒット Tokens",
+      "inputTokens": "入力 Tokens"
+    },
+    "trend": {
+      "title": "日次ヒット率トレンド"
+    },
+    "groupBy": {
+      "site": "チャネル別",
+      "model": "モデル別"
+    },
+    "breakdown": {
+      "title": "チャネルとモデルの内訳",
+      "site": "チャネル",
+      "model": "モデル",
+      "requests": "リクエスト",
+      "input": "入力 Tokens",
+      "cached": "キャッシュ Tokens",
+      "hitRate": "ヒット率",
+      "sortBy": "{{field}}で並べ替え"
+    },
+    "modelDialog": {
+      "title": "モデルのキャッシュヒット分析",
+      "description": "{{site}} · {{model}}"
+    }
+  },
   "charts": {
     "modelCost": "モデルコスト",
     "modelRequests": "モデルリクエスト",

@@ -112,6 +112,13 @@ export function requestCacheRatio(detail: RequestLogDetail | RequestLogItem) {
   )
 }
 
+export function requestCacheHitRate(inputTokens?: number | null, cachedTokens?: number | null) {
+  if (!isNonNegativeFiniteNumber(inputTokens) || inputTokens <= 0 || !isNonNegativeFiniteNumber(cachedTokens)) {
+    return null
+  }
+  return cachedTokens / inputTokens
+}
+
 export function requestCachePrice(detail: RequestLogDetail | RequestLogItem) {
   return firstNumber(
     detail.pricing?.cache_input_value,

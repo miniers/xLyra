@@ -40,6 +40,55 @@
     "cached": "Cached tokens",
     "hitRate": "Cache hit rate"
   },
+  "cacheHit": {
+    "title": "Cache Hit Analysis",
+    "description": "Inspect prompt-cache reuse by channel and model.",
+    "filters": {
+      "site": "Filter channels",
+      "searchSite": "Search channels",
+      "emptySite": "No channel data",
+      "model": "Filter models",
+      "searchModel": "Search models",
+      "emptyModel": "No model data",
+      "selected": "selected",
+      "clear": "Clear",
+      "dateFrom": "Start date",
+      "dateTo": "End date"
+    },
+    "ranges": {
+      "days": "{{count}} days"
+    },
+    "loadFailed": "Failed to load cache hit analysis",
+    "loading": "Loading cache hit analysis",
+    "empty": "No cache usage data is available for this range",
+    "hitRate": "Cache hit rate",
+    "metrics": {
+      "hitRate": "Cache hit rate",
+      "cachedTokens": "Cached tokens",
+      "inputTokens": "Input tokens"
+    },
+    "trend": {
+      "title": "Daily hit-rate trend"
+    },
+    "groupBy": {
+      "site": "By channel",
+      "model": "By model"
+    },
+    "breakdown": {
+      "title": "Channel and model breakdown",
+      "site": "Channel",
+      "model": "Model",
+      "requests": "Requests",
+      "input": "Input tokens",
+      "cached": "Cached tokens",
+      "hitRate": "Hit rate",
+      "sortBy": "Sort by {{field}}"
+    },
+    "modelDialog": {
+      "title": "Model Cache Hit Analysis",
+      "description": "{{site}} · {{model}}"
+    }
+  },
   "charts": {
     "modelCost": "Model Cost",
     "modelRequests": "Model Requests",

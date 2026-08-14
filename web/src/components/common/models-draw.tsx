@@ -27,6 +27,7 @@ export type ModelsDrawItem = {
     fallbackText?: string
   }
   leadingAction?: ReactNode
+  trailingAction?: ReactNode
 }
 
 export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPending, toolbarAction, children, backLabel, onBack, onToggleItem, onBulkToggleItems, onOpenChange }: {
@@ -39,6 +40,7 @@ export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPen
   const keyword = search.trim().toLowerCase()
   const filtered = keyword ? items.filter((i) => [i.displayName, i.upstreamName ?? ''].some((v) => v.toLowerCase().includes(keyword))) : items
   const bulkItems = filtered.filter((item) => !item.toggleDisabled)
+  const hasTrailingActions = items.some((item) => item.trailingAction)
   const bulkDisabled = Boolean(loading || bulkPending || pendingItemId || !bulkItems.length)
   const canBulkEnable = bulkItems.some((item) => !item.enabled)
   const canBulkDisable = bulkItems.some((item) => item.enabled)
@@ -93,13 +95,14 @@ export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPen
             <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead className="bg-[hsl(var(--surface-subtle))] text-faint text-xs uppercase tracking-[0.16em]">
                 <tr>
-                  <th className="w-[65%] px-4 py-3 font-medium">{t('modelsDraw.headers.model')}</th>
-                  <th className="w-[35%] px-4 py-3 font-medium text-right">{t('modelsDraw.headers.enabled')}</th>
+                  <th className={hasTrailingActions ? 'w-[58%] px-4 py-3 font-medium' : 'w-[65%] px-4 py-3 font-medium'}>{t('modelsDraw.headers.model')}</th>
+                  {hasTrailingActions ? <th className="w-12 px-2 py-3" /> : null}
+                  <th className={hasTrailingActions ? 'w-[30%] px-4 py-3 font-medium text-right' : 'w-[35%] px-4 py-3 font-medium text-right'}>{t('modelsDraw.headers.enabled')}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={2} className="px-4 py-10 text-center text-sm text-muted-soft">{t('modelsDraw.loading')}</td></tr>
+                  <tr><td colSpan={hasTrailingActions ? 3 : 2} className="px-4 py-10 text-center text-sm text-muted-soft">{t('modelsDraw.loading')}</td></tr>
                 ) : filtered.length ? (
                   filtered.map((item) => {
                     const subtitle = item.upstreamName && item.upstreamName !== item.displayName ? item.upstreamName : undefined
@@ -125,6 +128,7 @@ export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPen
                             </div>
                           </div>
                         </td>
+                        {hasTrailingActions ? <td className="px-2 py-3 text-center">{item.trailingAction}</td> : null}
                         <td className="px-4 py-3 text-right">
                           <Switch checked={item.enabled} disabled={bulkPending || pendingItemId === item.id || item.toggleDisabled} aria-label={t('modelsDraw.toggleLabel', { name: item.displayName })} onCheckedChange={(checked) => onToggleItem(item, checked)} />
                         </td>
@@ -132,7 +136,7 @@ export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPen
                     )
                   })
                 ) : (
-                  <tr><td colSpan={2} className="px-4 py-10 text-center text-sm text-muted-soft">{t('modelsDraw.noModels')}</td></tr>
+                  <tr><td colSpan={hasTrailingActions ? 3 : 2} className="px-4 py-10 text-center text-sm text-muted-soft">{t('modelsDraw.noModels')}</td></tr>
                 )}
               </tbody>
             </table>

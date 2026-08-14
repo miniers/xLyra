@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"xlyra/server/internal/dashboard"
 	"xlyra/server/internal/systemstats"
 )
 
@@ -21,6 +22,7 @@ func TestDashboardHandlersReturnUnavailableWithoutDashboardService(t *testing.T)
 		call func(http.ResponseWriter, *http.Request)
 	}{
 		{name: "usage", call: handler.DashboardUsage},
+		{name: "cache_hit", call: handler.DashboardCacheHit},
 		{name: "cooldowns", call: handler.DashboardCooldowns},
 		{name: "health", call: handler.DashboardHealth},
 		{name: "insights", call: handler.DashboardInsights},
@@ -34,6 +36,15 @@ func TestDashboardHandlersReturnUnavailableWithoutDashboardService(t *testing.T)
 			assertAdminErrorCode(t, rec, http.StatusServiceUnavailable, "dashboard_service_unavailable")
 		})
 	}
+}
+
+func TestDashboardCacheHitRejectsInvalidQuery(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{dashboard: dashboard.NewService(nil)}
+	rec := adminPerform(handler.DashboardCacheHit, adminTestRequest(http.MethodGet, "/api/v1/dashboard/cache-hit?site_model_id=not-a-uuid", ""))
+
+	assertAdminErrorCode(t, rec, http.StatusBadRequest, "invalid_site_model_id")
 }
 
 func TestDashboardResourceStreamReturnsUnavailableWithoutSystemService(t *testing.T) {

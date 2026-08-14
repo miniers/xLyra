@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   ApiKeyContributionsPanel,
+  CacheHitAnalyticsPanel,
   DashboardChartPanel,
   DashboardCooldownList,
   DashboardMetricCard,
@@ -254,7 +255,10 @@ export function DashboardPage() {
     },
   ]
   const successRate = formatPercent(overview.kpis.requests.success_rate)
-  const requestsNote = `${t('kpis.successRate')} ${successRate} · ${t('kpis.yesterdayRequests')} ${requestsYesterday} · ${t('kpis.yesterdayTokens')} ${tokensYesterday}`
+  const cacheHitRate = overview.kpis.requests.total_prompt_tokens > 0
+    ? formatPercent(overview.kpis.requests.total_cached_tokens / overview.kpis.requests.total_prompt_tokens)
+    : '-'
+  const requestsNote = `${t('kpis.successRate')} ${successRate} · ${t('tokens.hitRate')} ${cacheHitRate} · ${t('kpis.yesterdayRequests')} ${requestsYesterday} · ${t('kpis.yesterdayTokens')} ${tokensYesterday}`
 
   function handleRiskClick(item: typeof riskItems[number]) {
     if (item.actionPath) {
@@ -470,6 +474,8 @@ export function DashboardPage() {
           <SiteUptimeStrip className="h-[320px]" sites={uptimeRows} />
           <SystemResourcePanel className="h-[320px]" />
         </div>
+
+        <CacheHitAnalyticsPanel />
       </div>
     </div>
   )

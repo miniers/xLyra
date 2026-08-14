@@ -7,6 +7,7 @@ import {
   requestDownstreamTransportLabel,
   requestFirstByteLatency,
   requestFirstByteLatencyTone,
+  requestCacheHitRate,
   requestReasoningEffort,
   requestTotalLatencyTone,
 } from '@/features/requests/lib/request-utils'
@@ -26,6 +27,13 @@ describe('requestDownstreamTransportLabel', () => {
 })
 
 describe('request log display helpers', () => {
+  it('calculates cache hit rate from input and cached tokens', () => {
+    expect(requestCacheHitRate(100, 25)).toBe(0.25)
+    expect(requestCacheHitRate(0, 0)).toBeNull()
+    expect(requestCacheHitRate(100, null)).toBeNull()
+    expect(requestCacheHitRate(Number.NaN, 1)).toBeNull()
+  })
+
   it('keeps missing first-byte latency unknown', () => {
     expect(formatLatency()).toBe('-')
     expect(formatLatency(12.6)).toBe('13 ms')

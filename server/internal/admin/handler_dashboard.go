@@ -2,9 +2,13 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+
+	"xlyra/server/internal/dashboard"
 )
 
 const dashboardResourceStreamInterval = 2 * time.Second
@@ -18,6 +22,39 @@ func (h Handler) DashboardUsage(w http.ResponseWriter, r *http.Request) {
 	payload, err := h.dashboard.Usage(r.Context(), time.Now())
 	if err != nil {
 		h.writeError(w, r, http.StatusInternalServerError, "dashboard_usage_failed", "failed to load dashboard usage")
+		return
+	}
+
+	h.writePayload(w, http.StatusOK, payload)
+}
+
+func (h Handler) DashboardCacheHit(w http.ResponseWriter, r *http.Request) {
+	if h.dashboard == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "dashboard_service_unavailable", "dashboard service is not available")
+		return
+	}
+
+	siteIDs, ok := parseSiteIDs(w, r, r.URL.Query()["site_id"])
+	if !ok {
+		return
+	}
+	siteModelIDs, ok := parseUUIDList(w, r, r.URL.Query()["site_model_id"], "invalid_site_model_id", "site_model_id")
+	if !ok {
+		return
+	}
+
+	payload, err := h.dashboard.CacheHit(r.Context(), dashboard.CacheHitQuery{
+		SiteIDs:      siteIDs,
+		SiteModelIDs: siteModelIDs,
+		DateFrom:     strings.TrimSpace(r.URL.Query().Get("date_from")),
+		DateTo:       strings.TrimSpace(r.URL.Query().Get("date_to")),
+	}, time.Now())
+	if err != nil {
+		if errors.Is(err, dashboard.ErrInvalidCacheHitQuery) {
+			h.writeError(w, r, http.StatusBadRequest, "invalid_cache_hit_query", err.Error())
+			return
+		}
+		h.writeError(w, r, http.StatusInternalServerError, "dashboard_cache_hit_failed", "failed to load cache hit analysis")
 		return
 	}
 

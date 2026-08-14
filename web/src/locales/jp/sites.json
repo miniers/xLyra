@@ -318,6 +318,10 @@
   },
   "models": {
     "title": "モデル",
+    "cacheHit": {
+      "action": "キャッシュヒット分析を表示",
+      "ariaLabel": "{{name}} のキャッシュヒット分析を表示"
+    },
     "add": {
       "action": "モデルを追加",
       "upstreamName": "上流モデル名",

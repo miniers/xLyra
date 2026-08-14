@@ -40,6 +40,55 @@
     "cached": "缓存命中 Tokens",
     "hitRate": "缓存命中率"
   },
+  "cacheHit": {
+    "title": "缓存命中分析",
+    "description": "按渠道和模型查看提示词缓存复用情况。",
+    "filters": {
+      "site": "筛选渠道",
+      "searchSite": "搜索渠道",
+      "emptySite": "暂无渠道数据",
+      "model": "筛选模型",
+      "searchModel": "搜索模型",
+      "emptyModel": "暂无模型数据",
+      "selected": "已选择",
+      "clear": "清除",
+      "dateFrom": "开始日期",
+      "dateTo": "结束日期"
+    },
+    "ranges": {
+      "days": "{{count}} 天"
+    },
+    "loadFailed": "缓存命中分析加载失败",
+    "loading": "正在加载缓存命中分析",
+    "empty": "所选时间范围内暂无可统计的缓存使用数据",
+    "hitRate": "缓存命中率",
+    "metrics": {
+      "hitRate": "缓存命中率",
+      "cachedTokens": "缓存命中 Tokens",
+      "inputTokens": "输入 Tokens"
+    },
+    "trend": {
+      "title": "按日命中率趋势"
+    },
+    "groupBy": {
+      "site": "按渠道",
+      "model": "按模型"
+    },
+    "breakdown": {
+      "title": "渠道与模型明细",
+      "site": "渠道",
+      "model": "模型",
+      "requests": "请求",
+      "input": "输入 Tokens",
+      "cached": "缓存 Tokens",
+      "hitRate": "命中率",
+      "sortBy": "按{{field}}排序"
+    },
+    "modelDialog": {
+      "title": "模型缓存命中分析",
+      "description": "{{site}} · {{model}}"
+    }
+  },
   "charts": {
     "modelCost": "模型消耗额度",
     "modelRequests": "模型调用次数",

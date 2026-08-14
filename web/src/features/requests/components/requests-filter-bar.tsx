@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { formatCompactNumber } from '@/features/dashboard/lib/dashboard-utils'
+import { formatCompactNumber, formatPercent } from '@/features/dashboard/lib/dashboard-utils'
 import type { DownstreamAPIKey } from '@/features/api-keys/api/api-keys'
 import type { Site } from '@/features/sites/api/sites'
 import {
@@ -33,6 +33,7 @@ type RequestsFilterBarProps = {
   isFetching: boolean
   totalCost?: number | null
   tokenUsage?: TokenUsageBreakdown | null
+  cacheRate?: number | null
   totalCostSupported?: boolean
   totalCostLoading?: boolean
   currency?: string | null
@@ -53,6 +54,7 @@ export function RequestsFilterBar({
   isFetching,
   totalCost,
   tokenUsage,
+  cacheRate,
   totalCostSupported = true,
   totalCostLoading = false,
   currency,
@@ -74,6 +76,11 @@ export function RequestsFilterBar({
     ? '...'
     : totalCostSupported
       ? formatCompactNumber(tokenUsage?.total ?? 0)
+      : '--'
+  const cacheRateLabel = totalCostLoading
+    ? '...'
+    : totalCostSupported && cacheRate != null
+      ? formatPercent(cacheRate)
       : '--'
   const tpmValue = rateLimitUsage?.tpm ?? 0
   const tpmLabel = formatCompactNumber(tpmValue)
@@ -172,6 +179,12 @@ export function RequestsFilterBar({
               {t('filters.totalTokens', { tokens: totalTokensLabel })}
             </Badge>
           </TokenUsageHoverCard>
+          <Badge
+            variant="neutral"
+            className="h-8 w-fit rounded-md px-2.5 text-xs tabular-nums"
+          >
+            {t('filters.cacheRate', { rate: cacheRateLabel })}
+          </Badge>
           <Badge variant="info" className="h-8 w-fit rounded-md px-2.5 text-xs tabular-nums" title={t('filters.rpmTooltip')}>
             RPM {formatInteger(rateLimitUsage?.rpm ?? 0)}
           </Badge>

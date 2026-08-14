@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, Trash2 } from 'lucide-react'
+import { BarChart3, LoaderCircle, Trash2 } from 'lucide-react'
 import { ModelsDraw } from '@/components/common/models-draw'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -24,6 +24,7 @@ import {
 } from '@/features/sites/api/sites'
 import { buildDisplayModelItems } from '@/features/sites/lib/site-model-items'
 import { formatEndpointTypeLabel } from '@/features/models/lib/model-helpers'
+import { CacheHitModelDialog } from '@/features/dashboard/components/cache-hit-model-dialog'
 
 const EMPTY_MODELS: SiteModel[] = []
 
@@ -52,6 +53,7 @@ export function SiteModelsDraw({
   const [siteCredentialIds, setSiteCredentialIds] = useState<string[]>([])
   const [enabled, setEnabled] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<SiteModel | null>(null)
+  const [cacheHitTarget, setCacheHitTarget] = useState<SiteModel | null>(null)
   const [manualManage, setManualManage] = useState(false)
   const modelsQuery = useQuery({
     queryKey: site ? sitesQueryKeys.models(site.id) : [...sitesQueryKeys.all, 'models', 'none'],
@@ -142,10 +144,26 @@ export function SiteModelsDraw({
   const manualManageActive = manualManage && hasManualModels && open
   const dialogItems = useMemo(() => buildDisplayModelItems(site, items, apiKeys, canonicalModelsQuery.data?.items).map((item) => {
     const model = modelsByID.get(item.id)
-    if (!manualManageActive || !model || !isManualSiteModel(model)) return item
+    const nextItem = {
+      ...item,
+      trailingAction: model ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 text-muted-soft hover:text-foreground"
+          title={t('models.cacheHit.action')}
+          aria-label={t('models.cacheHit.ariaLabel', { name: model.display_name || model.upstream_model_name })}
+          onClick={() => setCacheHitTarget(model)}
+        >
+          <BarChart3 className="h-4 w-4" />
+        </Button>
+      ) : undefined,
+    }
+    if (!manualManageActive || !model || !isManualSiteModel(model)) return nextItem
     const deleting = deleteMutation.isPending && deleteMutation.variables?.modelId === model.id
     return {
-      ...item,
+      ...nextItem,
       leadingAction: (
         <Button
           type="button"
@@ -237,6 +255,13 @@ export function SiteModelsDraw({
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setManualManage(false)
           onOpenChange(nextOpen)
+        }}
+      />
+      <CacheHitModelDialog
+        site={site}
+        model={cacheHitTarget}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setCacheHitTarget(null)
         }}
       />
       <Dialog open={addOpen} onOpenChange={(nextOpen) => {

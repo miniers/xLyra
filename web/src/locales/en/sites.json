@@ -337,6 +337,10 @@
   },
   "models": {
     "title": "Models",
+    "cacheHit": {
+      "action": "View cache hit analysis",
+      "ariaLabel": "View cache hit analysis for {{name}}"
+    },
     "add": {
       "action": "Add model",
       "upstreamName": "Upstream model",

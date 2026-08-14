@@ -1,4 +1,7 @@
 export * from './api-key-contributions-panel'
+export * from './cache-hit-analytics-panel'
+export * from './cache-hit-model-dialog'
+export * from './cache-hit-trend-chart'
 export * from './dashboard-chart-panel'
 export * from './dashboard-cooldown-list'
 export * from './dashboard-metric-card'

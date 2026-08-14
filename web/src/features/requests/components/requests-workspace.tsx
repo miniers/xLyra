@@ -20,6 +20,7 @@ import {
   type RequestFilterState,
 } from '@/features/requests/lib/types'
 import { readRequestsAutoRefreshPreference, writeRequestsAutoRefreshPreference } from '@/features/requests/lib/request-preferences'
+import { requestCacheHitRate } from '@/features/requests/lib/request-utils'
 import { listSites, sitesQueryKeys } from '@/features/sites/api/sites'
 import { useMobileLayout } from '@/hooks/use-media-query'
 
@@ -85,6 +86,9 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
         output: requestSummary?.completion_tokens ?? 0,
         cached: requestSummary?.cached_tokens ?? 0,
       }
+    : null
+  const cacheRate = totalCostSupported
+    ? requestCacheHitRate(requestSummary?.prompt_tokens, requestSummary?.cached_tokens)
     : null
   const totalCostLoading = !costUnsupportedByFilters && requestSummaryQuery.isFetching && !requestSummaryQuery.data
   const showPagination = totalItems > 0
@@ -182,6 +186,7 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
               isFetching={requestsQuery.isFetching || requestSummaryQuery.isFetching}
               totalCost={totalCost}
               tokenUsage={tokenUsage}
+              cacheRate={cacheRate}
               totalCostSupported={totalCostSupported}
               totalCostLoading={totalCostLoading}
               currency={requestSummary?.currency}
@@ -222,6 +227,7 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
           isFetching={requestsQuery.isFetching || requestSummaryQuery.isFetching}
           totalCost={totalCost}
           tokenUsage={tokenUsage}
+          cacheRate={cacheRate}
           totalCostSupported={totalCostSupported}
           totalCostLoading={totalCostLoading}
           currency={requestSummary?.currency}

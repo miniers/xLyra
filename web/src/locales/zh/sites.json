@@ -339,6 +339,10 @@
   },
   "models": {
     "title": "模型",
+    "cacheHit": {
+      "action": "查看缓存命中分析",
+      "ariaLabel": "查看 {{name}} 的缓存命中分析"
+    },
     "add": {
       "action": "添加模型",
       "upstreamName": "上游模型名",

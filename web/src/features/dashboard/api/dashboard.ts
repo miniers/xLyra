@@ -2,6 +2,45 @@ import { apiFetch } from '@/lib/http'
 
 export type DashboardDays = 7 | 30 | 90
 
+export type CacheHitInput = {
+  dateFrom?: string
+  dateTo?: string
+  siteIds?: string[]
+  siteModelIds?: string[]
+}
+
+export type DashboardCacheHitSummary = {
+  request_count: number
+  prompt_tokens: number
+  cached_tokens: number
+  hit_rate?: number | null
+}
+
+export type DashboardCacheHitDailyPoint = DashboardCacheHitSummary & {
+  date: string
+  site_id?: string | null
+  site_name: string
+  site_slug: string
+  site_type: string
+  site_model_id?: string | null
+  model_key: string
+  upstream_model_name: string
+}
+
+export type DashboardCacheHitBreakdown = Omit<DashboardCacheHitDailyPoint, 'date'>
+
+export type DashboardCacheHit = {
+  meta: {
+    date_from: string
+    date_to: string
+    timezone: string
+    generated_at: string
+  }
+  summary: DashboardCacheHitSummary
+  daily: DashboardCacheHitDailyPoint[]
+  breakdown: DashboardCacheHitBreakdown[]
+}
+
 export type DashboardOverview = {
   meta: {
     days: DashboardDays
@@ -277,6 +316,7 @@ export type DashboardAttentionItem = {
 export const dashboardQueryKeys = {
   all: ['dashboard'] as const,
   usage: () => [...dashboardQueryKeys.all, 'usage'] as const,
+  cacheHit: (input: CacheHitInput) => [...dashboardQueryKeys.all, 'cache-hit', normalizeCacheHitInput(input)] as const,
   cooldowns: () => [...dashboardQueryKeys.all, 'cooldowns'] as const,
   health: () => [...dashboardQueryKeys.all, 'health'] as const,
   insights: () => [...dashboardQueryKeys.all, 'insights'] as const,
@@ -284,6 +324,17 @@ export const dashboardQueryKeys = {
 
 export async function getDashboardUsage() {
   return apiFetch<DashboardUsage>('/api/v1/dashboard/usage')
+}
+
+export async function getDashboardCacheHit(input: CacheHitInput) {
+  const normalized = normalizeCacheHitInput(input)
+  const params = new URLSearchParams()
+  if (normalized.dateFrom) params.set('date_from', normalized.dateFrom)
+  if (normalized.dateTo) params.set('date_to', normalized.dateTo)
+  normalized.siteIds.forEach((siteId) => params.append('site_id', siteId))
+  normalized.siteModelIds.forEach((siteModelId) => params.append('site_model_id', siteModelId))
+  const query = params.toString()
+  return apiFetch<DashboardCacheHit>(`/api/v1/dashboard/cache-hit${query ? `?${query}` : ''}`)
 }
 
 export async function getDashboardCooldowns() {
@@ -301,4 +352,17 @@ export async function getDashboardInsights() {
 export function createDashboardResourceStream() {
   const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
   return new EventSource(`${base}/api/v1/dashboard/resources/stream`, { withCredentials: true })
+}
+
+function normalizeCacheHitInput(input: CacheHitInput) {
+  return {
+    dateFrom: input.dateFrom?.trim() ?? '',
+    dateTo: input.dateTo?.trim() ?? '',
+    siteIds: normalizeCacheHitIDs(input.siteIds),
+    siteModelIds: normalizeCacheHitIDs(input.siteModelIds),
+  }
+}
+
+function normalizeCacheHitIDs(values?: string[]) {
+  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))].sort()
 }

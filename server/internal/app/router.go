@@ -144,6 +144,7 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Get("/audit-logs", adminHandler.ListAuditLogs)
 				protected.Get("/downloads/{downloadID}", downloadService.Download)
 				protected.Get("/dashboard/usage", adminHandler.DashboardUsage)
+				protected.Get("/dashboard/cache-hit", adminHandler.DashboardCacheHit)
 				protected.Get("/dashboard/cooldowns", adminHandler.DashboardCooldowns)
 				protected.Get("/dashboard/health", adminHandler.DashboardHealth)
 				protected.Get("/dashboard/insights", adminHandler.DashboardInsights)

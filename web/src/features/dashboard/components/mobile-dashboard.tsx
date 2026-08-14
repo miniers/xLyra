@@ -8,6 +8,7 @@ import type { DashboardDays } from '@/features/dashboard/api/dashboard'
 import { dashboardDaysToRange, dashboardRangeToDays, type ApiKeyContributions } from '@/features/dashboard/lib/dashboard-utils'
 import { cn } from '@/lib/utils'
 import { ApiKeyContributionsPanel } from './api-key-contributions-panel'
+import { CacheHitAnalyticsPanel } from './cache-hit-analytics-panel'
 import { DashboardCooldownList } from './dashboard-cooldown-list'
 import { DashboardRiskList } from './dashboard-risk-list'
 import { ModelCostChart } from './model-cost-chart'
@@ -256,6 +257,7 @@ export function MobileDashboard({
 
       <SiteUptimeStrip className="h-[380px] rounded-2xl" sites={uptimeRows} />
       <SystemResourcePanel className="h-[420px] rounded-2xl" />
+      <CacheHitAnalyticsPanel compact />
     </div>
   )
 }
