@@ -102,6 +102,7 @@ export function AnalyticsTrendPanel({
         : t('trend.description', { from: usage.meta.from, to: usage.meta.to })}
       action={(
         <div className="flex flex-wrap items-center gap-4">
+          <div className="h-4 w-px bg-[hsl(var(--glass-divider))]" />
           <AnalyticsSlashTabs
             value={dimension}
             onValueChange={onDimensionChange}
