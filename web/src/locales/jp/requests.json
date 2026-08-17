@@ -46,6 +46,7 @@
     "timeTo": "終了時刻",
     "totalCost": "総コスト {{cost}}",
     "totalTokens": "総トークン {{tokens}}",
+    "cacheHitRate": "キャッシュヒット率 {{rate}}",
     "totalCostUnsupported": "現在のフィルターでは正確な総コストは利用できません",
     "rpmTooltip": "直近 1 分のリクエスト数",
     "tpmTooltip": "直近 1 分の実トークン数",

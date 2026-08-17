@@ -13,6 +13,7 @@ import {
   requestHasBillingDetails,
   requestFirstByteLatency,
   requestFirstByteLatencyTone,
+  requestCacheHitRate,
   requestElapsedMs,
   requestIsInProgress,
   requestLogDisplayTimestamp,
@@ -62,6 +63,13 @@ describe('request log display helpers', () => {
     item.display_started_at = null
     item.started_at = null
     expect(requestLogDisplayTimestamp(item)).toBe(item.created_at)
+  })
+
+  it('calculates cache hit rate from input and cached tokens', () => {
+    expect(requestCacheHitRate(100, 25)).toBe(0.25)
+    expect(requestCacheHitRate(0, 0)).toBeNull()
+    expect(requestCacheHitRate(100, null)).toBeNull()
+    expect(requestCacheHitRate(Number.NaN, 1)).toBeNull()
   })
 
   it('projects route and credential failover details', () => {

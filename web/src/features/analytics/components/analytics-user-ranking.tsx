@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AnalyticsUsage } from '@/features/analytics/api/analytics'
 import type { AnalyticsTrendMetric } from '@/features/analytics/lib/analytics-utils'
-import { formatLatencyMs } from '@/features/analytics/lib/analytics-utils'
+import { analyticsCacheHitRate, formatLatencyMs } from '@/features/analytics/lib/analytics-utils'
 import { dashboardChartColors } from '@/features/dashboard/components/chart-style'
 import { formatCompactNumber, formatDashboardCurrency, formatPercent } from '@/features/dashboard/lib/dashboard-utils'
 import { AnalyticsPanel } from './analytics-panel'
@@ -30,14 +30,7 @@ export function AnalyticsUserRanking({ className, usage, metric }: AnalyticsUser
           ? `Key …${item.id.slice(-8)}`
           : item.label,
       }))
-      .sort((a, b) => {
-        switch (metric) {
-          case 'tokens': return b.total_tokens - a.total_tokens
-          case 'requests': return b.requests - a.requests
-          case 'latency': return b.avg_latency_ms - a.avg_latency_ms
-          default: return b.cost - a.cost
-        }
-      })
+      .sort((a, b) => metricValue(b, metric) - metricValue(a, metric))
       .slice(0, MAX_ROWS)
   }, [usage.breakdowns.api_key, metric])
 
@@ -52,16 +45,13 @@ export function AnalyticsUserRanking({ className, usage, metric }: AnalyticsUser
     switch (metric) {
       case 'cost': return formatDashboardCurrency(value, currency, 2)
       case 'latency': return formatLatencyMs(value)
+      case 'cache-hit-rate': return formatPercent(value)
       default: return formatCompactNumber(value)
     }
   }
 
-  const metricLabel = t(`trend.metrics.${
-    metric === 'cost' ? 'cost'
-    : metric === 'tokens' ? 'tokens'
-    : metric === 'requests' ? 'requests'
-    : 'latency'
-  }`)
+  const metricLabel = t(`trend.metrics.${metric === 'cache-hit-rate' ? 'cacheHitRate' : metric}`)
+  const showShare = metric !== 'latency' && metric !== 'cache-hit-rate'
 
   // 标题：排行榜 · {指标维度}
   // 副标题：筛选的时间范围
@@ -95,7 +85,7 @@ export function AnalyticsUserRanking({ className, usage, metric }: AnalyticsUser
                   </span>
                   {/* 右侧合并为一个 span：数值 · 占比（延迟指标无占比），间距稳定 */}
                   <span className="shrink-0 text-xs tabular-nums text-muted-soft">
-                    {metric !== 'latency'
+                    {showShare
                       ? `${formatValue(value)} · ${formatPercent(pct, 1)}`
                       : formatValue(value)}
                   </span>
@@ -125,6 +115,7 @@ function metricValue(item: AnalyticsUsage['breakdowns']['api_key'][number], metr
     case 'tokens': return item.total_tokens
     case 'requests': return item.requests
     case 'latency': return item.avg_latency_ms
+    case 'cache-hit-rate': return analyticsCacheHitRate(item.prompt_tokens, item.cached_tokens) ?? 0
     default: return item.cost
   }
 }

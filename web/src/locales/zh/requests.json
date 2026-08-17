@@ -48,6 +48,7 @@
     "timeTo": "结束时间",
     "totalCost": "总花费 {{cost}}",
     "totalTokens": "总 Tokens {{tokens}}",
+    "cacheHitRate": "缓存命中率 {{rate}}",
     "totalCostUnsupported": "当前筛选暂不支持精确总花费",
     "rpmTooltip": "最近 1 分钟的请求数",
     "tpmTooltip": "最近 1 分钟的实际 token 数",

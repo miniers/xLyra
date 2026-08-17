@@ -67,7 +67,8 @@
       "tokens": "Tokens",
       "requests": "请求数",
       "successRate": "成功率",
-      "latency": "平均延迟"
+      "latency": "平均延迟",
+      "cacheHitRate": "缓存命中率"
     },
     "dimensions": {
       "none": "总计",

@@ -515,7 +515,7 @@ function MobileTrendPanel({
   onDimensionChange,
 }: MobileTrendPanelProps) {
   const { t } = useTranslation('analytics')
-  const lineOnly = metric === 'latency'
+  const lineOnly = metric === 'latency' || metric === 'cache-hit-rate'
 
   const isHour = usage.meta.granularity === 'hour'
   const xTickFormatter = isHour ? formatHourLabel : formatShortDate
@@ -530,6 +530,7 @@ function MobileTrendPanel({
   const tickFormatter = (value: number) => {
     if (metric === 'cost') return formatDollarTick(value)
     if (metric === 'latency') return formatLatencyMs(value)
+    if (metric === 'cache-hit-rate') return formatTrendMetricValue(value, metric, usage.meta.currency)
     return formatCompactTick(value)
   }
 
@@ -547,6 +548,7 @@ function MobileTrendPanel({
               { label: t('trend.metrics.tokens'), value: 'tokens' as const },
               { label: t('trend.metrics.requests'), value: 'requests' as const },
               { label: t('trend.metrics.latency'), value: 'latency' as const },
+              { label: t('trend.metrics.cacheHitRate'), value: 'cache-hit-rate' as const },
             ]}
           />
           <AnalyticsSlashTabs

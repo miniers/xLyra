@@ -23,7 +23,7 @@ import {
   type RequestFilterState,
   type SuccessFilter,
 } from '@/features/requests/lib/types'
-import { formatCompactNumber } from '@/features/dashboard/lib/dashboard-utils'
+import { formatCompactNumber, formatPercent } from '@/features/dashboard/lib/dashboard-utils'
 import { requestTpmBadgeClassName } from '@/features/requests/lib/request-badge-styles'
 import { cn } from '@/lib/utils'
 
@@ -35,6 +35,7 @@ type RequestsMobileFilterBarProps = {
   isFetching: boolean
   totalCost?: number | null
   tokenUsage?: TokenUsageBreakdown | null
+  cacheHitRate?: number | null
   totalCostSupported?: boolean
   totalCostLoading?: boolean
   currency?: string | null
@@ -55,6 +56,7 @@ export function RequestsMobileFilterBar({
   isFetching,
   totalCost,
   tokenUsage,
+  cacheHitRate,
   totalCostSupported = true,
   totalCostLoading = false,
   currency,
@@ -77,6 +79,11 @@ export function RequestsMobileFilterBar({
     ? '...'
     : totalCostSupported
       ? formatCompactNumber(tokenUsage?.total ?? 0)
+      : '--'
+  const cacheHitRateLabel = totalCostLoading
+    ? '...'
+    : totalCostSupported && cacheHitRate != null
+      ? formatPercent(cacheHitRate)
       : '--'
   const tpmValue = rateLimitUsage?.tpm ?? 0
   const tpmLabel = formatCompactNumber(tpmValue)
@@ -152,6 +159,7 @@ export function RequestsMobileFilterBar({
         >
           <MetricBadge>{t('filters.totalTokens', { tokens: totalTokensLabel })}</MetricBadge>
         </TokenUsageHoverCard>
+        <MetricBadge>{t('filters.cacheHitRate', { rate: cacheHitRateLabel })}</MetricBadge>
         <MetricBadge variant="info" title={t('filters.rpmTooltip')}>RPM {formatInteger(rateLimitUsage?.rpm ?? 0)}</MetricBadge>
         <MetricBadge variant="neutral" className={requestTpmBadgeClassName} title={tpmTitle}>TPM {tpmLabel}</MetricBadge>
       </div>

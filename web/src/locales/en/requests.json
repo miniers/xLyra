@@ -48,6 +48,7 @@
     "timeTo": "End time",
     "totalCost": "Total cost {{cost}}",
     "totalTokens": "Total tokens {{tokens}}",
+    "cacheHitRate": "Cache hit rate {{rate}}",
     "totalCostUnsupported": "Exact total cost is not available for the current filters",
     "rpmTooltip": "Requests in the last 1 minute",
     "tpmTooltip": "Actual tokens in the last 1 minute",

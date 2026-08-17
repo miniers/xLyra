@@ -67,7 +67,8 @@
       "tokens": "Tokens",
       "requests": "Requests",
       "successRate": "Success rate",
-      "latency": "Avg latency"
+      "latency": "Avg latency",
+      "cacheHitRate": "Cache hit rate"
     },
     "dimensions": {
       "none": "Total",
