@@ -1184,7 +1184,7 @@ func (e *openAIChatStreamEncoder) sendTerminal(defaultFinishReason string, compl
 			"created": e.createdAt,
 			"model":   e.model,
 			"choices": []any{},
-			"usage":   e.capture.usage,
+			"usage":   chatCompletionUsagePayload(e.capture.usage),
 		}); err != nil {
 			return err
 		}
