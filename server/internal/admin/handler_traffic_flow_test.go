@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"xlyra/server/internal/inflight"
@@ -36,6 +37,27 @@ func TestTrafficFlowStreamWritesSnapshotBeforeRequestEnds(t *testing.T) {
 func TestTrafficFlowTopologyReturnsUnavailableWithoutStore(t *testing.T) {
 	rec := adminPerform(Handler{}.TrafficFlowTopology, adminTestRequest(http.MethodGet, "/api/v1/traffic-flow/topology", ""))
 	assertAdminErrorCode(t, rec, http.StatusServiceUnavailable, "traffic_flow_topology_unavailable")
+}
+
+func TestCancelTrafficFlowRequestPublishesTerminalStateImmediately(t *testing.T) {
+	requestID := "traffic-flow-cancel-request"
+	inflight.Start(inflight.Request{RequestID: requestID, APIKeyName: "Client", ModelKey: "gpt-test"})
+	inflight.AttachControl(requestID, func() bool { return true })
+
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("requestID", requestID)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/traffic-flow/requests/"+requestID+"/cancel", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeContext))
+	rec := httptest.NewRecorder()
+	Handler{}.CancelTrafficFlowRequest(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, body=%q", rec.Code, rec.Body.String())
+	}
+	request, ok := inflight.CurrentRequest(requestID)
+	if !ok || request.Phase != inflight.PhaseCancelled || request.CanCancel {
+		t.Fatalf("request after cancel = %#v, ok=%v", request, ok)
+	}
 }
 
 func TestBuildTrafficFlowTopologyMatchesManagementOrdering(t *testing.T) {

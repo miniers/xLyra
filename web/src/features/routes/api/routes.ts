@@ -1,4 +1,5 @@
 import { apiFetch } from '@/lib/http'
+import type { RoutingPreference } from '@/features/sites/api/sites'
 
 type RouteCanonicalModel = {
   id: string
@@ -8,6 +9,14 @@ type RouteCanonicalModel = {
   category?: string
   capabilities?: Record<string, unknown>
   status: string
+  routing_preference?: RoutingPreference
+  routing_exploration?: {
+    enabled: boolean
+    new_trials_per_site: number
+    idle_after_hours: number
+    idle_trials_per_site: number
+    reset_at?: string | null
+  }
   created_at?: string
   updated_at?: string
 }
@@ -63,6 +72,12 @@ type RouteCandidateHealth = {
   model_success_rate?: number | null
   model_avg_latency_ms?: number | null
   model_request_count?: number | null
+  model_total_request_count?: number | null
+  model_last_used_at?: string | null
+  model_avg_first_byte_latency_ms?: number | null
+  model_first_byte_request_count?: number | null
+  model_cache_hit_rate?: number | null
+  model_cache_request_count?: number | null
 }
 
 type RouteCandidateAvailability = {
@@ -84,6 +99,24 @@ type RouteCandidatePricing = {
   quota_type?: number | null
 }
 
+export type RouteScoreBreakdown = {
+  site_health?: number
+  site_success_rate?: number
+  site_latency?: number
+  model_success_rate?: number
+  model_latency?: number
+  model_first_byte_latency?: number
+  model_cache_hit_rate?: number
+  api_key_capacity?: number
+  price?: number
+}
+
+export type RouteScoreProfile = {
+  rank: number
+  score: number
+  breakdown: RouteScoreBreakdown
+}
+
 export type RouteCandidateItem = {
   rank: number
   score: number
@@ -99,7 +132,19 @@ export type RouteCandidateItem = {
     upstream_cost_multiplier: number
   }
   pricing: RouteCandidatePricing
-  score_breakdown?: Record<string, number>
+  exploration?: {
+    enabled: boolean
+    mode?: string
+    status: string
+    attempts: number
+    target: number
+    remaining: number
+    last_attempt_at?: string | null
+    last_used_at?: string | null
+    reserved?: boolean
+  }
+  score_breakdown?: RouteScoreBreakdown
+  score_profiles?: Partial<Record<RoutingPreference, RouteScoreProfile>>
 }
 
 export type RouteCandidateResponse = {

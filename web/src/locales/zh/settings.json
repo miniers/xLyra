@@ -15,6 +15,14 @@
       "siteRefreshCron": "站点刷新 Cron",
       "newAPICheckinCron": "NewAPI 签到 Cron"
     },
+    "gateway": {
+      "title": "网关 Failover",
+      "description": "配置同站点 credential 重试和首字超时。0 表示不启用该项。",
+      "sameSiteRetries": "同站 credential 重试次数",
+      "sameSiteRetriesDesc": "仅对尚未向下游输出的传输、超时和 5xx 失败生效，范围 0 到 20。",
+      "firstByteTimeout": "全局首字超时（毫秒）",
+      "firstByteTimeoutDesc": "上游在该时间内没有首个有效输出时切换 credential。0 表示不启用。"
+    },
     "whitelist": {
       "title": "白名单 IP",
       "ipAddress": "IP 地址",
@@ -48,7 +56,10 @@
       "retentionDaysPositive": "保留天数必须是大于 0 的整数",
       "sessionLifetimeRequired": "请填写登录有效期",
       "sessionLifetimeInteger": "登录有效期必须是整数小时",
-      "sessionLifetimeRange": "登录有效期必须在 0 到 720 小时之间"
+      "sessionLifetimeRange": "登录有效期必须在 0 到 720 小时之间",
+      "gatewayRetries": "重试次数必须是 0 到 20 的整数",
+      "gatewayTimeout": "首字超时必须是 0 到 600000 的整数",
+      "gatewayInvalid": "网关配置不合法"
     }
   },
   "profile": {

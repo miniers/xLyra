@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { RequestDetailRow } from '@/features/requests/components/request-detail-row'
+import { RequestLiveControls } from '@/features/requests/components/request-live-controls'
 import { RequestModelMapping } from '@/features/requests/components/request-model-mapping'
 import { RequestTiming } from '@/features/requests/components/request-timing'
 import { requestFailoverBadgeClassName } from '@/features/requests/lib/request-badge-styles'
@@ -41,6 +42,8 @@ type RequestsTableProps = {
   items: RequestLogDisplayItem[]
   expandedId: string | null
   onExpandedIdChange: (id: string | null) => void
+  pendingRequestID?: string | null
+  onRequestCancel?: (requestID: string) => void
   scrollContainerRef?: RefObject<HTMLDivElement | null>
   className?: string
 }
@@ -56,6 +59,7 @@ const requestTableHeaders = [
   { id: 'input', label: 'table.headers.input', className: 'px-4 py-3 font-medium text-right' },
   { id: 'output', label: 'table.headers.output', className: 'px-4 py-3 font-medium text-right' },
   { id: 'cost', label: 'table.headers.cost', className: 'px-4 py-3 font-medium text-right' },
+  { id: 'actions', label: 'table.headers.actions', className: 'px-3 py-3 font-medium text-right' },
 ] as const
 
 type ColumnResizeState = {
@@ -70,6 +74,8 @@ export function RequestsTable({
   items,
   expandedId,
   onExpandedIdChange,
+  pendingRequestID = null,
+  onRequestCancel,
   scrollContainerRef,
   className,
 }: RequestsTableProps) {
@@ -296,7 +302,7 @@ export function RequestsTable({
                         <RequestTiming item={item} />
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
-                        <div>{formatInteger(item.usage.prompt_tokens)}</div>
+                        <div>{item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.prompt_tokens)}</div>
                         {(hasCacheRead || hasCacheWrite) ? (
                           <div className="text-muted-soft whitespace-nowrap text-xs">
                             {hasCacheRead && hasCacheWrite
@@ -309,10 +315,18 @@ export function RequestsTable({
                         ) : null}
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
-                        {formatInteger(item.usage.completion_tokens)}
+                        {item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.completion_tokens)}
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
                         {formatCurrency(item.usage.estimated_cost, item.usage.currency)}
+                      </td>
+                      <td className="px-3 py-4 align-middle">
+                        <RequestLiveControls
+                          item={item}
+                          compact
+                          pending={pendingRequestID === item.request_id}
+                          onCancel={onRequestCancel ?? (() => undefined)}
+                        />
                       </td>
                 </tr>
                 {expanded ? (

@@ -6,17 +6,20 @@ import (
 	"time"
 
 	routeengine "xlyra/server/internal/router"
+	"xlyra/server/internal/store"
 )
 
 type gatewayRequest struct {
-	DownstreamPath    string
-	DownstreamHeaders http.Header
-	RequestedModel    string
-	Stream            bool
-	Diagnostic        bool
-	Payload           map[string]any
-	ContentType       string
-	Canonical         *canonicalRequest
+	DownstreamPath      string
+	DownstreamHeaders   http.Header
+	RequestedModel      string
+	Stream              bool
+	Diagnostic          bool
+	Payload             map[string]any
+	ContentType         string
+	Canonical           *canonicalRequest
+	EffectiveModelKey   string
+	APIKeyGatewayConfig store.APIKeyGatewayConfig
 }
 
 type gatewayEndpointAdapter interface {

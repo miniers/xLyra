@@ -124,6 +124,10 @@
       "xlyraApiKeyHint": "Fetch models available to this key through /v1/models.",
       "routingPriority": "Routing Weight",
       "routingPriorityHint": "Default 1.0, range 1.0 - 5.0. Higher weight means higher routing priority.",
+      "maxSameSiteCredentialRetries": "Same-site credential retries",
+      "maxSameSiteCredentialRetriesHint": "Leave empty to inherit the global setting; enter 0 to disable same-site retries here.",
+      "firstByteTimeout": "Site first-byte timeout (ms)",
+      "firstByteTimeoutHint": "Leave empty to inherit the global setting; enter 0 to disable the timeout here.",
       "systemToken": "System Auth Token",
       "systemTokenPlaceholder": "NewAPI system-level access token",
       "systemTokenHint": "System-level auth token for managing sites and models.",
@@ -197,7 +201,9 @@
       "userIdNumeric": "User ID must be numeric",
       "headerNameRequired": "Please enter a header name",
       "responsesToolRequired": "Select at least one disabled tool in compatibility mode",
-      "urlContainsV1": "No need to include /v1 — it will be added automatically"
+      "urlContainsV1": "No need to include /v1 — it will be added automatically",
+      "gatewayRetriesInvalid": "Same-site credential retries must be an integer from 0 to 20",
+      "gatewayTimeoutInvalid": "Site first-byte timeout must be an integer from 0 to 600000"
     },
     "actions": {
       "save": "Save Changes",

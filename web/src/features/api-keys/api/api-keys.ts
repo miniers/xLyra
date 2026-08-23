@@ -23,6 +23,15 @@ export type ModelRule = {
   mode?: 'hard' | 'soft'
 }
 
+export type APIKeyModelGatewayConfig = {
+  first_byte_timeout_ms?: number | null
+}
+
+export type APIKeyGatewayConfig = {
+  first_byte_timeout_ms?: number | null
+  models?: Record<string, APIKeyModelGatewayConfig>
+}
+
 export type DownstreamAPIKeyModel = {
   id?: string
   api_key_id?: string
@@ -71,6 +80,7 @@ export type DownstreamAPIKey = {
   model_policy: DownstreamAPIKeyModelPolicy
   site_policy: DownstreamAPIKeyModelPolicy
   model_mappings?: ModelRule[] | null
+  gateway_config?: APIKeyGatewayConfig | null
   image_tool_bridge?: ImageToolBridgeConfig | null
   quota_limit?: number | null
   quota_total_used?: number
@@ -110,6 +120,7 @@ export type APIKeyUpsertInput = {
   siteIds: string[]
   siteGroupIds: string[]
   modelMappings?: ModelRule[]
+  gatewayConfig?: APIKeyGatewayConfig | null
   imageToolBridge?: ImageToolBridgeConfig | null
   quotaLimit?: number | null
   quotaUnlimited: boolean
@@ -252,6 +263,7 @@ function apiKeyUpsertBody(input: APIKeyUpsertInput) {
     site_ids: input.sitePolicy === 'allow_list' ? input.siteIds : [],
     site_group_ids: input.sitePolicy === 'allow_list' ? input.siteGroupIds : [],
     model_mappings: input.modelMappings,
+    gateway_config: input.gatewayConfig ?? {},
     image_tool_bridge: input.imageToolBridge ?? null,
     quota_limit: input.quotaUnlimited ? null : input.quotaLimit,
     quota_unlimited: input.quotaUnlimited,

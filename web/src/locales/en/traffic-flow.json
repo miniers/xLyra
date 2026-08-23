@@ -21,7 +21,8 @@
     "refresh": "Reload",
     "fullscreen": "Enter fullscreen",
     "exitFullscreen": "Exit fullscreen",
-    "close": "Close details"
+    "close": "Close details",
+    "cancel": "Cancel request"
   },
   "metrics": {
     "label": "Live metrics",
@@ -76,6 +77,10 @@
     "upstream": "Upstream site",
     "phase": "Current phase",
     "attempt": "Route attempt",
-    "waiting": "Waiting for route"
+    "waiting": "Waiting for route",
+    "tokens": "Input / output tokens",
+    "estimated": "Estimated",
+    "actual": "Reported",
+    "cancelFailed": "Failed to cancel request"
   }
 }

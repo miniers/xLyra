@@ -108,6 +108,8 @@ export type SiteGatewayConfig = {
   request_timeout_ms?: number
   connect_timeout_ms?: number
   response_header_timeout_ms?: number
+  max_same_site_credential_retries?: number
+  first_byte_timeout_ms?: number
   max_concurrency?: number
   max_model_concurrency?: number
   max_credential_concurrency?: number
@@ -256,6 +258,16 @@ export type SiteModelTestInput = {
   siteCredentialId?: string
 }
 
+export type RoutingPreference = 'default' | 'value' | 'speed'
+
+export type RoutingExplorationConfig = {
+  enabled: boolean
+  new_trials_per_site: number
+  idle_after_hours: number
+  idle_trials_per_site: number
+  reset_at?: string | null
+}
+
 export type CanonicalModel = {
   id: string
   model_key: string
@@ -264,6 +276,8 @@ export type CanonicalModel = {
   category: string
   capabilities: Record<string, unknown>
   status: string
+  routing_preference?: RoutingPreference
+  routing_exploration?: RoutingExplorationConfig
   created_at: string
   updated_at: string
 }
@@ -511,6 +525,10 @@ export type SiteUpsertInput = {
   }
   requestHeaders?: { key: string; value: string }[]
   gateway?: {
+    maxSameSiteCredentialRetries?: number
+    firstByteTimeoutMs?: number
+    clearMaxSameSiteCredentialRetries?: boolean
+    clearFirstByteTimeoutMs?: boolean
     responsesToolPolicy?: ResponsesToolPolicy
     disabledResponsesTools?: ResponsesHostedTool[]
     impersonateCodexClient?: boolean
@@ -671,6 +689,12 @@ function siteUpsertBody(input: SiteUpsertInput) {
     request_headers: input.requestHeaders?.map((h) => ({ key: h.key, value: h.value })),
     gateway: input.gateway
       ? {
+          max_same_site_credential_retries:
+            input.gateway.maxSameSiteCredentialRetries,
+          first_byte_timeout_ms: input.gateway.firstByteTimeoutMs,
+          clear_max_same_site_credential_retries:
+            input.gateway.clearMaxSameSiteCredentialRetries,
+          clear_first_byte_timeout_ms: input.gateway.clearFirstByteTimeoutMs,
           responses_tool_policy: input.gateway.responsesToolPolicy,
           disabled_responses_tools: input.gateway.disabledResponsesTools,
           impersonate_codex_client: input.gateway.impersonateCodexClient,
@@ -845,6 +869,32 @@ export async function listCanonicalModels() {
   return apiFetch<{ items: CanonicalModelItem[]; meta?: { count?: number } }>(
     '/api/v1/models',
   )
+}
+
+export async function updateCanonicalModelRoutingPreference(
+  modelId: string,
+  routingPreference: RoutingPreference,
+) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-preference`, {
+    method: 'PUT',
+    body: { routing_preference: routingPreference },
+  })
+}
+
+export async function updateCanonicalModelRoutingExploration(
+  modelId: string,
+  config: Omit<RoutingExplorationConfig, 'reset_at'>,
+) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-exploration`, {
+    method: 'PUT',
+    body: config,
+  })
+}
+
+export async function resetCanonicalModelRoutingExploration(modelId: string) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-exploration/reset`, {
+    method: 'POST',
+  })
 }
 
 export async function createCanonicalModel(input: CreateCanonicalModelInput) {

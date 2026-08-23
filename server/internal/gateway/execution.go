@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -103,6 +104,7 @@ func (h Handler) forwardGatewayRequest(
 	rateLimit *ratelimit.Reservation,
 	protocol gatewayProtocolAdapter,
 ) gatewayAttemptResult {
+	inflight.ResetOutputTokenEstimate(requestID)
 	inflight.RouteRequest(requestID, inflight.Route{
 		SiteID:   candidate.Site.ID.String(),
 		SiteName: candidate.Site.Name,
@@ -141,14 +143,77 @@ func (h Handler) forwardGatewayRequest(
 		}
 		result.statusCode = http.StatusBadGateway
 		result.errorType = "upstream_credential_unavailable"
+		if errors.Is(err, context.Canceled) {
+			result.statusCode = transportFailureStatusCode(err)
+			result.errorType = attemptErrorType(ctx, err)
+		}
 		result.errorMessage = err.Error()
 		result.latencyMS = time.Since(startedAt).Milliseconds()
 		result.requestLogID = h.recordAttempt(ctx, requestID, apiKeyID, canonicalModelID, candidate, result, nil)
 		return result
 	}
+	sitePolicyConfig, _, _, siteConfigErr := h.siteGatewayConfig(ctx, candidate.Site.ID)
+	if siteConfigErr != nil {
+		sitePolicyConfig = nil
+	}
+	sameSiteRetryLimit := h.sameSiteCredentialRetryLimitForConfig(sitePolicyConfig)
+	sameSiteRetriesUsed := 0
 
 	var lastResult gatewayAttemptResult
+	requestControl := gatewayRequestControlFromContext(ctx)
+	if requestControl != nil {
+		defer requestControl.ClearResponse()
+	}
+	var finishAttempt func()
+	defer func() {
+		if finishAttempt != nil {
+			finishAttempt()
+		}
+	}()
 	for credentialIndex, selectedCredential := range credentials {
+		if finishAttempt != nil {
+			finishAttempt()
+		}
+		if credentialIndex > 0 {
+			inflight.ResetOutputTokenEstimate(requestID)
+		}
+		attemptCtx, attemptCancel := context.WithCancelCause(ctx)
+		finishAttempt = func() { attemptCancel(nil) }
+		var attemptOutputStarted atomic.Bool
+		outputStarted := func() bool {
+			return attemptOutputStarted.Load()
+		}
+		outputEstimator := newGatewayOutputTokenEstimator(func(tokens int64) {
+			inflight.UpdateTokenEstimate(requestID, 0, tokens)
+		})
+		protocolName := protocol.ProtocolName()
+		if strings.HasPrefix(protocolName, "openai_") || protocolName == "codex_responses" {
+			outputEstimator = newOpenAIOutputTokenEstimator(func(tokens int64) {
+				inflight.UpdateTokenEstimate(requestID, 0, tokens)
+			})
+		}
+		attemptCtx = withGatewayOutputTokenObserver(attemptCtx, outputEstimator.add)
+		attemptCtx = withGatewayOutputTokenToolObserver(attemptCtx, outputEstimator.addToolArguments)
+		attemptCtx = withGatewayOutputTokenUsageObserver(attemptCtx, func(usage completionUsage) {
+			outputEstimator.setUsage(usage)
+			outputTokens := int64(usage.CompletionTokens + usage.AudioOutputTokens)
+			inflight.SetExactOutputTokens(requestID, outputTokens)
+		})
+		firstByteReported := false
+		var firstByteStartedAt time.Time
+		markOutputStarted := func() {
+			attemptOutputStarted.Store(true)
+		}
+		trackOutput := func(written int) {
+			if written <= 0 {
+				return
+			}
+			markOutputStarted()
+			if !firstByteReported && !firstByteStartedAt.IsZero() {
+				firstByteReported = true
+				inflight.SetFirstByteLatency(requestID, time.Since(firstByteStartedAt).Milliseconds())
+			}
+		}
 		var releaseCredentialSelection func()
 		if isGrokSite(candidate.Site.SiteType) {
 			selector := h.credentialSelector
@@ -188,8 +253,20 @@ func (h Handler) forwardGatewayRequest(
 			diagnostic:               request.Diagnostic,
 		}
 		nextCredentialAvailable := credentialIndex < len(credentials)-1
-		recordCredentialAttempt := func(result gatewayAttemptResult, upstreamResponse any, shouldTryNextCredential bool) gatewayAttemptResult {
-			decision := credentialFailoverDecisionForAction(nextCredentialAvailable, shouldTryNextCredential)
+		credentialDecisionForResult := func(result gatewayAttemptResult, forceNextCredential bool) credentialFailoverDecision {
+			if result.errorType == "downstream_client_cancelled" {
+				return credentialFailoverDecisionForAction(false, false)
+			}
+			shouldRetry := forceNextCredential || shouldTryNextCredential(result)
+			if !shouldRetry && sameSiteCredentialRetryable(result) && sameSiteRetriesUsed < sameSiteRetryLimit {
+				shouldRetry = true
+				sameSiteRetriesUsed++
+			}
+			return credentialFailoverDecisionForAction(nextCredentialAvailable, !result.responseStarted && shouldRetry)
+		}
+		recordCredentialAttempt := func(result gatewayAttemptResult, upstreamResponse any, forceNextCredential bool) gatewayAttemptResult {
+			result = applyGatewayAttemptContextFailure(attemptCtx, result)
+			decision := credentialDecisionForResult(result, forceNextCredential)
 			result.credentialDecision = decision
 			result.credentialDecisionSet = true
 			result.requestLogID = h.recordAttempt(ctx, requestID, apiKeyID, canonicalModelID, candidate, result, upstreamResponse)
@@ -234,7 +311,7 @@ func (h Handler) forwardGatewayRequest(
 		}
 		accountID := gatewayCredentialMetaString(selectedCredential.Credential, "account_id")
 		if isCodexSite(candidate.Site.SiteType) {
-			connection, err := h.oauth.EnsureCodexConnectionFresh(ctx, candidate.Site.ID)
+			connection, err := h.oauth.EnsureCodexConnectionFresh(attemptCtx, candidate.Site.ID)
 			if err != nil {
 				result.statusCode = http.StatusBadGateway
 				result.errorType = "codex_oauth_refresh_failed"
@@ -247,7 +324,7 @@ func (h Handler) forwardGatewayRequest(
 			accountID = connection.AccountID
 		}
 		if isAntigravitySite(candidate.Site.SiteType) {
-			connection, err := h.oauth.EnsureAntigravityConnectionFresh(ctx, candidate.Site.ID)
+			connection, err := h.oauth.EnsureAntigravityConnectionFresh(attemptCtx, candidate.Site.ID)
 			if err != nil {
 				result.statusCode = http.StatusBadGateway
 				result.errorType = "antigravity_oauth_refresh_failed"
@@ -260,7 +337,7 @@ func (h Handler) forwardGatewayRequest(
 			accountID = connection.AccountID
 		}
 		if isClaudeCodeSite(candidate.Site.SiteType) {
-			connection, err := h.oauth.EnsureClaudeCodeConnectionFresh(ctx, candidate.Site.ID)
+			connection, err := h.oauth.EnsureClaudeCodeConnectionFresh(attemptCtx, candidate.Site.ID)
 			if err != nil {
 				result.statusCode = http.StatusBadGateway
 				result.errorType = "claude_code_oauth_refresh_failed"
@@ -273,7 +350,7 @@ func (h Handler) forwardGatewayRequest(
 			accountID = connection.AccountID
 		}
 		if isGrokSite(candidate.Site.SiteType) {
-			accessToken, refreshErr := h.oauth.EnsureGrokAccessToken(ctx, selectedCredential.Credential.ID)
+			accessToken, refreshErr := h.oauth.EnsureGrokAccessToken(attemptCtx, selectedCredential.Credential.ID)
 			if refreshErr != nil {
 				if errors.Is(refreshErr, oauthsvc.ErrGrokReauthorizationRequired) {
 					h.markGrokCredentialReauthRequired(ctx, selectedCredential.Credential, refreshErr.Error())
@@ -327,7 +404,7 @@ func (h Handler) forwardGatewayRequest(
 			ImageGeneration: isCodexImageGenerationRequest(candidate, request, payload) || (isGrokSite(candidate.Site.SiteType) && request.DownstreamPath == gatewayEndpointImagesGenerations),
 		}
 
-		upstreamClient, siteConfig, requestHeaders, err := h.upstreamClientForSite(ctx, candidate.Site.ID, upstreamProfileRequest)
+		upstreamClient, siteConfig, requestHeaders, err := h.upstreamClientForSite(attemptCtx, candidate.Site.ID, upstreamProfileRequest)
 		if err != nil {
 			result.statusCode = http.StatusBadGateway
 			result.errorType = "upstream_client_unavailable"
@@ -350,7 +427,7 @@ func (h Handler) forwardGatewayRequest(
 		endpoint := protocol.UpstreamPath(candidate.Site.BaseURL)
 		result.upstreamPath = endpointPath(endpoint)
 		result.upstreamURL = endpoint
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
 			result.statusCode = http.StatusBadGateway
 			result.errorType = "upstream_request_build_failed"
@@ -390,11 +467,11 @@ func (h Handler) forwardGatewayRequest(
 			applyClaudeCodeOAuthGatewayHeaders(req, upstreamKey)
 		}
 
-		releaseConcurrency, err := h.acquireUpstreamConcurrency(ctx, candidate, selectedCredential.Credential.ID, siteConfig)
+		releaseConcurrency, err := h.acquireUpstreamConcurrency(attemptCtx, candidate, selectedCredential.Credential.ID, siteConfig)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				result.statusCode = transportFailureStatusCode(err)
-				result.errorType = transportErrorType(err)
+				result.errorType = attemptErrorType(attemptCtx, err)
 			} else if errors.Is(err, context.DeadlineExceeded) {
 				result.statusCode = http.StatusServiceUnavailable
 				result.errorType = "upstream_concurrency_wait_timeout"
@@ -424,14 +501,22 @@ func (h Handler) forwardGatewayRequest(
 			return result
 		}
 
-		upstreamStartedAt := time.Now()
+		firstByteStartedAt = time.Now()
+		monitorGatewayFirstByteTimeout(attemptCtx, h.gatewayFirstByteTimeout(request, sitePolicyConfig), attemptCancel, outputStarted)
+		upstreamStartedAt := firstByteStartedAt
 		var resp *http.Response
+		if requestControl != nil {
+			requestControl.ClearResponse()
+		}
 		resp, err = upstreamClient.Do(req)
+		if requestControl != nil {
+			requestControl.SetResponse(resp)
+		}
 		result.upstreamLatencyMS = time.Since(upstreamStartedAt).Milliseconds()
 		if err != nil {
 			releaseConcurrency()
 			result.statusCode = transportFailureStatusCode(err)
-			result.errorType = transportErrorType(err)
+			result.errorType = attemptErrorType(attemptCtx, err)
 			result.errorMessage = err.Error()
 			result.latencyMS = time.Since(startedAt).Milliseconds()
 			result = recordCredentialAttempt(result, nil, isGrokSite(candidate.Site.SiteType))
@@ -444,13 +529,25 @@ func (h Handler) forwardGatewayRequest(
 			}
 			return result
 		}
+		if !request.Stream && resp != nil {
+			markOutputStarted()
+			result.firstByteLatencyMS = result.upstreamLatencyMS
+		}
 		result.statusCode = resp.StatusCode
 		result.upstreamStatusCode = resp.StatusCode
 		result.contentType = resp.Header.Get("Content-Type")
 		inflight.MarkResponding(requestID)
 
 		if request.Stream {
-			result = h.handleStreamResponse(ctx, w, requestID, apiKeyID, canonicalModelID, candidate, protocol, resp, result, startedAt)
+			trackedWriter := firstByteTrackingWriter{httpResponseWriter: w, onCommit: markOutputStarted, onWrite: trackOutput}
+			result = h.handleStreamResponse(attemptCtx, trackedWriter, requestID, apiKeyID, canonicalModelID, candidate, protocol, resp, result, startedAt, firstByteStartedAt)
+			result = applyGatewayAttemptContextFailure(attemptCtx, result)
+			updateInflightTokenUsage(requestID, result)
+			if errors.Is(context.Cause(attemptCtx), errGatewayFirstByteTimeout) && !result.responseStarted {
+				result.errorType = "upstream_first_byte_timeout"
+				result.errorMessage = "upstream first byte timeout"
+				result.statusCode = http.StatusGatewayTimeout
+			}
 			if isGrokSite(candidate.Site.SiteType) {
 				h.markGrokCredentialSyncFailed(ctx, selectedCredential.Credential, result)
 			}
@@ -461,7 +558,9 @@ func (h Handler) forwardGatewayRequest(
 			if releaseCredentialSelection != nil {
 				releaseCredentialSelection()
 			}
-			decision := credentialFailoverDecisionForResult(result, credentialIndex < len(credentials)-1)
+			decision := credentialDecisionForResult(result, false)
+			result.credentialDecision = decision
+			result.credentialDecisionSet = true
 			h.logGatewayCredentialDecision(ctx, requestID, candidate, request, result, decision)
 			if decision.ShouldTryNextCredential {
 				if !request.Diagnostic && result.statusCode != http.StatusNotFound {
@@ -473,7 +572,14 @@ func (h Handler) forwardGatewayRequest(
 			return result
 		}
 
-		result = h.handleBufferedResponse(ctx, requestID, apiKeyID, canonicalModelID, candidate, protocol, resp, result, startedAt)
+		result = h.handleBufferedResponse(attemptCtx, requestID, apiKeyID, canonicalModelID, candidate, protocol, resp, result, startedAt)
+		result = applyGatewayAttemptContextFailure(attemptCtx, result)
+		updateInflightTokenUsage(requestID, result)
+		if errors.Is(context.Cause(attemptCtx), errGatewayFirstByteTimeout) && !result.responseStarted {
+			result.errorType = "upstream_first_byte_timeout"
+			result.errorMessage = "upstream first byte timeout"
+			result.statusCode = http.StatusGatewayTimeout
+		}
 		if isGrokSite(candidate.Site.SiteType) {
 			h.markGrokCredentialSyncFailed(ctx, selectedCredential.Credential, result)
 		}
@@ -485,11 +591,16 @@ func (h Handler) forwardGatewayRequest(
 			releaseCredentialSelection()
 		}
 		if result.success {
-			h.logGatewayCredentialDecision(ctx, requestID, candidate, request, result, credentialFailoverDecisionForResult(result, credentialIndex < len(credentials)-1))
+			decision := credentialDecisionForResult(result, false)
+			result.credentialDecision = decision
+			result.credentialDecisionSet = true
+			h.logGatewayCredentialDecision(ctx, requestID, candidate, request, result, decision)
 			return result
 		}
 		lastResult = result
-		decision := credentialFailoverDecisionForResult(result, credentialIndex < len(credentials)-1)
+		decision := credentialDecisionForResult(result, false)
+		result.credentialDecision = decision
+		result.credentialDecisionSet = true
 		h.logGatewayCredentialDecision(ctx, requestID, candidate, request, result, decision)
 		if !decision.ShouldTryNextCredential {
 			return result
@@ -500,6 +611,15 @@ func (h Handler) forwardGatewayRequest(
 	}
 
 	return lastResult
+}
+
+func updateInflightTokenUsage(requestID string, result gatewayAttemptResult) {
+	inputTokens := int64(result.promptTokens)
+	outputTokens := int64(result.completionTokens + result.audioOutputTokens)
+	if inputTokens <= 0 && outputTokens <= 0 {
+		return
+	}
+	inflight.SetTokenUsage(requestID, inputTokens, outputTokens, false)
 }
 
 func buildUpstreamRequestBody(protocol gatewayProtocolAdapter, request gatewayRequest, payload map[string]any) ([]byte, string, error) {
@@ -645,6 +765,7 @@ func (h Handler) handleStreamResponse(
 	resp *http.Response,
 	result gatewayAttemptResult,
 	startedAt time.Time,
+	firstByteStartedAt ...time.Time,
 ) gatewayAttemptResult {
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -684,7 +805,11 @@ func (h Handler) handleStreamResponse(
 	if h.exposeRouteSite {
 		setRouteSiteHeader(w.Header(), candidate.Site.Name)
 	}
-	capture, responseStarted, proxyErr := protocol.ProxyStream(ctx, w, resp, startedAt, candidate)
+	firstByteAt := startedAt
+	if len(firstByteStartedAt) > 0 && !firstByteStartedAt[0].IsZero() {
+		firstByteAt = firstByteStartedAt[0]
+	}
+	capture, responseStarted, proxyErr := protocol.ProxyStream(ctx, w, resp, firstByteAt, candidate)
 	if proxyErr != nil && streamCompletedAfterReadError(capture, proxyErr) {
 		proxyErr = nil
 		capture.endReason = "done"

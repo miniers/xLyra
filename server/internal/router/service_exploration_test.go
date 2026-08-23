@@ -1,0 +1,61 @@
+package router
+
+import (
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"xlyra/server/internal/store"
+)
+
+func TestBuildCandidateExplorationInitialCycle(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	config := store.RoutingExplorationConfig{Enabled: true, NewTrialsPerSite: 3, IdleAfterHours: 24, IdleTrialsPerSite: 2}
+	item := buildCandidateExploration(config, store.RouteExplorationState{}, 0, nil, now)
+	if item.Status != "pending" || item.Mode != store.RouteExplorationCycleInitial || item.Target != 3 || item.Remaining != 3 {
+		t.Fatalf("initial exploration = %#v", item)
+	}
+
+	state := store.RouteExplorationState{
+		ID:               uuid.New(),
+		CanonicalModelID: uuid.New(),
+		SiteModelID:      uuid.New(),
+		CycleKind:        store.RouteExplorationCycleInitial,
+		CycleKey:         "initial",
+		Attempts:         2,
+		Target:           3,
+	}
+	item = buildCandidateExploration(config, state, 2, nil, now)
+	if item.Status != "in_progress" || item.Attempts != 2 || item.Remaining != 1 {
+		t.Fatalf("in-progress exploration = %#v", item)
+	}
+}
+
+func TestBuildCandidateExplorationIdleCycleContinuesAfterTrialUpdatesLastUsed(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-48 * time.Hour)
+	config := store.RoutingExplorationConfig{Enabled: true, NewTrialsPerSite: 3, IdleAfterHours: 24, IdleTrialsPerSite: 2}
+	state := store.RouteExplorationState{
+		CycleKind: store.RouteExplorationCycleIdle,
+		CycleKey:  "idle:" + old.Format(time.RFC3339Nano),
+		Attempts:  1,
+		Target:    2,
+	}
+	// The latest health snapshot is now recent, but the unfinished idle cycle
+	// must still consume its second configured trial.
+	item := buildCandidateExploration(config, state, 20, &now, now)
+	if item.Mode != store.RouteExplorationCycleIdle || item.Status != "in_progress" || item.Remaining != 1 {
+		t.Fatalf("idle exploration = %#v", item)
+	}
+}
+
+func TestBuildCandidateExplorationResetCycle(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	resetAt := now.Add(-time.Minute)
+	config := store.RoutingExplorationConfig{Enabled: true, NewTrialsPerSite: 4, IdleAfterHours: 24, IdleTrialsPerSite: 2, ResetAt: &resetAt}
+	item := buildCandidateExploration(config, store.RouteExplorationState{Attempts: 4, Target: 4, CycleKind: store.RouteExplorationCycleInitial, CycleKey: "initial"}, 20, nil, now)
+	if item.Mode != store.RouteExplorationCycleReset || item.Status != "pending" || item.Remaining != 4 {
+		t.Fatalf("reset exploration = %#v", item)
+	}
+}

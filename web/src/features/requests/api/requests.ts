@@ -179,6 +179,10 @@ export type RequestLogItem = {
   error_type?: string | null
   latency_ms?: number | null
   first_byte_latency_ms?: number | null
+  input_tokens?: number | null
+  output_tokens?: number | null
+  tokens_estimated?: boolean | null
+  can_cancel?: boolean | null
   reasoning_effort?: string | null
   upstream_latency_ms?: number | null
   request_tokens?: number | null
@@ -288,6 +292,11 @@ export type RequestActivityRequest = {
   phase: RequestActivityPhase
   started_at: string
   updated_at: string
+  input_tokens: number
+  output_tokens: number
+  first_byte_latency_ms?: number
+  can_cancel: boolean
+  tokens_estimated: boolean
 }
 
 export type RequestActivitySnapshot = {
@@ -304,6 +313,13 @@ export type RequestActivityEvent = {
 
 export function createRequestActivityStream() {
   return new EventSource(apiURL('/api/v1/traffic-flow/stream'), { withCredentials: true })
+}
+
+export async function cancelRequestActivity(requestID: string) {
+  return apiFetch<{ request_id: string; action: 'cancel'; accepted: boolean }>(
+    `/api/v1/traffic-flow/requests/${encodeURIComponent(requestID)}/cancel`,
+    { method: 'POST' },
+  )
 }
 
 export async function listRequestLogs(input: RequestLogListFilters & RequestLogListPagination) {

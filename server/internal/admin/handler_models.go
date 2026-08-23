@@ -120,6 +120,89 @@ func (h Handler) UpdateModelPricing(w http.ResponseWriter, r *http.Request) {
 	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
 }
 
+func (h Handler) UpdateModelRoutingPreference(w http.ResponseWriter, r *http.Request) {
+	if h.catalog == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
+		return
+	}
+
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		RoutingPreference string `json:"routing_preference"`
+	}
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+
+	model, err := h.catalog.UpdateRoutingPreference(r.Context(), modelID, payload.RoutingPreference)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "canonical_model_routing_preference_update_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
+}
+
+func (h Handler) UpdateModelRoutingExploration(w http.ResponseWriter, r *http.Request) {
+	if h.catalog == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
+		return
+	}
+
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+	var payload struct {
+		Enabled           bool `json:"enabled"`
+		NewTrialsPerSite  int  `json:"new_trials_per_site"`
+		IdleAfterHours    int  `json:"idle_after_hours"`
+		IdleTrialsPerSite int  `json:"idle_trials_per_site"`
+	}
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+
+	model, err := h.catalog.UpdateRoutingExploration(r.Context(), modelID, catalog.UpdateRoutingExplorationInput{
+		Enabled:           payload.Enabled,
+		NewTrialsPerSite:  payload.NewTrialsPerSite,
+		IdleAfterHours:    payload.IdleAfterHours,
+		IdleTrialsPerSite: payload.IdleTrialsPerSite,
+	})
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "canonical_model_routing_exploration_update_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
+}
+
+func (h Handler) ResetModelRoutingExploration(w http.ResponseWriter, r *http.Request) {
+	if h.catalog == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
+		return
+	}
+
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+	model, err := h.catalog.ResetRoutingExploration(r.Context(), modelID)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "canonical_model_routing_exploration_reset_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
+}
+
 func (h Handler) ResetModelPricing(w http.ResponseWriter, r *http.Request) {
 	if h.catalog == nil {
 		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
@@ -296,15 +379,24 @@ func (r canonicalModelRequest) toInput() catalog.UpsertCanonicalModelInput {
 }
 
 func canonicalModelPayload(model store.CanonicalModel) map[string]any {
+	exploration := store.NormalizeRoutingExplorationConfig(model)
 	return map[string]any{
-		"id":                     model.ID.String(),
-		"model_key":              model.ModelKey,
-		"display_name":           model.DisplayName,
-		"provider":               model.Provider,
-		"icon_url":               providerIconURL(model.Provider),
-		"category":               model.Category,
-		"capabilities":           jsonRaw(model.Capabilities),
-		"status":                 model.Status,
+		"id":                 model.ID.String(),
+		"model_key":          model.ModelKey,
+		"display_name":       model.DisplayName,
+		"provider":           model.Provider,
+		"icon_url":           providerIconURL(model.Provider),
+		"category":           model.Category,
+		"capabilities":       jsonRaw(model.Capabilities),
+		"status":             model.Status,
+		"routing_preference": store.NormalizeRoutingPreference(model.RoutingPreference),
+		"routing_exploration": map[string]any{
+			"enabled":              exploration.Enabled,
+			"new_trials_per_site":  exploration.NewTrialsPerSite,
+			"idle_after_hours":     exploration.IdleAfterHours,
+			"idle_trials_per_site": exploration.IdleTrialsPerSite,
+			"reset_at":             nullTimeValue(model.RoutingExplorationResetAt),
+		},
 		"input_price":            nullFloat64Value(model.InputPrice),
 		"output_price":           nullFloat64Value(model.OutputPrice),
 		"audio_output_price":     chainedScaledNullFloat(model.InputPrice, model.AudioRatio, model.AudioCompletionRatio),

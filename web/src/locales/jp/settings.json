@@ -15,6 +15,14 @@
       "siteRefreshCron": "サイト更新 Cron",
       "newAPICheckinCron": "NewAPI チェックイン Cron"
     },
+    "gateway": {
+      "title": "ゲートウェイ Failover",
+      "description": "同一サイトの Credential 再試行と最初のバイトのタイムアウトを設定します。",
+      "sameSiteRetries": "同一サイト Credential 再試行回数",
+      "sameSiteRetriesDesc": "下流出力前の通信・タイムアウト・5xx 失敗に適用します。範囲は 0〜20 です。",
+      "firstByteTimeout": "全体の最初のバイトのタイムアウト（ms）",
+      "firstByteTimeoutDesc": "上流から有効な最初の出力がない場合に Credential を切り替えます。0 で無効です。"
+    },
     "whitelist": {
       "title": "IP ホワイトリスト",
       "ipAddress": "IP アドレス",
@@ -48,7 +56,10 @@
       "retentionDaysPositive": "保持日数は正の整数である必要があります",
       "sessionLifetimeRequired": "セッション有効期間を入力してください",
       "sessionLifetimeInteger": "セッション有効期間は整数（時間）で入力してください",
-      "sessionLifetimeRange": "セッション有効期間は 0〜720 時間にしてください"
+      "sessionLifetimeRange": "セッション有効期間は 0〜720 時間にしてください",
+      "gatewayRetries": "再試行回数は 0〜20 の整数にしてください",
+      "gatewayTimeout": "最初のバイトのタイムアウトは 0〜600000 の整数にしてください",
+      "gatewayInvalid": "ゲートウェイ設定が無効です"
     }
   },
   "profile": {

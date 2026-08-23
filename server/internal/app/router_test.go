@@ -35,6 +35,21 @@ func TestHealthzIncludesRequestIDHeader(t *testing.T) {
 	}
 }
 
+func TestHealthzPreservesIncomingRequestIDHeader(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), nil, nil, "test-master-key")
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("X-Request-ID", "codex-request-id")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Request-ID"); got != "codex-request-id" {
+		t.Fatalf("X-Request-ID response header = %q, want codex-request-id", got)
+	}
+}
+
 func TestCORSExposesGatewayRouteSiteHeader(t *testing.T) {
 	t.Parallel()
 
@@ -47,6 +62,26 @@ func TestCORSExposesGatewayRouteSiteHeader(t *testing.T) {
 
 	if got := rec.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(got, gateway.RouteSiteHeader) {
 		t.Fatalf("Access-Control-Expose-Headers = %q, want %s", got, gateway.RouteSiteHeader)
+	}
+}
+
+func TestCORSAllowsXRequestIDHeader(t *testing.T) {
+	t.Parallel()
+
+	router := NewRouter(testConfig(), slog.Default(), nil, nil, "test-master-key")
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/requests", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	req.Header.Set("Access-Control-Request-Headers", "X-Request-ID")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected preflight status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if got := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers")); !strings.Contains(got, "x-request-id") {
+		t.Fatalf("Access-Control-Allow-Headers = %q, want x-request-id", got)
 	}
 }
 

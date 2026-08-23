@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/common/error-state'
 import { PageHeader } from '@/components/common/page-header'
@@ -9,6 +9,7 @@ import { listDownstreamAPIKeys, downstreamAPIKeyQueryKeys } from '@/features/api
 import { sortAPIKeysForDisplay } from '@/features/api-keys/lib/api-key-utils'
 import {
   createRequestActivityStream,
+  cancelRequestActivity,
   getRequestLogSummary,
   listRequestLogs,
   requestQueryKeys,
@@ -40,10 +41,16 @@ import { requestCacheHitRate } from '@/features/requests/lib/request-utils'
 import { listSites, sitesQueryKeys } from '@/features/sites/api/sites'
 import { sortSitesForDisplay } from '@/features/sites/lib/site-utils'
 import { useMobileLayout } from '@/hooks/use-media-query'
+import { APIError } from '@/lib/http'
+import { toast } from '@/lib/toast'
 
 const EMPTY_REQUESTS: RequestLogItem[] = []
 const EMPTY_SITES: Awaited<ReturnType<typeof listSites>>['items'] = []
 const EMPTY_API_KEYS: Awaited<ReturnType<typeof listDownstreamAPIKeys>>['items'] = []
+
+function isRequestActivityGoneError(error: unknown) {
+  return error instanceof APIError && ['request_not_found', 'request_not_active', 'request_control_unavailable'].includes(error.code ?? '')
+}
 
 export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: string }) {
   const { t } = useTranslation('requests')
@@ -57,7 +64,41 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
   const [pageSize, setPageSize] = useState(50)
   const [liveState, setLiveState] = useState(initialRequestActivityState)
   const [handoffReadyRequestIDs, setHandoffReadyRequestIDs] = useState<Set<string>>(() => new Set())
+  const [pendingRequestID, setPendingRequestID] = useState<string | null>(null)
   const tableScrollRef = useRef<HTMLDivElement | null>(null)
+
+  const requestCancelMutation = useMutation({
+    mutationFn: (requestID: string) => cancelRequestActivity(requestID),
+    onSuccess: (_, requestID) => {
+      setLiveState((current) => removeRequestActivityRequest(current, requestID))
+      setHandoffReadyRequestIDs((current) => {
+        if (!current.has(requestID)) return current
+        const next = new Set(current)
+        next.delete(requestID)
+        return next
+      })
+      void queryClient.invalidateQueries({ queryKey: requestQueryKeys.all })
+      toast.success(t('actions.cancelSuccess'))
+    },
+    onError: (error, requestID) => {
+      if (isRequestActivityGoneError(error)) {
+        setLiveState((current) => removeRequestActivityRequest(current, requestID))
+        setHandoffReadyRequestIDs((current) => {
+          if (!current.has(requestID)) return current
+          const next = new Set(current)
+          next.delete(requestID)
+          return next
+        })
+        void queryClient.invalidateQueries({ queryKey: requestQueryKeys.all })
+        toast.info(t('actions.alreadyFinished'))
+        return
+      }
+      toast.error(t('actions.controlFailed'), { description: error instanceof Error ? error.message : undefined })
+    },
+    onSettled: () => {
+      setPendingRequestID(null)
+    },
+  })
 
   const requestListFilters = useMemo(() => requestFiltersToListFilters(filters), [filters])
   const requestListInput = useMemo(
@@ -255,13 +296,16 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
   function handleAutoRefreshChange(enabled: boolean) {
     setAutoRefresh(enabled)
     if (!enabled) {
-      setLiveState((current) => ({
-        ...initialRequestActivityState(),
-        startedAtByRequestID: current.startedAtByRequestID,
-      }))
+      setLiveState(initialRequestActivityState())
       setHandoffReadyRequestIDs(new Set())
     }
     writeRequestsAutoRefreshPreference(enabled)
+  }
+
+  function handleRequestCancel(requestID: string) {
+    if (requestCancelMutation.isPending) return
+    setPendingRequestID(requestID)
+    requestCancelMutation.mutate(requestID)
   }
 
   if (requestsQuery.isLoading) {
@@ -330,6 +374,8 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
             items={displayItems}
             expandedId={expandedId}
             onExpandedIdChange={setExpandedId}
+            pendingRequestID={pendingRequestID}
+            onRequestCancel={handleRequestCancel}
           />
           {showPagination ? pagination : null}
         </div>
@@ -369,6 +415,8 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
         items={displayItems}
         expandedId={expandedId}
         onExpandedIdChange={setExpandedId}
+        pendingRequestID={pendingRequestID}
+        onRequestCancel={handleRequestCancel}
         scrollContainerRef={tableScrollRef}
       />
 

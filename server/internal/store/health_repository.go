@@ -14,36 +14,38 @@ import (
 )
 
 type HealthSnapshot struct {
-	ID           uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	SiteID       uuid.UUID
-	SiteModelID  uuid.NullUUID
-	Scope        string
-	Source       string
-	Endpoint     string
-	Method       string
-	Success      bool
-	StatusCode   sql.NullInt64
-	LatencyMS    sql.NullInt64
-	ErrorType    sql.NullString
-	ErrorMessage sql.NullString
-	CheckedAt    time.Time
-	Metadata     JSON `gorm:"type:jsonb"`
+	ID                 uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	SiteID             uuid.UUID
+	SiteModelID        uuid.NullUUID
+	Scope              string
+	Source             string
+	Endpoint           string
+	Method             string
+	Success            bool
+	StatusCode         sql.NullInt64
+	LatencyMS          sql.NullInt64
+	FirstByteLatencyMS sql.NullInt64
+	ErrorType          sql.NullString
+	ErrorMessage       sql.NullString
+	CheckedAt          time.Time
+	Metadata           JSON `gorm:"type:jsonb"`
 }
 
 type CreateHealthSnapshotParams struct {
-	SiteID       uuid.UUID
-	SiteModelID  any
-	Scope        string
-	Source       string
-	Endpoint     string
-	Method       string
-	Success      bool
-	StatusCode   any
-	LatencyMS    any
-	ErrorType    any
-	ErrorMessage any
-	CheckedAt    time.Time
-	Metadata     JSON
+	SiteID             uuid.UUID
+	SiteModelID        any
+	Scope              string
+	Source             string
+	Endpoint           string
+	Method             string
+	Success            bool
+	StatusCode         any
+	LatencyMS          any
+	FirstByteLatencyMS any
+	ErrorType          any
+	ErrorMessage       any
+	CheckedAt          time.Time
+	Metadata           JSON
 }
 
 type SiteHealthState struct {
@@ -105,19 +107,20 @@ func (r HealthRepository) CreateSnapshot(ctx context.Context, params CreateHealt
 		params.CheckedAt = time.Now()
 	}
 	item := HealthSnapshot{
-		SiteID:       params.SiteID,
-		SiteModelID:  nullUUIDFromAny(params.SiteModelID),
-		Scope:        params.Scope,
-		Source:       params.Source,
-		Endpoint:     params.Endpoint,
-		Method:       params.Method,
-		Success:      params.Success,
-		StatusCode:   nullInt64FromAny(params.StatusCode),
-		LatencyMS:    nullInt64FromAny(params.LatencyMS),
-		ErrorType:    nullStringFromAny(params.ErrorType),
-		ErrorMessage: nullStringFromAny(params.ErrorMessage),
-		CheckedAt:    params.CheckedAt,
-		Metadata:     jsonDefault(params.Metadata, "{}"),
+		SiteID:             params.SiteID,
+		SiteModelID:        nullUUIDFromAny(params.SiteModelID),
+		Scope:              params.Scope,
+		Source:             params.Source,
+		Endpoint:           params.Endpoint,
+		Method:             params.Method,
+		Success:            params.Success,
+		StatusCode:         nullInt64FromAny(params.StatusCode),
+		LatencyMS:          nullInt64FromAny(params.LatencyMS),
+		FirstByteLatencyMS: nullInt64FromAny(params.FirstByteLatencyMS),
+		ErrorType:          nullStringFromAny(params.ErrorType),
+		ErrorMessage:       nullStringFromAny(params.ErrorMessage),
+		CheckedAt:          params.CheckedAt,
+		Metadata:           jsonDefault(params.Metadata, "{}"),
 	}
 	if err := r.db.WithContext(ctx).Create(&item).Error; err != nil {
 		return HealthSnapshot{}, fmt.Errorf("create health snapshot: %w", err)

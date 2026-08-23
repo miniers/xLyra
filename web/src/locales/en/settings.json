@@ -15,6 +15,14 @@
       "siteRefreshCron": "Site Refresh Cron",
       "newAPICheckinCron": "NewAPI Checkin Cron"
     },
+    "gateway": {
+      "title": "Gateway failover",
+      "description": "Configure same-site credential retries and first-byte timeout.",
+      "sameSiteRetries": "Same-site credential retries",
+      "sameSiteRetriesDesc": "Applies to pre-output transport, timeout, and 5xx failures. Range: 0–20.",
+      "firstByteTimeout": "Global first-byte timeout (ms)",
+      "firstByteTimeoutDesc": "Switch credentials when the upstream produces no valid first output. 0 disables it."
+    },
     "whitelist": {
       "title": "IP Whitelist",
       "ipAddress": "IP Address",
@@ -48,7 +56,10 @@
       "retentionDaysPositive": "Retention days must be a positive integer",
       "sessionLifetimeRequired": "Please enter session lifetime",
       "sessionLifetimeInteger": "Session lifetime must be an integer (hours)",
-      "sessionLifetimeRange": "Session lifetime must be between 0 and 720 hours"
+      "sessionLifetimeRange": "Session lifetime must be between 0 and 720 hours",
+      "gatewayRetries": "Retries must be an integer from 0 to 20",
+      "gatewayTimeout": "First-byte timeout must be an integer from 0 to 600000",
+      "gatewayInvalid": "Gateway configuration is invalid"
     }
   },
   "profile": {

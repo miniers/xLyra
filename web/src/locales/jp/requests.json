@@ -13,7 +13,8 @@
       "reasoning": "推論の強度",
       "input": "入力",
       "output": "出力",
-      "cost": "コスト"
+      "cost": "コスト",
+      "actions": "操作"
     },
     "test": "テスト",
     "success": "成功",
@@ -38,6 +39,12 @@
       "title": "リクエストログがありません",
       "description": "表示できる転送リクエスト記録はありません。"
     }
+  },
+  "actions": {
+    "cancel": "キャンセル",
+    "cancelSuccess": "キャンセル要求を送信しました",
+    "alreadyFinished": "リクエストはすでに終了したため、一覧を更新しました",
+    "controlFailed": "リクエスト操作に失敗しました"
   },
   "filters": {
     "dateFrom": "開始日",

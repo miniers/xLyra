@@ -9,6 +9,25 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestRoutingPreferenceNormalizationAndValidation(t *testing.T) {
+	t.Parallel()
+
+	if got := NormalizeRoutingPreference(" SPEED "); got != RoutingPreferenceSpeed {
+		t.Fatalf("NormalizeRoutingPreference = %q, want %q", got, RoutingPreferenceSpeed)
+	}
+	if got := NormalizeRoutingPreference("unknown"); got != RoutingPreferenceDefault {
+		t.Fatalf("unknown routing preference = %q, want %q", got, RoutingPreferenceDefault)
+	}
+	for _, value := range []string{RoutingPreferenceDefault, RoutingPreferenceValue, RoutingPreferenceSpeed, " value "} {
+		if !ValidRoutingPreference(value) {
+			t.Fatalf("ValidRoutingPreference(%q) = false", value)
+		}
+	}
+	if ValidRoutingPreference("balanced") {
+		t.Fatal("unknown routing preference should be rejected")
+	}
+}
+
 func TestCanonicalModelSyncUpsertPreservesManualPricing(t *testing.T) {
 	t.Parallel()
 

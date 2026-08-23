@@ -21,7 +21,8 @@
     "refresh": "再読み込み",
     "fullscreen": "全画面表示",
     "exitFullscreen": "全画面を終了",
-    "close": "詳細を閉じる"
+    "close": "詳細を閉じる",
+    "cancel": "リクエストをキャンセル"
   },
   "metrics": {
     "label": "リアルタイム指標",
@@ -76,6 +77,10 @@
     "upstream": "アップストリームサイト",
     "phase": "現在のフェーズ",
     "attempt": "ルート試行",
-    "waiting": "ルート待機中"
+    "waiting": "ルート待機中",
+    "tokens": "入力 / 出力 Token",
+    "estimated": "推定",
+    "actual": "取得済み",
+    "cancelFailed": "リクエストのキャンセルに失敗しました"
   }
 }

@@ -144,7 +144,7 @@ func proxyCodexResponsesImageStream(
 	startedAt time.Time,
 	eventPrefix string,
 ) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -235,6 +235,7 @@ func writeCodexImageStreamEvents(w http.ResponseWriter, capture *streamCaptureSt
 	}
 	if event.Response.Usage != nil {
 		capture.usage = completionUsageFromResponsesUsage(event.Response.Usage)
+		capture.observeOutputUsage(capture.usage)
 	}
 	outputs := imageGenerationOutputsFromResponses(event.Response)
 	if len(outputs) == 0 {

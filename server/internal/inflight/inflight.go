@@ -21,19 +21,28 @@ const (
 )
 
 type Request struct {
-	RequestID     string    `json:"request_id"`
-	APIKeyID      string    `json:"api_key_id"`
-	APIKeyName    string    `json:"api_key_name"`
-	ModelKey      string    `json:"model_key"`
-	ModelProvider string    `json:"model_provider"`
-	SiteID        string    `json:"upstream_site_id,omitempty"`
-	SiteName      string    `json:"upstream_site_name,omitempty"`
-	SiteType      string    `json:"upstream_site_type,omitempty"`
-	Attempt       int       `json:"attempt"`
-	Stream        bool      `json:"stream"`
-	Phase         Phase     `json:"phase"`
-	StartedAt     time.Time `json:"started_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	RequestID          string    `json:"request_id"`
+	APIKeyID           string    `json:"api_key_id"`
+	APIKeyName         string    `json:"api_key_name"`
+	ModelKey           string    `json:"model_key"`
+	ModelProvider      string    `json:"model_provider"`
+	SiteID             string    `json:"upstream_site_id,omitempty"`
+	SiteName           string    `json:"upstream_site_name,omitempty"`
+	SiteType           string    `json:"upstream_site_type,omitempty"`
+	Attempt            int       `json:"attempt"`
+	Stream             bool      `json:"stream"`
+	Phase              Phase     `json:"phase"`
+	StartedAt          time.Time `json:"started_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	InputTokens        int64     `json:"input_tokens"`
+	OutputTokens       int64     `json:"output_tokens"`
+	FirstByteLatencyMS int64     `json:"first_byte_latency_ms,omitempty"`
+	CanCancel          bool      `json:"can_cancel"`
+	TokensEstimated    bool      `json:"tokens_estimated"`
+}
+
+type requestControl struct {
+	cancel func() bool
 }
 
 type Route struct {
@@ -71,6 +80,7 @@ type Snapshot struct {
 type Registry struct {
 	mu                sync.RWMutex
 	requests          map[string]Request
+	controls          map[string]requestControl
 	subscribers       map[uint64]chan Event
 	nextID            uint64
 	sequence          uint64
@@ -83,6 +93,7 @@ type Registry struct {
 func NewRegistry() *Registry {
 	return &Registry{
 		requests:          map[string]Request{},
+		controls:          map[string]requestControl{},
 		subscribers:       map[uint64]chan Event{},
 		downstreamUsage:   map[string]UsageTotal{},
 		upstreamUsage:     map[string]UsageTotal{},
@@ -90,12 +101,15 @@ func NewRegistry() *Registry {
 	}
 }
 
-func (r *Registry) Start(request Request) {
+func (r *Registry) Start(request Request) bool {
 	if r == nil || request.RequestID == "" {
-		return
+		return false
 	}
 	now := time.Now()
 	request.Phase = PhaseAccepted
+	if request.InputTokens > 0 && !request.TokensEstimated {
+		request.TokensEstimated = true
+	}
 	if request.StartedAt.IsZero() {
 		request.StartedAt = now
 	}
@@ -105,13 +119,22 @@ func (r *Registry) Start(request Request) {
 	if r.requests == nil {
 		r.requests = map[string]Request{}
 	}
+	if r.controls == nil {
+		r.controls = map[string]requestControl{}
+	}
 	if r.subscribers == nil {
 		r.subscribers = map[uint64]chan Event{}
 	}
+	if current, ok := r.requests[request.RequestID]; ok && !isTerminalPhase(current.Phase) {
+		r.mu.Unlock()
+		return false
+	}
+	delete(r.controls, request.RequestID)
 	r.requests[request.RequestID] = request
 	event := r.newEventLocked("upsert", &request, "")
 	r.mu.Unlock()
 	r.publish(event)
+	return true
 }
 
 func (r *Registry) Route(requestID string, route Route) {
@@ -152,8 +175,10 @@ func (r *Registry) Finish(requestID string, phase Phase) {
 		return
 	}
 	request.Phase = phase
+	request.CanCancel = false
 	request.UpdatedAt = time.Now()
 	r.requests[requestID] = request
+	delete(r.controls, requestID)
 	event := r.newEventLocked("upsert", &request, "")
 	r.mu.Unlock()
 	r.publish(event)
@@ -164,6 +189,158 @@ func (r *Registry) Finish(requestID string, phase Phase) {
 	}
 	time.AfterFunc(retention, func() {
 		r.remove(requestID, request.UpdatedAt)
+	})
+}
+
+// AttachControl registers the live request controls after the request has
+// been accepted. The callbacks are deliberately kept outside the public
+// snapshot so the registry never serializes executable state.
+func (r *Registry) AttachControl(requestID string, cancel func() bool) {
+	if r == nil || requestID == "" {
+		return
+	}
+	r.mu.Lock()
+	request, ok := r.requests[requestID]
+	if !ok || isTerminalPhase(request.Phase) {
+		r.mu.Unlock()
+		return
+	}
+	if r.controls == nil {
+		r.controls = map[string]requestControl{}
+	}
+	r.controls[requestID] = requestControl{cancel: cancel}
+	request.CanCancel = cancel != nil
+	request.UpdatedAt = time.Now()
+	r.requests[requestID] = request
+	event := r.newEventLocked("upsert", &request, "")
+	r.mu.Unlock()
+	r.publish(event)
+}
+
+func (r *Registry) DetachControl(requestID string) {
+	if r == nil || requestID == "" {
+		return
+	}
+	r.mu.Lock()
+	delete(r.controls, requestID)
+	if request, ok := r.requests[requestID]; ok && !isTerminalPhase(request.Phase) {
+		request.CanCancel = false
+		request.UpdatedAt = time.Now()
+		r.requests[requestID] = request
+		event := r.newEventLocked("upsert", &request, "")
+		r.mu.Unlock()
+		r.publish(event)
+		return
+	}
+	r.mu.Unlock()
+}
+
+func (r *Registry) CancelRequest(requestID string) bool {
+	if r == nil || requestID == "" {
+		return false
+	}
+	r.mu.Lock()
+	request, ok := r.requests[requestID]
+	control := r.controls[requestID]
+	if !ok || isTerminalPhase(request.Phase) || control.cancel == nil {
+		r.mu.Unlock()
+		return false
+	}
+	request.Phase = PhaseCancelled
+	request.CanCancel = false
+	request.UpdatedAt = time.Now()
+	r.requests[requestID] = request
+	delete(r.controls, requestID)
+	event := r.newEventLocked("upsert", &request, "")
+	retention := r.terminalRetention
+	if retention <= 0 {
+		retention = defaultTerminalRetention
+	}
+	finishedAt := request.UpdatedAt
+	r.mu.Unlock()
+	r.publish(event)
+
+	// Publish the terminal state before invoking the callback. The callback
+	// stops the execution context, while the terminal registry state prevents
+	// a late execution update from making the request visible again.
+	control.cancel()
+	time.AfterFunc(retention, func() {
+		r.remove(requestID, finishedAt)
+	})
+	return true
+}
+
+func (r *Registry) SetFirstByteLatency(requestID string, latencyMS int64) {
+	if r == nil || requestID == "" || latencyMS <= 0 {
+		return
+	}
+	r.update(requestID, func(request *Request) {
+		if request.FirstByteLatencyMS == 0 {
+			request.FirstByteLatencyMS = latencyMS
+		}
+	})
+}
+
+func (r *Registry) SetTokenUsage(requestID string, inputTokens int64, outputTokens int64, estimated bool) {
+	if r == nil || requestID == "" {
+		return
+	}
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+	if outputTokens < 0 {
+		outputTokens = 0
+	}
+	r.update(requestID, func(request *Request) {
+		if estimated {
+			if inputTokens > 0 {
+				request.InputTokens = inputTokens
+			}
+			if outputTokens > 0 {
+				request.OutputTokens = outputTokens
+			}
+			return
+		}
+		request.InputTokens = inputTokens
+		request.OutputTokens = outputTokens
+		request.TokensEstimated = false
+	})
+}
+
+func (r *Registry) UpdateTokenEstimate(requestID string, inputTokens int64, outputTokens int64) {
+	if r == nil || requestID == "" {
+		return
+	}
+	if inputTokens <= 0 && outputTokens <= 0 {
+		return
+	}
+	r.update(requestID, func(request *Request) {
+		if inputTokens > 0 {
+			request.InputTokens = inputTokens
+		}
+		if outputTokens > request.OutputTokens {
+			request.OutputTokens = outputTokens
+		}
+		request.TokensEstimated = true
+	})
+}
+
+func (r *Registry) ResetOutputTokenEstimate(requestID string) {
+	if r == nil || requestID == "" {
+		return
+	}
+	r.update(requestID, func(request *Request) {
+		request.OutputTokens = 0
+		request.TokensEstimated = true
+	})
+}
+
+func (r *Registry) SetExactOutputTokens(requestID string, outputTokens int64) {
+	if r == nil || requestID == "" || outputTokens <= 0 {
+		return
+	}
+	r.update(requestID, func(request *Request) {
+		request.OutputTokens = outputTokens
 	})
 }
 
@@ -231,6 +408,16 @@ func (r *Registry) Snapshot() Snapshot {
 		return requests[i].StartedAt.Before(requests[j].StartedAt)
 	})
 	return Snapshot{Sequence: sequence, Requests: requests, TotalTokens: totalTokens, DownstreamUsage: downstreamUsage, UpstreamUsage: upstreamUsage}
+}
+
+func (r *Registry) Request(requestID string) (Request, bool) {
+	if r == nil || requestID == "" {
+		return Request{}, false
+	}
+	r.mu.RLock()
+	request, ok := r.requests[requestID]
+	r.mu.RUnlock()
+	return request, ok
 }
 
 func usageTotals(items map[string]UsageTotal) []UsageTotal {
@@ -344,8 +531,32 @@ func Count() int64 {
 	return current.Load()
 }
 
-func Start(request Request) {
-	defaultRegistry.Start(request)
+func Start(request Request) bool {
+	return defaultRegistry.Start(request)
+}
+
+func AttachControl(requestID string, cancel func() bool) {
+	defaultRegistry.AttachControl(requestID, cancel)
+}
+
+func CancelRequest(requestID string) bool {
+	return defaultRegistry.CancelRequest(requestID)
+}
+
+func SetFirstByteLatency(requestID string, latencyMS int64) {
+	defaultRegistry.SetFirstByteLatency(requestID, latencyMS)
+}
+
+func SetTokenUsage(requestID string, inputTokens int64, outputTokens int64, estimated bool) {
+	defaultRegistry.SetTokenUsage(requestID, inputTokens, outputTokens, estimated)
+}
+
+func UpdateTokenEstimate(requestID string, inputTokens int64, outputTokens int64) {
+	defaultRegistry.UpdateTokenEstimate(requestID, inputTokens, outputTokens)
+}
+
+func SetExactOutputTokens(requestID string, outputTokens int64) {
+	defaultRegistry.SetExactOutputTokens(requestID, outputTokens)
 }
 
 func RouteRequest(requestID string, route Route) {
@@ -370,6 +581,19 @@ func AddTokens(requestID string, tokens int64) {
 
 func CurrentSnapshot() Snapshot {
 	return defaultRegistry.Snapshot()
+}
+
+func CurrentRequest(requestID string) (Request, bool) {
+	return defaultRegistry.Request(requestID)
+}
+
+func IsActive(requestID string) bool {
+	request, ok := defaultRegistry.Request(requestID)
+	return ok && !isTerminalPhase(request.Phase)
+}
+
+func ResetOutputTokenEstimate(requestID string) {
+	defaultRegistry.ResetOutputTokenEstimate(requestID)
 }
 
 func Subscribe() (<-chan Event, func()) {

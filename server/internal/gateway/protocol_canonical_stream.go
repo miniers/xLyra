@@ -126,7 +126,7 @@ func buildStreamProtocolSpecs() map[canonicalProtocol]streamProtocolSpec {
 }
 
 func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time, from canonicalProtocol, to canonicalProtocol, options canonicalStreamOptions) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -262,19 +262,22 @@ func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http
 					return capture, headersWritten, decodeErr
 				}
 				capture.malformedLines++
-			} else if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputDefer {
-				if bufferErr := bufferPreOutputEvents(events, len(line)); bufferErr != nil {
-					return capture, false, bufferErr
-				}
 			} else {
-				if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputCommit {
-					responsesPreOutputCommitted = true
-					if flushErr := flushPreOutput(); flushErr != nil {
-						return capture, headersWritten, flushErr
+				observeCanonicalOutputEvents(&capture, events)
+				if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputDefer {
+					if bufferErr := bufferPreOutputEvents(events, len(line)); bufferErr != nil {
+						return capture, false, bufferErr
 					}
-				}
-				if encodeErr := encodeEvents(events); encodeErr != nil {
-					return capture, headersWritten, encodeErr
+				} else {
+					if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputCommit {
+						responsesPreOutputCommitted = true
+						if flushErr := flushPreOutput(); flushErr != nil {
+							return capture, headersWritten, flushErr
+						}
+					}
+					if encodeErr := encodeEvents(events); encodeErr != nil {
+						return capture, headersWritten, encodeErr
+					}
 				}
 			}
 		}
@@ -332,6 +335,26 @@ func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http
 			return capture, headersWritten, flushErr
 		}
 		return capture, headersWritten, err
+	}
+}
+
+func observeCanonicalOutputEvents(capture *streamCaptureState, events []canonicalStreamEvent) {
+	if capture == nil {
+		return
+	}
+	for _, event := range events {
+		switch event.Type {
+		case canonicalStreamEventTextDelta:
+			capture.observeOutputText(event.Delta)
+		case canonicalStreamEventToolCallDelta:
+			capture.observeOutputToolArguments(event.ToolCallArgumentsDelta)
+		case canonicalStreamEventReasoningDelta:
+			if event.ReasoningKind != "thinking_signature" {
+				capture.observeOutputText(event.Delta)
+			}
+		case canonicalStreamEventUsage:
+			capture.observeOutputUsage(event.Usage)
+		}
 	}
 }
 
@@ -865,6 +888,15 @@ func (d *anthropicMessagesStreamDecoder) DecodeLine(line []byte) ([]canonicalStr
 		switch strings.TrimSpace(anyString(event.ContentBlock["type"])) {
 		case "thinking":
 			d.thinkingByIndex[event.Index] = true
+			if thinking := anyString(event.ContentBlock["thinking"]); thinking != "" {
+				return []canonicalStreamEvent{{
+					Type:               canonicalStreamEventReasoningDelta,
+					Delta:              thinking,
+					ReasoningKind:      "thinking",
+					ReasoningEventName: event.Type,
+					ReasoningIndex:     event.Index,
+				}}, nil
+			}
 			return nil, nil
 		case "redacted_thinking":
 			d.thinkingByIndex[event.Index] = true

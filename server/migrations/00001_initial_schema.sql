@@ -95,6 +95,7 @@ CREATE TABLE api_keys (
   model_policy TEXT NOT NULL DEFAULT 'allow_all' CHECK (model_policy IN ('allow_all', 'allow_list')),
   site_policy TEXT NOT NULL DEFAULT 'allow_all' CHECK (site_policy IN ('allow_all', 'allow_list')),
   model_mappings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  gateway_config JSONB NOT NULL DEFAULT '{}'::jsonb,
   quota_limit NUMERIC(18,8),
   quota_used NUMERIC(18,8) NOT NULL DEFAULT 0,
   quota_total_used NUMERIC(18,8) NOT NULL DEFAULT 0,
@@ -279,6 +280,12 @@ CREATE TABLE canonical_models (
   category TEXT NOT NULL DEFAULT 'chat',
   capabilities JSONB NOT NULL DEFAULT '{}'::jsonb,
   status TEXT NOT NULL DEFAULT 'active',
+  routing_preference TEXT NOT NULL DEFAULT 'default',
+  routing_exploration_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  routing_exploration_new_trials_per_site INTEGER NOT NULL DEFAULT 5,
+  routing_exploration_idle_after_hours INTEGER NOT NULL DEFAULT 24,
+  routing_exploration_idle_trials_per_site INTEGER NOT NULL DEFAULT 2,
+  routing_exploration_reset_at TIMESTAMPTZ,
   input_price NUMERIC(18,8),
   output_price NUMERIC(18,8),
   cache_read_ratio NUMERIC(18,8),
@@ -470,6 +477,24 @@ CREATE INDEX route_cooldowns_site_model_id_idx ON route_cooldowns (site_model_id
 CREATE INDEX route_cooldowns_site_credential_id_idx ON route_cooldowns (site_credential_id, active_until DESC);
 CREATE INDEX route_cooldowns_active_idx ON route_cooldowns (active_until DESC) WHERE cleared_at IS NULL;
 
+CREATE TABLE route_exploration_states (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  canonical_model_id UUID NOT NULL REFERENCES canonical_models(id) ON DELETE CASCADE,
+  site_model_id UUID NOT NULL REFERENCES site_models(id) ON DELETE CASCADE,
+  cycle_kind TEXT NOT NULL,
+  cycle_key TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  target INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(canonical_model_id, site_model_id)
+);
+
+CREATE INDEX route_exploration_states_model_idx ON route_exploration_states (canonical_model_id);
+CREATE INDEX route_exploration_states_last_attempt_idx ON route_exploration_states (last_attempt_at DESC);
+
 CREATE TABLE request_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   request_id TEXT NOT NULL UNIQUE,
@@ -496,6 +521,7 @@ CREATE INDEX request_logs_canonical_model_created_idx ON request_logs (canonical
 CREATE INDEX request_logs_error_type_created_idx ON request_logs (error_type, created_at DESC);
 CREATE INDEX request_logs_site_id_idx ON request_logs (site_id);
 CREATE INDEX request_logs_parent_request_id_idx ON request_logs (parent_request_id);
+CREATE INDEX request_logs_site_model_created_idx ON request_logs (site_model_id, created_at DESC);
 
 CREATE TABLE usage_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -632,6 +658,7 @@ CREATE TABLE health_snapshots (
   success BOOLEAN NOT NULL DEFAULT FALSE,
   status_code INTEGER,
   latency_ms INTEGER,
+  first_byte_latency_ms INTEGER,
   error_type TEXT,
   error_message TEXT,
   checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -749,6 +776,10 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER route_cooldowns_set_updated_at
 BEFORE UPDATE ON route_cooldowns
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER route_exploration_states_set_updated_at
+BEFORE UPDATE ON route_exploration_states
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER gateway_rate_limits_set_updated_at

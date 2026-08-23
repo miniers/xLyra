@@ -92,7 +92,7 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key", "X-Access-Token", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key", "X-Access-Token", "X-CSRF-Token", "X-Request-ID"},
 		ExposedHeaders:   []string{gateway.RouteSiteHeader},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -161,6 +161,7 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				})
 				protected.Get("/traffic-flow/topology", adminHandler.TrafficFlowTopology)
 				protected.Get("/traffic-flow/stream", adminHandler.TrafficFlowStream)
+				protected.Post("/traffic-flow/requests/{requestID}/cancel", adminHandler.CancelTrafficFlowRequest)
 				protected.Get("/settings/site-groups", adminHandler.ListSiteGroups)
 				protected.Post("/settings/site-groups", adminHandler.CreateSiteGroup)
 				protected.Get("/settings/site-groups/{siteGroupID}", adminHandler.GetSiteGroup)
@@ -250,6 +251,9 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Delete("/models/{modelID}", adminHandler.DeleteModel)
 				protected.Get("/models/{modelID}/matrix", adminHandler.GetModelMatrix)
 				protected.Put("/models/{modelID}/pricing", adminHandler.UpdateModelPricing)
+				protected.Put("/models/{modelID}/routing-preference", adminHandler.UpdateModelRoutingPreference)
+				protected.Put("/models/{modelID}/routing-exploration", adminHandler.UpdateModelRoutingExploration)
+				protected.Post("/models/{modelID}/routing-exploration/reset", adminHandler.ResetModelRoutingExploration)
 				protected.Post("/models/{modelID}/pricing/reset", adminHandler.ResetModelPricing)
 				protected.Post("/models/{modelID}/aliases", adminHandler.CreateModelAlias)
 				protected.Delete("/models/{modelID}/aliases/{aliasID}", adminHandler.DeleteModelAlias)

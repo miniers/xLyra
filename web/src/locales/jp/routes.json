@@ -41,7 +41,13 @@
     "toast": {
       "modelToggleFailed": "モデル切り替えの更新に失敗しました",
       "cooldownCleared": "クールダウンを解除しました",
-      "cooldownClearFailed": "クールダウン解除に失敗しました"
+      "cooldownClearFailed": "クールダウン解除に失敗しました",
+      "preferenceUpdated": "スコア設定を更新しました",
+      "preferenceUpdateFailed": "スコア設定の更新に失敗しました",
+      "explorationUpdated": "試行設定を更新しました",
+      "explorationUpdateFailed": "試行設定の更新に失敗しました",
+      "explorationReset": "全サイトの試行を再開しました",
+      "explorationResetFailed": "試行の再開に失敗しました"
     }
   },
   "details": {
@@ -56,6 +62,59 @@
       "fallbackHint": "設定済みサイトモデルを下に表示しています",
       "current": "現在",
       "routable": "ルーティング可能 #{{rank}}"
+    },
+    "scores": {
+      "title": "スコアの内訳",
+      "loadFailed": "スコアの読み込みに失敗しました",
+      "noCandidates": "候補スコアがありません",
+      "rank": "候補 #{{rank}}",
+      "badge": "スコア {{score}}",
+      "tooltip": "合計 {{total}} · サイト {{site}} · モデル {{model}}",
+      "total": "合計 {{score}}",
+      "site": "サイト {{score}}",
+      "model": "モデル {{score}}",
+      "unavailable": "スコアの内訳は利用できません",
+      "components": {
+        "siteHealth": "サイトヘルス",
+        "siteSuccessRate": "サイト成功率",
+        "siteLatency": "サイトレイテンシ",
+        "modelSuccessRate": "モデル成功率",
+        "modelLatency": "モデルレイテンシ",
+        "modelFirstByteLatency": "モデルの初回バイトレイテンシ",
+        "modelCacheHitRate": "モデルキャッシュヒット率",
+        "apiKeyCapacity": "キー容量",
+        "price": "価格"
+      }
+    },
+    "preference": {
+      "title": "モデルスコア設定",
+      "description": "設定により候補のスコアと順序が変わります。",
+      "default": "デフォルト",
+      "value": "コストパフォーマンス",
+      "speed": "速度"
+    },
+    "exploration": {
+      "title": "割当試行",
+      "description": "モデル×サイトモデルごとに少数の実リクエストを送り、結果を正式スコアに反映します。既存のクールダウンとフェイルオーバーを使用します。",
+      "enabled": "割当試行を有効化",
+      "newTrials": "新規サイトの回数",
+      "idleAfterHours": "アイドル判定（時間）",
+      "idleTrials": "アイドルサイトの回数",
+      "save": "設定を保存",
+      "reset": "全サイトを再開",
+      "progress": "サイトの進捗",
+      "noCandidates": "試行可能なサイトモデルがありません",
+      "validationTrials": "新規サイト回数は1〜100の整数です",
+      "validationIdleHours": "アイドル時間は1〜720の整数です",
+      "validationIdleTrials": "アイドルサイト回数は1〜100の整数です",
+      "status": {
+        "normal": "通常",
+        "pending": "待機中",
+        "in_progress": "試行中",
+        "completed": "完了",
+        "cooldown": "クールダウン中",
+        "disabled": "無効"
+      }
     },
     "coverage": {
       "title": "サイトモデル",

@@ -124,6 +124,10 @@
       "xlyraApiKeyHint": "/v1/models からこのキーで利用可能なモデルを取得します。",
       "routingPriority": "ルーティング重み",
       "routingPriorityHint": "デフォルト 1.0、範囲 1.0 - 5.0。重みが高いほど優先的にルーティングされます。",
+      "maxSameSiteCredentialRetries": "同一サイト Credential 再試行回数",
+      "maxSameSiteCredentialRetriesHint": "空欄で全体設定を継承し、0 を入力するとこのサイトでは同一サイト再試行を無効にします。",
+      "firstByteTimeout": "サイトの最初のバイトのタイムアウト（ms）",
+      "firstByteTimeoutHint": "空欄で全体設定を継承し、0 を入力するとこのサイトではタイムアウトを無効にします。",
       "systemToken": "システム認証トークン",
       "systemTokenPlaceholder": "NewAPI システムレベルアクセストークン",
       "systemTokenHint": "サイトとモデルを管理するためのシステムレベル認証トークンです。",
@@ -188,7 +192,9 @@
       "userIdRequired": "ユーザー ID を入力してください",
       "userIdNumeric": "ユーザー ID は数字で入力してください",
       "headerNameRequired": "ヘッダー名を入力してください",
-      "urlContainsV1": "/v1 を含める必要はありません。自動的に追加されます"
+      "urlContainsV1": "/v1 を含める必要はありません。自動的に追加されます",
+      "gatewayRetriesInvalid": "同一サイト Credential 再試行回数は 0〜20 の整数にしてください",
+      "gatewayTimeoutInvalid": "サイトの最初のバイトのタイムアウトは 0〜600000 の整数にしてください"
     },
     "actions": {
       "save": "変更を保存",

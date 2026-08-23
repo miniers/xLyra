@@ -236,7 +236,7 @@ func (a providerAnthropicMessagesProtocolAdapter) TransformBufferedResponse(stat
 
 func (a providerAnthropicMessagesProtocolAdapter) ProxyStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time, candidate routeengine.Candidate) (streamCaptureState, bool, error) {
 	if a.downstreamProtocol != "" && a.downstreamProtocol != canonicalProtocolAnthropicMessages {
-		inspector := newProviderAnthropicStreamInspector()
+		inspector := newProviderAnthropicStreamInspector(false)
 		return proxyCanonicalStream(ctx, w, resp, startedAt, canonicalProtocolAnthropicMessages, a.downstreamProtocol, canonicalStreamOptions{
 			UpstreamLineInspect: inspector.inspect,
 			Candidate:           candidate,
@@ -1177,11 +1177,22 @@ func inspectAnthropicMessagesStreamLine(line []byte, capture *streamCaptureState
 	var event struct {
 		Type    string                    `json:"type"`
 		Message map[string]any            `json:"message"`
+		Delta   map[string]any            `json:"delta"`
 		Usage   anthropicMessageUsageBody `json:"usage"`
 		Error   map[string]any            `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(data), &event); err != nil {
 		return
+	}
+	if event.Type == "content_block_delta" {
+		switch strings.TrimSpace(anyString(event.Delta["type"])) {
+		case "text_delta":
+			capture.observeOutputText(anyString(event.Delta["text"]))
+		case "thinking_delta":
+			capture.observeOutputText(anyString(event.Delta["thinking"]))
+		case "input_json_delta":
+			capture.observeOutputToolArguments(anyString(event.Delta["partial_json"]))
+		}
 	}
 	switch event.Type {
 	case "message_start":
@@ -1189,6 +1200,7 @@ func inspectAnthropicMessagesStreamLine(line []byte, capture *streamCaptureState
 			usageBody := anthropicMessageUsageBody{}
 			if encoded, err := json.Marshal(messageUsage); err == nil && json.Unmarshal(encoded, &usageBody) == nil {
 				capture.usage = completionUsageFromGatewayUsage(gatewayUsageFromAnthropicUsage(usageBody))
+				capture.observeOutputUsage(capture.usage)
 			}
 		}
 	case "message_delta":
@@ -1205,6 +1217,7 @@ func inspectAnthropicMessagesStreamLine(line []byte, capture *streamCaptureState
 			}
 			current.TotalTokens = 0
 			capture.usage = current.normalized()
+			capture.observeOutputUsage(capture.usage)
 		}
 	case "message_stop":
 		capture.sawDone = true

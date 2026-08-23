@@ -227,6 +227,11 @@ func attemptMetadata(
 		"billing_mode":       emptyToNil(result.billingMode),
 		"pricing":            pricingMetadata(result.pricing),
 		"cost_calculation":   costCalculation,
+		"routing_exploration": map[string]any{
+			"enabled":  candidate.Exploration.Enabled,
+			"mode":     emptyToNil(candidate.Exploration.Mode),
+			"reserved": candidate.Exploration.Reserved,
+		},
 	}
 	if effort, ok := reasoningEffortFromContext(ctx); ok {
 		meta["reasoning_effort"] = effort

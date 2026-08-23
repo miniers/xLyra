@@ -28,6 +28,10 @@ export type TrafficFlowRequest = {
   phase: TrafficFlowPhase
   started_at: string
   updated_at: string
+  input_tokens: number
+  output_tokens: number
+  can_cancel: boolean
+  tokens_estimated: boolean
 }
 
 export type TrafficFlowSnapshot = {
@@ -62,4 +66,10 @@ export async function getTrafficFlowTopology() {
 export function createTrafficFlowStream() {
   const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
   return new EventSource(`${base}/api/v1/traffic-flow/stream`, { withCredentials: true })
+}
+
+export async function cancelTrafficFlowRequest(requestID: string) {
+  return apiFetch<{ request_id: string; action: 'cancel'; accepted: boolean }>(`/api/v1/traffic-flow/requests/${encodeURIComponent(requestID)}/cancel`, {
+    method: 'POST',
+  })
 }

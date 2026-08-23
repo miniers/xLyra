@@ -41,7 +41,13 @@
     "toast": {
       "modelToggleFailed": "模型开关更新失败",
       "cooldownCleared": "冷却已清理",
-      "cooldownClearFailed": "冷却清理失败"
+      "cooldownClearFailed": "冷却清理失败",
+      "preferenceUpdated": "评分偏好已更新",
+      "preferenceUpdateFailed": "评分偏好更新失败",
+      "explorationUpdated": "试运行配置已更新",
+      "explorationUpdateFailed": "试运行配置更新失败",
+      "explorationReset": "已重新开始全部站点试运行",
+      "explorationResetFailed": "重新开始试运行失败"
     }
   },
   "details": {
@@ -56,6 +62,59 @@
       "fallbackHint": "下面继续展示已配置的站点模型",
       "current": "当前使用",
       "routable": "可路由 #{{rank}}"
+    },
+    "scores": {
+      "title": "评分明细",
+      "loadFailed": "评分读取失败",
+      "noCandidates": "暂无候选评分",
+      "rank": "候选 #{{rank}}",
+      "badge": "评分 {{score}}",
+      "tooltip": "总分 {{total}} · 站点 {{site}} · 模型 {{model}}",
+      "total": "总分 {{score}}",
+      "site": "站点评分 {{score}}",
+      "model": "模型评分 {{score}}",
+      "unavailable": "评分明细不可用",
+      "components": {
+        "siteHealth": "站点健康",
+        "siteSuccessRate": "站点成功率",
+        "siteLatency": "站点延迟",
+        "modelSuccessRate": "模型成功率",
+        "modelLatency": "模型延迟",
+        "modelFirstByteLatency": "模型首字延迟",
+        "modelCacheHitRate": "模型缓存命中率",
+        "apiKeyCapacity": "Key 容量",
+        "price": "价格"
+      }
+    },
+    "preference": {
+      "title": "模型评分偏好",
+      "description": "偏好会影响候选路由的评分和排序。",
+      "default": "默认",
+      "value": "性价比",
+      "speed": "速度"
+    },
+    "exploration": {
+      "title": "配额试运行",
+      "description": "按模型×站点模型分配少量真实请求，结果计入正式评分。失败仍按现有规则冷却并支持 failover。",
+      "enabled": "开启配额试运行",
+      "newTrials": "新站点每站次数",
+      "idleAfterHours": "闲置超过（小时）",
+      "idleTrials": "闲置站点每站次数",
+      "save": "保存配置",
+      "reset": "重新开始全部站点",
+      "progress": "站点进度",
+      "noCandidates": "暂无可试运行的站点模型",
+      "validationTrials": "新站点次数需为 1–100 的整数",
+      "validationIdleHours": "闲置小时需为 1–720 的整数",
+      "validationIdleTrials": "闲置站点次数需为 1–100 的整数",
+      "status": {
+        "normal": "正常",
+        "pending": "待试运行",
+        "in_progress": "试运行中",
+        "completed": "已完成",
+        "cooldown": "冷却中",
+        "disabled": "已关闭"
+      }
     },
     "coverage": {
       "title": "站点模型",

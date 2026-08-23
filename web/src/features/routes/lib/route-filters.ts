@@ -83,6 +83,19 @@ export function compareRouteOverviewItems(
   sortMode: SortMode,
   canonicalMap: Map<string, CanonicalModelItem>,
 ) {
+  if (sortMode === 'default') {
+    const aHasData = a.traffic_24h.request_count > 0
+    const bHasData = b.traffic_24h.request_count > 0
+    if (aHasData !== bHasData) return aHasData ? -1 : 1
+
+    if (aHasData && bHasData) {
+      const successDiff = successRate(b) - successRate(a)
+      if (successDiff !== 0) return successDiff
+      const requestDiff = b.traffic_24h.request_count - a.traffic_24h.request_count
+      if (requestDiff !== 0) return requestDiff
+    }
+  }
+
   if (sortMode === 'success_asc' || sortMode === 'success_desc') {
     const diff = successRate(a) - successRate(b)
     if (diff !== 0) return sortMode === 'success_asc' ? diff : -diff

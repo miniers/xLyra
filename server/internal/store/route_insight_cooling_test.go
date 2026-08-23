@@ -178,20 +178,22 @@ func TestRouteInsightCandidateHelpersKeepRecentGatewayHealthAndDefaultPricing(t 
 	row := RouteCandidateRow{SiteModelID: modelID}
 	fillModelHealth(&row, []HealthSnapshot{
 		{
-			SiteModelID: uuid.NullUUID{UUID: modelID, Valid: true},
-			Scope:       "model",
-			Source:      "gateway",
-			Success:     true,
-			LatencyMS:   sql.NullInt64{Int64: 100, Valid: true},
-			CheckedAt:   now.Add(-time.Hour),
+			SiteModelID:        uuid.NullUUID{UUID: modelID, Valid: true},
+			Scope:              "model",
+			Source:             "gateway",
+			Success:            true,
+			LatencyMS:          sql.NullInt64{Int64: 100, Valid: true},
+			FirstByteLatencyMS: sql.NullInt64{Int64: 120, Valid: true},
+			CheckedAt:          now.Add(-time.Hour),
 		},
 		{
-			SiteModelID: uuid.NullUUID{UUID: modelID, Valid: true},
-			Scope:       "model",
-			Source:      "gateway",
-			Success:     false,
-			LatencyMS:   sql.NullInt64{Int64: 300, Valid: true},
-			CheckedAt:   now.Add(-2 * time.Hour),
+			SiteModelID:        uuid.NullUUID{UUID: modelID, Valid: true},
+			Scope:              "model",
+			Source:             "gateway",
+			Success:            false,
+			LatencyMS:          sql.NullInt64{Int64: 300, Valid: true},
+			FirstByteLatencyMS: sql.NullInt64{Int64: 280, Valid: true},
+			CheckedAt:          now.Add(-2 * time.Hour),
 		},
 		{SiteModelID: uuid.NullUUID{UUID: otherModelID, Valid: true}, Scope: "model", Source: "gateway", CheckedAt: now},
 		{SiteModelID: uuid.NullUUID{UUID: modelID, Valid: true}, Scope: "site", Source: "gateway", CheckedAt: now},
@@ -200,7 +202,8 @@ func TestRouteInsightCandidateHelpersKeepRecentGatewayHealthAndDefaultPricing(t 
 	})
 
 	if row.ModelRequestCount != 2 || !row.ModelSuccessRate.Valid || row.ModelSuccessRate.Float64 != 0.5 ||
-		!row.ModelAvgLatencyMS.Valid || row.ModelAvgLatencyMS.Int64 != 200 {
+		!row.ModelAvgLatencyMS.Valid || row.ModelAvgLatencyMS.Int64 != 200 ||
+		row.ModelFirstByteRequestCount != 2 || !row.ModelAvgFirstByteLatencyMS.Valid || row.ModelAvgFirstByteLatencyMS.Int64 != 200 {
 		t.Fatalf("model health row = %#v, want only recent matching gateway model snapshots", row)
 	}
 

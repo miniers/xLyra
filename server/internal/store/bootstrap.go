@@ -215,9 +215,43 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("ensure canonical_models.audio_completion_ratio column: %w", err)
 		}
 	}
+	if !migrator.HasColumn(&CanonicalModel{}, "RoutingPreference") {
+		if err := migrator.AddColumn(&CanonicalModel{}, "RoutingPreference"); err != nil {
+			return fmt.Errorf("ensure canonical_models.routing_preference column: %w", err)
+		}
+	}
+	for _, field := range []string{"RoutingExplorationEnabled", "RoutingExplorationNewTrialsPerSite", "RoutingExplorationIdleAfterHours", "RoutingExplorationIdleTrialsPerSite", "RoutingExplorationResetAt"} {
+		if migrator.HasColumn(&CanonicalModel{}, field) {
+			continue
+		}
+		if err := migrator.AddColumn(&CanonicalModel{}, field); err != nil {
+			return fmt.Errorf("ensure canonical_models routing exploration column %s: %w", field, err)
+		}
+	}
+	if !migrator.HasTable(&RouteExplorationState{}) {
+		if err := migrator.CreateTable(&RouteExplorationState{}); err != nil {
+			return fmt.Errorf("ensure route_exploration_states table: %w", err)
+		}
+	}
+	if err := ensureSchemaIndex(migrator, &RouteExplorationState{}, "route_exploration_states_model_idx"); err != nil {
+		return err
+	}
+	if err := ensureSchemaIndex(migrator, &RouteExplorationState{}, "route_exploration_states_last_attempt_idx"); err != nil {
+		return err
+	}
+	if !migrator.HasColumn(&HealthSnapshot{}, "FirstByteLatencyMS") {
+		if err := migrator.AddColumn(&HealthSnapshot{}, "FirstByteLatencyMS"); err != nil {
+			return fmt.Errorf("ensure health_snapshots.first_byte_latency_ms column: %w", err)
+		}
+	}
 	if !migrator.HasColumn(&APIKey{}, "ImageToolBridge") {
 		if err := migrator.AddColumn(&APIKey{}, "ImageToolBridge"); err != nil {
 			return fmt.Errorf("ensure api_keys.image_tool_bridge column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&APIKey{}, "GatewayConfig") {
+		if err := migrator.AddColumn(&APIKey{}, "GatewayConfig"); err != nil {
+			return fmt.Errorf("ensure api_keys.gateway_config column: %w", err)
 		}
 	}
 	for _, field := range []string{
@@ -267,6 +301,9 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 	if err := ensureSchemaIndex(migrator, &RequestLog{}, "request_logs_parent_request_id_idx"); err != nil {
+		return err
+	}
+	if err := ensureSchemaIndex(migrator, &RequestLog{}, "request_logs_site_model_created_idx"); err != nil {
 		return err
 	}
 	if migrator.HasIndex(&RequestLog{}, "request_logs_parent_request_id_metadata_idx") {
@@ -624,6 +661,7 @@ func bootstrapModels() []any {
 		&SitePricingGroup{},
 		&SiteModelPricing{},
 		&RouteCooldown{},
+		&RouteExplorationState{},
 		&RequestLog{},
 		&UsageRecord{},
 		&RequestUsageDailySummary{},

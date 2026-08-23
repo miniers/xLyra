@@ -444,6 +444,10 @@ func routerServiceWithRepositoryRows(t *testing.T, rows routerRepositoryRows) *S
 }
 
 func routerAssignRepositoryRows(tx *gorm.DB, rows routerRepositoryRows) {
+	if strings.Contains(strings.ToLower(tx.Statement.Table), "usage_records") || strings.Contains(strings.ToLower(tx.Statement.SQL.String()), "usage_records") {
+		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
+		return
+	}
 	if tx.Statement.Schema == nil {
 		return
 	}
@@ -470,6 +474,12 @@ func routerAssignRepositoryRows(tx *gorm.DB, rows routerRepositoryRows) {
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.keyStates)
 	case "SiteModelPricing":
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.pricings)
+	case "UsageRecord":
+		// Route candidate cache metrics use an aggregate Scan over UsageRecord.
+		// Keep the offline repository fixture deterministic without a live database.
+		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
+	case "RouteModelCacheStats":
+		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
 	case "RouteCooldown":
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.cooldowns)
 	}

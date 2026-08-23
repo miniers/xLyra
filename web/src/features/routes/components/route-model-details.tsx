@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, XCircle } from 'lucide-react'
+import { LoaderCircle, RotateCcw, Save, XCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import {
@@ -16,9 +18,10 @@ import {
   type RouteCandidateItem,
   type RouteCooldown,
   type RouteOverviewItem,
+  type RouteScoreProfile,
   type RouteTrace,
 } from '@/features/routes/api/routes'
-import { getCanonicalModelMatrix, sitesQueryKeys, type Site, type SiteAPIKey, type SiteModel } from '@/features/sites/api/sites'
+import { getCanonicalModelMatrix, sitesQueryKeys, type CanonicalModelItem, type RoutingExplorationConfig, type RoutingPreference, type Site, type SiteAPIKey, type SiteModel } from '@/features/sites/api/sites'
 import { findCurrentRouteChannel, routeChannelRowsFromMatrix, routeChannelStatus, routeChannelSwitchDisabledReason } from '@/features/routes/lib/route-channels'
 import {
   formatCooldownScope,
@@ -32,6 +35,7 @@ import {
   routeCooldownSourceLabel,
   routeCooldownTargetLabel,
 } from '@/features/routes/lib/route-format'
+import { formatRouteScore, routeModelScore, routeSiteScore } from '@/features/routes/lib/route-score'
 import type { PendingChannelState, RouteChannelRow } from '@/features/routes/lib/types'
 
 const EMPTY_TRACES: RouteTrace[] = []
@@ -42,6 +46,7 @@ type TracesQuery = UseQueryResult<Awaited<ReturnType<typeof listRouteTraces>>>
 
 export function RouteModelDetails({
   item,
+  canonical,
   selectionQuery,
   candidatesQuery,
   tracesQuery,
@@ -54,9 +59,15 @@ export function RouteModelDetails({
   pendingChannelState,
   onToggleChannel,
   onClearCooldown,
+  onRoutingPreferenceChange,
+  routingPreferencePending = false,
+  onRoutingExplorationChange,
+  onRoutingExplorationReset,
+  routingExplorationPending = false,
   compact = false,
 }: {
   item?: RouteOverviewItem
+  canonical?: CanonicalModelItem
   selectionQuery: SelectionQuery
   candidatesQuery: CandidatesQuery
   tracesQuery: TracesQuery
@@ -69,10 +80,16 @@ export function RouteModelDetails({
   pendingChannelState?: PendingChannelState
   onToggleChannel: (row: RouteChannelRow, enabled: boolean) => void
   onClearCooldown: (item: RouteCooldown) => void
+  onRoutingPreferenceChange?: (preference: RoutingPreference) => void
+  routingPreferencePending?: boolean
+  onRoutingExplorationChange?: (config: Omit<RoutingExplorationConfig, 'reset_at'>) => void
+  onRoutingExplorationReset?: () => void
+  routingExplorationPending?: boolean
   compact?: boolean
 }) {
   const { t } = useTranslation('routes')
   const modelId = item?.canonical_model.id || selectionQuery.data?.canonical_model.id || ''
+  const currentPreference = canonical?.routing_preference ?? selectionQuery.data?.canonical_model.routing_preference ?? 'default'
   const matrixQuery = useQuery({
     queryKey: [...sitesQueryKeys.all, 'routes-matrix', modelId],
     queryFn: () => getCanonicalModelMatrix(modelId),
@@ -110,6 +127,22 @@ export function RouteModelDetails({
         <TabsContent value="routing">
           <div className="space-y-5">
             <CurrentRouteSection query={selectionQuery} currentChannel={currentChannel} t={t} />
+            <RoutingPreferenceSection
+              value={currentPreference}
+              disabled={!onRoutingPreferenceChange || routingPreferencePending}
+              onChange={onRoutingPreferenceChange}
+              t={t}
+            />
+            <RoutingExplorationSection
+              key={`${modelId}:${canonical?.routing_exploration?.reset_at ?? ''}:${canonical?.routing_exploration?.enabled ?? ''}`}
+              config={canonical?.routing_exploration ?? selectionQuery.data?.canonical_model.routing_exploration}
+              candidates={candidatesQuery.data?.items ?? []}
+              disabled={routingExplorationPending}
+              onChange={onRoutingExplorationChange}
+              onReset={onRoutingExplorationReset}
+              t={t}
+            />
+            <CandidateScoresSection key={currentPreference} query={candidatesQuery} currentPreference={currentPreference} t={t} />
             <UpstreamCoverageSection
               rows={channelRows}
               loading={matrixQuery.isLoading || candidatesQuery.isLoading}
@@ -136,6 +169,313 @@ export function RouteModelDetails({
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+const ROUTING_PREFERENCES: RoutingPreference[] = ['default', 'value', 'speed']
+
+function CandidateScoresSection({
+  query,
+  currentPreference,
+  t,
+}: {
+  query: CandidatesQuery
+  currentPreference: RoutingPreference
+  t: TFunction
+}) {
+  const [selectedPreference, setSelectedPreference] = useState<RoutingPreference>(currentPreference)
+  const items = query.data?.items ?? []
+
+  const preferenceItems = ROUTING_PREFERENCES.map((preference) => ({
+    preference,
+    label: t(`details.preference.${preference}`),
+    total: preferenceTotal(items, preference),
+  }))
+
+  return (
+    <div className="space-y-3">
+      <SectionTitle>{t('details.scores.title')}</SectionTitle>
+      {query.isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : query.isError ? (
+        <SoftEmpty text={t('details.scores.loadFailed')} />
+      ) : items.length ? (
+        <Tabs
+          value={selectedPreference}
+          onValueChange={(value) => setSelectedPreference(value as RoutingPreference)}
+        >
+          <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
+            {preferenceItems.map(({ preference, label, total }) => (
+              <TabsTrigger key={preference} value={preference} className="gap-1.5 px-3 py-2 text-xs">
+                <span>{label}</span>
+                <span className="tabular-nums text-muted-soft">{formatRouteScore(total)}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {ROUTING_PREFERENCES.map((preference) => (
+            <TabsContent key={preference} value={preference}>
+              <div className="space-y-2">
+                {sortCandidatesForPreference(items, preference).map((candidate) => (
+                  <CandidateScoreLine
+                    key={`${preference}-${candidate.model.site_model_id}`}
+                    candidate={candidate}
+                    profile={candidateScoreProfile(candidate, preference)}
+                    t={t}
+                  />
+                ))}
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      ) : (
+        <SoftEmpty text={t('details.scores.noCandidates')} />
+      )}
+    </div>
+  )
+}
+
+function CandidateScoreLine({
+  candidate,
+  profile,
+  t,
+}: {
+  candidate: RouteCandidateItem
+  profile?: RouteScoreProfile
+  t: TFunction
+}) {
+  const scoreBreakdown = profile?.breakdown
+  const breakdownItems = ([
+    [t('details.scores.components.siteHealth'), scoreBreakdown?.site_health],
+    [t('details.scores.components.siteSuccessRate'), scoreBreakdown?.site_success_rate],
+    [t('details.scores.components.siteLatency'), scoreBreakdown?.site_latency],
+    [t('details.scores.components.modelSuccessRate'), scoreBreakdown?.model_success_rate],
+    [t('details.scores.components.modelLatency'), scoreBreakdown?.model_latency],
+    [t('details.scores.components.modelFirstByteLatency'), scoreBreakdown?.model_first_byte_latency],
+    [t('details.scores.components.modelCacheHitRate'), scoreBreakdown?.model_cache_hit_rate],
+    [t('details.scores.components.apiKeyCapacity'), scoreBreakdown?.api_key_capacity],
+    [t('details.scores.components.price'), scoreBreakdown?.price],
+  ] as Array<[string, number | undefined]>).filter(([, value]) => typeof value === 'number')
+
+  return (
+    <div className="rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="neutral">{t('details.scores.rank', { rank: profile?.rank ?? candidate.rank })}</Badge>
+            <Badge variant="accent">{t('details.scores.total', { score: formatRouteScore(profile?.score) })}</Badge>
+            <Badge variant="neutral">P{candidate.site.routing_priority}</Badge>
+            <span className="min-w-0 break-all text-sm font-medium text-foreground">
+              {candidate.site.name} → {candidate.model.upstream_model_name}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-soft">
+            <span>{t('details.scores.site', { score: formatRouteScore(routeSiteScore({ score_breakdown: scoreBreakdown })) })}</span>
+            <span>{t('details.scores.model', { score: formatRouteScore(routeModelScore({ score_breakdown: scoreBreakdown })) })}</span>
+          </div>
+        </div>
+      </div>
+      {breakdownItems.length ? (
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-soft">
+          {breakdownItems.map(([label, value]) => (
+            <span key={label}>{label} {formatRouteScore(value)}</span>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 text-xs text-muted-soft">{t('details.scores.unavailable')}</div>
+      )}
+    </div>
+  )
+}
+
+function candidateScoreProfile(candidate: RouteCandidateItem, preference: RoutingPreference) {
+  const profile = candidate.score_profiles?.[preference]
+  if (profile) return profile
+  if (preference !== 'default') return undefined
+  return {
+    rank: candidate.rank,
+    score: candidate.score,
+    breakdown: candidate.score_breakdown ?? {},
+  }
+}
+
+function preferenceTotal(items: RouteCandidateItem[], preference: RoutingPreference) {
+  const ranked = items
+    .map((candidate) => candidateScoreProfile(candidate, preference))
+    .filter((profile): profile is RouteScoreProfile => Boolean(profile))
+    .sort((a, b) => a.rank - b.rank)
+  return ranked[0]?.score
+}
+
+function sortCandidatesForPreference(items: RouteCandidateItem[], preference: RoutingPreference) {
+  return items.toSorted((a, b) => {
+    const aProfile = candidateScoreProfile(a, preference)
+    const bProfile = candidateScoreProfile(b, preference)
+    if (aProfile && bProfile && aProfile.rank !== bProfile.rank) return aProfile.rank - bProfile.rank
+    if (aProfile && bProfile && aProfile.score !== bProfile.score) return bProfile.score - aProfile.score
+    return a.rank - b.rank
+  })
+}
+
+function RoutingPreferenceSection({
+  value,
+  disabled,
+  onChange,
+  t,
+}: {
+  value: RoutingPreference
+  disabled: boolean
+  onChange?: (preference: RoutingPreference) => void
+  t: TFunction
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-foreground">{t('details.preference.title')}</div>
+        <div className="mt-1 text-xs text-muted-soft">{t('details.preference.description')}</div>
+      </div>
+      <Select
+        value={value}
+        disabled={disabled}
+        onValueChange={(next) => onChange?.(next as RoutingPreference)}
+      >
+        <SelectTrigger className="w-36">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent searchable={false} widthMode="content">
+          <SelectItem value="default">{t('details.preference.default')}</SelectItem>
+          <SelectItem value="value">{t('details.preference.value')}</SelectItem>
+          <SelectItem value="speed">{t('details.preference.speed')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+const DEFAULT_EXPLORATION_CONFIG: Omit<RoutingExplorationConfig, 'reset_at'> = {
+  enabled: false,
+  new_trials_per_site: 5,
+  idle_after_hours: 24,
+  idle_trials_per_site: 2,
+}
+
+function RoutingExplorationSection({
+  config,
+  candidates,
+  disabled,
+  onChange,
+  onReset,
+  t,
+}: {
+  config?: RoutingExplorationConfig
+  candidates: RouteCandidateItem[]
+  disabled: boolean
+  onChange?: (config: Omit<RoutingExplorationConfig, 'reset_at'>) => void
+  onReset?: () => void
+  t: TFunction
+}) {
+  const initial = config ? { ...DEFAULT_EXPLORATION_CONFIG, ...config } : DEFAULT_EXPLORATION_CONFIG
+  const [enabled, setEnabled] = useState(initial.enabled)
+  const [newTrials, setNewTrials] = useState(String(initial.new_trials_per_site))
+  const [idleAfterHours, setIdleAfterHours] = useState(String(initial.idle_after_hours))
+  const [idleTrials, setIdleTrials] = useState(String(initial.idle_trials_per_site))
+  const [error, setError] = useState('')
+
+  function submit() {
+    const values = {
+      enabled,
+      new_trials_per_site: Number(newTrials),
+      idle_after_hours: Number(idleAfterHours),
+      idle_trials_per_site: Number(idleTrials),
+    }
+    if (!Number.isInteger(values.new_trials_per_site) || values.new_trials_per_site < 1 || values.new_trials_per_site > 100) {
+      setError(t('details.exploration.validationTrials'))
+      return
+    }
+    if (!Number.isInteger(values.idle_after_hours) || values.idle_after_hours < 1 || values.idle_after_hours > 720) {
+      setError(t('details.exploration.validationIdleHours'))
+      return
+    }
+    if (!Number.isInteger(values.idle_trials_per_site) || values.idle_trials_per_site < 1 || values.idle_trials_per_site > 100) {
+      setError(t('details.exploration.validationIdleTrials'))
+      return
+    }
+    setError('')
+    onChange?.(values)
+  }
+
+  const activeCandidates = candidates.filter((candidate) => candidate.exploration?.enabled)
+
+  return (
+    <div className="space-y-3 rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{t('details.exploration.title')}</div>
+          <div className="mt-1 text-xs text-muted-soft">{t('details.exploration.description')}</div>
+        </div>
+        <Switch checked={enabled} disabled={disabled} onCheckedChange={setEnabled} aria-label={t('details.exploration.enabled')} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <ExplorationNumberField label={t('details.exploration.newTrials')} value={newTrials} disabled={disabled} onChange={setNewTrials} />
+        <ExplorationNumberField label={t('details.exploration.idleAfterHours')} value={idleAfterHours} disabled={disabled} onChange={setIdleAfterHours} />
+        <ExplorationNumberField label={t('details.exploration.idleTrials')} value={idleTrials} disabled={disabled} onChange={setIdleTrials} />
+      </div>
+      {error ? <div className="text-xs text-[hsl(var(--danger))]">{error}</div> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={submit} disabled={disabled || !onChange}>
+          <Save className="h-4 w-4" />
+          {t('details.exploration.save')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onReset} disabled={disabled || !onReset}>
+          <RotateCcw className="h-4 w-4" />
+          {t('details.exploration.reset')}
+        </Button>
+      </div>
+      {enabled ? (
+        <div className="space-y-2 border-t border-[hsl(var(--glass-divider))] pt-3">
+          <div className="text-xs font-medium text-muted-soft">{t('details.exploration.progress')}</div>
+          {activeCandidates.length === 0 ? (
+            <div className="text-xs text-muted-soft">{t('details.exploration.noCandidates')}</div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {activeCandidates.map((candidate) => {
+                const exploration = candidate.exploration
+                if (!exploration) return null
+                return (
+                  <div key={candidate.model.site_model_id} className="flex items-center justify-between gap-2 rounded border border-[hsl(var(--glass-border))] px-2.5 py-2 text-xs">
+                    <span className="min-w-0 truncate text-foreground">{candidate.site.name}</span>
+                    <span className="shrink-0 text-muted-soft">
+                      {t(`details.exploration.status.${exploration.status}`, { defaultValue: exploration.status })} · {exploration.attempts}/{exploration.target || 0}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ExplorationNumberField({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="space-y-1 text-xs text-muted-soft">
+      <span>{label}</span>
+      <Input type="number" min={1} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+    </label>
   )
 }
 
@@ -243,6 +583,7 @@ function RouteChannelLine({
       badges={
         <>
           <Badge variant={current ? 'accent' : status.badgeVariant}>{current ? (t ? t('details.currentRoute.current') : '当前使用') : status.label}</Badge>
+          {row.candidate ? <ScoreBadge candidate={row.candidate} t={t} /> : null}
           {row.apiKeyName ? (
             <Badge variant="neutral" title={row.groupName ? `${row.apiKeyName} · ${row.groupName}` : row.apiKeyName}>
               {row.apiKeyName}
@@ -295,8 +636,9 @@ function CandidateRouteLine({ candidate, current, t }: { candidate: RouteCandida
                 : '当前使用'
               : t
                 ? t('details.currentRoute.routable', { rank: candidate.rank })
-                : `可路由 #${candidate.rank}`}
+              : `可路由 #${candidate.rank}`}
           </Badge>
+          <ScoreBadge candidate={candidate} t={t} />
           {candidate.pricing.group_name ? <Badge variant="neutral">{candidate.pricing.group_name}</Badge> : null}
           {candidate.credential.name ? <Badge variant="neutral">{candidate.credential.name}</Badge> : null}
         </>
@@ -311,6 +653,23 @@ function CandidateRouteLine({ candidate, current, t }: { candidate: RouteCandida
         formatRoutePricing(candidate.pricing, t),
       ]}
     />
+  )
+}
+
+function ScoreBadge({ candidate, t }: { candidate: RouteCandidateItem; t?: TFunction }) {
+  const total = formatRouteScore(candidate.score)
+  const title = t
+    ? t('details.scores.tooltip', {
+        total,
+        site: formatRouteScore(routeSiteScore(candidate)),
+        model: formatRouteScore(routeModelScore(candidate)),
+      })
+    : `总分 ${total} · 站点 ${formatRouteScore(routeSiteScore(candidate))} · 模型 ${formatRouteScore(routeModelScore(candidate))}`
+
+  return (
+    <Badge variant="neutral" title={title}>
+      {t ? t('details.scores.badge', { score: total }) : `评分 ${total}`}
+    </Badge>
   )
 }
 

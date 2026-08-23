@@ -19,22 +19,26 @@ const (
 )
 
 type GatewayConfig struct {
-	RequestTimeoutMS               *int     `json:"request_timeout_ms,omitempty"`
-	ConnectTimeoutMS               *int     `json:"connect_timeout_ms,omitempty"`
-	ResponseHeaderTimeoutMS        *int     `json:"response_header_timeout_ms,omitempty"`
-	MaxConcurrency                 *int     `json:"max_concurrency,omitempty"`
-	MaxModelConcurrency            *int     `json:"max_model_concurrency,omitempty"`
-	MaxCredentialConcurrency       *int     `json:"max_credential_concurrency,omitempty"`
-	MaxIdleConns                   *int     `json:"max_idle_conns,omitempty"`
-	MaxIdleConnsPerHost            *int     `json:"max_idle_conns_per_host,omitempty"`
-	MaxConnsPerHost                *int     `json:"max_conns_per_host,omitempty"`
-	IdleConnTimeoutMS              *int     `json:"idle_conn_timeout_ms,omitempty"`
-	ResponsesToolPolicy            string   `json:"responses_tool_policy,omitempty"`
-	DisabledResponsesTools         []string `json:"disabled_responses_tools,omitempty"`
-	ResponsesImageGenerationPolicy string   `json:"responses_image_generation_policy,omitempty"`
-	ImpersonateCodexClient         *bool    `json:"impersonate_codex_client,omitempty"`
-	ImpersonateClaudeCodeClient    *bool    `json:"impersonate_claude_code_client,omitempty"`
-	QuotaProbe                     *string  `json:"quota_probe,omitempty"`
+	RequestTimeoutMS                  *int     `json:"request_timeout_ms,omitempty"`
+	ConnectTimeoutMS                  *int     `json:"connect_timeout_ms,omitempty"`
+	ResponseHeaderTimeoutMS           *int     `json:"response_header_timeout_ms,omitempty"`
+	MaxSameSiteCredentialRetries      *int     `json:"max_same_site_credential_retries,omitempty"`
+	FirstByteTimeoutMS                *int     `json:"first_byte_timeout_ms,omitempty"`
+	ClearMaxSameSiteCredentialRetries bool     `json:"-"`
+	ClearFirstByteTimeoutMS           bool     `json:"-"`
+	MaxConcurrency                    *int     `json:"max_concurrency,omitempty"`
+	MaxModelConcurrency               *int     `json:"max_model_concurrency,omitempty"`
+	MaxCredentialConcurrency          *int     `json:"max_credential_concurrency,omitempty"`
+	MaxIdleConns                      *int     `json:"max_idle_conns,omitempty"`
+	MaxIdleConnsPerHost               *int     `json:"max_idle_conns_per_host,omitempty"`
+	MaxConnsPerHost                   *int     `json:"max_conns_per_host,omitempty"`
+	IdleConnTimeoutMS                 *int     `json:"idle_conn_timeout_ms,omitempty"`
+	ResponsesToolPolicy               string   `json:"responses_tool_policy,omitempty"`
+	DisabledResponsesTools            []string `json:"disabled_responses_tools,omitempty"`
+	ResponsesImageGenerationPolicy    string   `json:"responses_image_generation_policy,omitempty"`
+	ImpersonateCodexClient            *bool    `json:"impersonate_codex_client,omitempty"`
+	ImpersonateClaudeCodeClient       *bool    `json:"impersonate_claude_code_client,omitempty"`
+	QuotaProbe                        *string  `json:"quota_probe,omitempty"`
 }
 
 func NormalizeQuotaProbeType(value string) (string, error) {
@@ -105,6 +109,12 @@ func NormalizeGatewayConfig(input *GatewayConfig) (*GatewayConfig, error) {
 		if field.value != nil && *field.value <= 0 {
 			return nil, fmt.Errorf("%s must be greater than 0", field.name)
 		}
+	}
+	if normalized.MaxSameSiteCredentialRetries != nil && (*normalized.MaxSameSiteCredentialRetries < 0 || *normalized.MaxSameSiteCredentialRetries > 20) {
+		return nil, fmt.Errorf("max_same_site_credential_retries must be between 0 and 20")
+	}
+	if normalized.FirstByteTimeoutMS != nil && (*normalized.FirstByteTimeoutMS < 0 || *normalized.FirstByteTimeoutMS > 600000) {
+		return nil, fmt.Errorf("first_byte_timeout_ms must be between 0 and 600000")
 	}
 
 	return &normalized, nil
@@ -272,7 +282,14 @@ func mergeGatewayConfig(existing *GatewayConfig, patch *GatewayConfig) *GatewayC
 		return existing
 	}
 	if existing == nil {
-		return patch
+		merged := *patch
+		if patch.ClearMaxSameSiteCredentialRetries {
+			merged.MaxSameSiteCredentialRetries = nil
+		}
+		if patch.ClearFirstByteTimeoutMS {
+			merged.FirstByteTimeoutMS = nil
+		}
+		return &merged
 	}
 	merged := *existing
 	if patch.RequestTimeoutMS != nil {
@@ -283,6 +300,18 @@ func mergeGatewayConfig(existing *GatewayConfig, patch *GatewayConfig) *GatewayC
 	}
 	if patch.ResponseHeaderTimeoutMS != nil {
 		merged.ResponseHeaderTimeoutMS = patch.ResponseHeaderTimeoutMS
+	}
+	if patch.MaxSameSiteCredentialRetries != nil {
+		merged.MaxSameSiteCredentialRetries = patch.MaxSameSiteCredentialRetries
+	}
+	if patch.FirstByteTimeoutMS != nil {
+		merged.FirstByteTimeoutMS = patch.FirstByteTimeoutMS
+	}
+	if patch.ClearMaxSameSiteCredentialRetries {
+		merged.MaxSameSiteCredentialRetries = nil
+	}
+	if patch.ClearFirstByteTimeoutMS {
+		merged.FirstByteTimeoutMS = nil
 	}
 	if patch.MaxConcurrency != nil {
 		merged.MaxConcurrency = patch.MaxConcurrency

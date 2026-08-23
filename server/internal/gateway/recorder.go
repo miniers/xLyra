@@ -147,18 +147,19 @@ func (r Recorder) RecordGatewayRequest(ctx context.Context, record GatewayReques
 				"upstream_status_code": record.UpstreamStatusCode,
 			})
 			if _, err := store.NewHealthRepository(tx).CreateSnapshot(ctx, store.CreateHealthSnapshotParams{
-				SiteID:       record.SiteID,
-				SiteModelID:  record.SiteModelID,
-				Scope:        "model",
-				Source:       "gateway",
-				Endpoint:     stringValue(&record.Endpoint, gatewayEndpointChatCompletions),
-				Method:       "POST",
-				Success:      record.Success,
-				StatusCode:   nullableInt(record.StatusCode),
-				LatencyMS:    nullableInt64(record.UpstreamLatencyMS),
-				ErrorType:    nullableString(record.ErrorType),
-				ErrorMessage: nullableString(record.ErrorMessage),
-				Metadata:     healthMetadata,
+				SiteID:             record.SiteID,
+				SiteModelID:        record.SiteModelID,
+				Scope:              "model",
+				Source:             "gateway",
+				Endpoint:           stringValue(&record.Endpoint, gatewayEndpointChatCompletions),
+				Method:             "POST",
+				Success:            record.Success,
+				StatusCode:         nullableInt(record.StatusCode),
+				LatencyMS:          nullableInt64(record.UpstreamLatencyMS),
+				FirstByteLatencyMS: nullableInt64(record.FirstByteLatencyMS),
+				ErrorType:          nullableString(record.ErrorType),
+				ErrorMessage:       nullableString(record.ErrorMessage),
+				Metadata:           healthMetadata,
 			}); err != nil {
 				return err
 			}

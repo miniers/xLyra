@@ -64,7 +64,7 @@ func proxyChatCompletionsStreamAsResponses(ctx context.Context, w http.ResponseW
 }
 
 func proxyResponsesStreamPassthrough(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -389,6 +389,12 @@ func inspectResponsesStreamLine(line []byte, capture *streamCaptureState) {
 		return
 	}
 	switch event.Type {
+	case "response.output_text.delta", "response.refusal.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.reasoning_delta", "response.reasoning_summary.delta":
+		capture.observeOutputText(event.Delta)
+	case "response.function_call_arguments.delta":
+		capture.observeOutputToolArguments(event.Delta)
+	}
+	switch event.Type {
 	case "response.completed":
 		capture.streamCompleted = true
 		capture.sawDone = true
@@ -402,6 +408,7 @@ func inspectResponsesStreamLine(line []byte, capture *streamCaptureState) {
 	}
 	if event.Response != nil && event.Response.Usage != nil {
 		capture.usage = completionUsageFromResponsesUsage(event.Response.Usage)
+		capture.observeOutputUsage(capture.usage)
 	}
 }
 

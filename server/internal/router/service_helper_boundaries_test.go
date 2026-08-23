@@ -98,6 +98,30 @@ func TestHealthSuccessAndLatencyScoresAtBucketEdges(t *testing.T) {
 	}
 }
 
+func TestCacheHitRateScoreClampsToPercentageRange(t *testing.T) {
+	t.Parallel()
+
+	zero := 0.0
+	half := 0.5
+	tooHigh := 1.5
+	tooLow := -0.2
+	if got := cacheHitRateScore(&zero, 15); got != 0 {
+		t.Fatalf("cacheHitRateScore(zero) = %v, want 0", got)
+	}
+	if got := cacheHitRateScore(&half, 15); got != 7.5 {
+		t.Fatalf("cacheHitRateScore(half) = %v, want 7.5", got)
+	}
+	if got := cacheHitRateScore(&tooHigh, 15); got != 15 {
+		t.Fatalf("cacheHitRateScore(high) = %v, want 15", got)
+	}
+	if got := cacheHitRateScore(&tooLow, 15); got != 0 {
+		t.Fatalf("cacheHitRateScore(low) = %v, want 0", got)
+	}
+	if got := cacheHitRateScore(nil, 15); got != 0 {
+		t.Fatalf("cacheHitRateScore(nil) = %v, want 0", got)
+	}
+}
+
 func TestPriceScoreInterpolatesBetweenKnownExtremes(t *testing.T) {
 	t.Parallel()
 
@@ -113,6 +137,59 @@ func TestPriceScoreInterpolatesBetweenKnownExtremes(t *testing.T) {
 	}
 	if got := priceScore(Candidate{Pricing: CandidatePricing{PerRequestValue: &maxPrice}}, minPrice, maxPrice); got != 0 {
 		t.Fatalf("priceScore(maximum price) = %v, want 0", got)
+	}
+}
+
+func TestFirstByteLatencyScoreUsesFiveSecondExcellentBucket(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		latency int64
+		want    float64
+	}{
+		{latency: 5000, want: 10},
+		{latency: 5001, want: 8},
+		{latency: 8000, want: 8},
+		{latency: 12000, want: 5},
+		{latency: 20000, want: 2},
+		{latency: 20001, want: 0},
+	} {
+		value := tc.latency
+		if got := firstByteLatencyScore(&value, 10); got != tc.want {
+			t.Fatalf("firstByteLatencyScore(%d) = %v, want %v", tc.latency, got, tc.want)
+		}
+	}
+	if got := firstByteLatencyScore(nil, 10); got != 0 {
+		t.Fatalf("nil first byte latency score = %v, want 0", got)
+	}
+}
+
+func TestScoreCandidatePreferencesReweightPriceAndSpeed(t *testing.T) {
+	t.Parallel()
+
+	firstByte := int64(5000)
+	price := 1.0
+	item := Candidate{
+		Health: CandidateHealth{
+			Status:                     "healthy",
+			ModelAvgFirstByteLatencyMS: &firstByte,
+		},
+		Availability: CandidateAvailability{AvailableAPIKeys: 5},
+		Pricing:      CandidatePricing{PerRequestValue: &price},
+	}
+	for _, tc := range []struct {
+		preference string
+		price      float64
+		firstByte  float64
+	}{
+		{preference: store.RoutingPreferenceDefault, price: 10, firstByte: 5},
+		{preference: store.RoutingPreferenceValue, price: 35, firstByte: 2},
+		{preference: store.RoutingPreferenceSpeed, price: 5, firstByte: 25},
+	} {
+		_, breakdown := scoreCandidateWithPreference(item, 1, 1, tc.preference)
+		if breakdown["price"] != tc.price || breakdown["model_first_byte_latency"] != tc.firstByte {
+			t.Fatalf("preference %q breakdown = %#v", tc.preference, breakdown)
+		}
 	}
 }
 

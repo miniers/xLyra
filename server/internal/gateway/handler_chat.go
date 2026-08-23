@@ -58,8 +58,9 @@ func (h Handler) serveEndpoint(
 	defer inflight.Enter()()
 
 	requestID := middleware.GetReqID(r.Context())
-	if requestID == "" {
+	if requestID == "" || inflight.IsActive(requestID) {
 		requestID = uuid.NewString()
+		w.Header().Set("X-Request-ID", requestID)
 	}
 	startedAt := time.Now()
 	ctx := withRequestStartedAt(r.Context(), startedAt)
@@ -85,6 +86,11 @@ func (h Handler) serveEndpoint(
 		})
 		return
 	}
+	requestCtx, cancelRequest := context.WithCancelCause(ctx)
+	defer cancelRequest(nil)
+	requestControl := newGatewayRequestControl(cancelRequest)
+	ctx = withGatewayRequestControl(requestCtx, requestControl)
+	r = r.WithContext(ctx)
 
 	request, failure := endpoint.DecodeRequest(r)
 	if failure != nil {
@@ -106,6 +112,28 @@ func (h Handler) serveEndpoint(
 			r = r.WithContext(ctx)
 		}
 	}
+
+	// Register before route planning and rate-limit acquisition so an admin can
+	// cancel work that is still in the gateway preflight phase.
+	liveRequest := inflight.Request{
+		RequestID:   requestID,
+		APIKeyID:    apiKey.ID.String(),
+		APIKeyName:  apiKey.Name,
+		ModelKey:    request.RequestedModel,
+		Stream:      request.Stream,
+		StartedAt:   startedAt,
+		InputTokens: estimateGatewayInputTokens(request),
+	}
+	for !inflight.Start(liveRequest) {
+		requestID = uuid.NewString()
+		w.Header().Set("X-Request-ID", requestID)
+		liveRequest.RequestID = requestID
+	}
+	inflight.AttachControl(requestID, requestControl.Cancel)
+	flowPhase := inflight.PhaseFailed
+	defer func() {
+		inflight.Finish(requestID, flowPhase)
+	}()
 
 	imageIntent := codexImageIntentForRequest(request)
 	bridge, bridgeSkipReason := bridgeContextForRequest(apiKey, request, imageIntent)
@@ -137,6 +165,10 @@ func (h Handler) serveEndpoint(
 			h.logger.InfoContext(ctx, "soft model mapping fallback engaged at planning", "scope", "gateway", "request_id", requestID, "original_model", originalModel, "fallback_model", request.RequestedModel, "fallback_ok", setup.failure == nil)
 		}
 	}
+	if errors.Is(context.Cause(ctx), context.Canceled) {
+		flowPhase = inflight.PhaseCancelled
+		return
+	}
 	if setup.failure != nil {
 		if setup.noRoute != nil {
 			h.writeNoRouteFailure(w, r, endpoint.DownstreamPath(), requestID, apiKey.ID, startedAt, request, *setup.noRoute)
@@ -147,8 +179,15 @@ func (h Handler) serveEndpoint(
 	}
 	access := setup.access
 	plan := setup.plan
+	request.EffectiveModelKey = plan.CanonicalModel.ModelKey
+	request.APIKeyGatewayConfig = apiKey.Gateway()
+	inflight.SetModel(requestID, plan.CanonicalModel.ModelKey, plan.CanonicalModel.Provider)
 
 	reservation, limitErr, limitAcquireErr := h.acquireRateLimit(ctx, apiKey.ID, endpoint, request, startedAt)
+	if errors.Is(context.Cause(ctx), context.Canceled) {
+		flowPhase = inflight.PhaseCancelled
+		return
+	}
 	if limitAcquireErr != nil {
 		h.writeChatFailure(w, r, endpoint.DownstreamPath(), requestID, apiKey.ID, startedAt, chatFailure{
 			status:         http.StatusInternalServerError,
@@ -185,20 +224,6 @@ func (h Handler) serveEndpoint(
 		w = streamSession
 	}
 
-	inflight.Start(inflight.Request{
-		RequestID:     requestID,
-		APIKeyID:      apiKey.ID.String(),
-		APIKeyName:    apiKey.Name,
-		ModelKey:      plan.CanonicalModel.ModelKey,
-		ModelProvider: plan.CanonicalModel.Provider,
-		Stream:        request.Stream,
-		StartedAt:     startedAt,
-	})
-	flowPhase := inflight.PhaseFailed
-	defer func() {
-		inflight.Finish(requestID, flowPhase)
-	}()
-
 	attempts := append([]routeengine.Candidate{plan.Selected}, plan.Failover...)
 	waitDeadline := startedAt.Add(upstreamRateLimitMaxWait)
 
@@ -222,9 +247,12 @@ func (h Handler) serveEndpoint(
 		ctx = fallbackCtx
 		r = r.WithContext(ctx)
 		request = fallbackRequest
+		request.EffectiveModelKey = fallbackSetup.plan.CanonicalModel.ModelKey
 		imageIntent = fallbackIntent
 		access = fallbackSetup.access
 		plan = fallbackSetup.plan
+		request.EffectiveModelKey = plan.CanonicalModel.ModelKey
+		request.APIKeyGatewayConfig = apiKey.Gateway()
 		ctx = h.withCacheObservation(ctx, apiKey.ID, plan.CanonicalModel.ID, request)
 		ctx = h.withCacheShadowAffinity(ctx, apiKey.ID, plan.CanonicalModel.ID, request, plan, resolver)
 		r = r.WithContext(ctx)
@@ -246,6 +274,10 @@ func (h Handler) serveEndpoint(
 		skippedGrokIncompatible = nil
 		waitableRateLimit := true
 		for index, candidate := range attempts {
+			if errors.Is(context.Cause(ctx), context.Canceled) {
+				flowPhase = inflight.PhaseCancelled
+				return
+			}
 			if isGrokSite(candidate.Site.SiteType) {
 				if incompatible := grokIncompatibleRequestParams(request); len(incompatible) > 0 {
 					skippedGrokIncompatible = appendUniqueStrings(skippedGrokIncompatible, incompatible...)
@@ -262,6 +294,10 @@ func (h Handler) serveEndpoint(
 				}
 				if bridgeResolveErr == nil && candidateRequiresImageBridge(candidate, bridgeProtocol) {
 					result := h.forwardBridgedResponses(ctx, w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, request, reservation, resolver, bridge)
+					if errors.Is(context.Cause(ctx), context.Canceled) {
+						flowPhase = inflight.PhaseCancelled
+						return
+					}
 					if result.success {
 						actualRateLimitTokens = rateLimitTokenCount(result)
 						inflight.AddTokens(requestID, actualRateLimitTokens)
@@ -311,6 +347,10 @@ func (h Handler) serveEndpoint(
 			}
 
 			result := h.forwardGatewayRequest(ctx, w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, attemptRequest, reservation, protocol)
+			if errors.Is(context.Cause(ctx), context.Canceled) {
+				flowPhase = inflight.PhaseCancelled
+				return
+			}
 			if result.success {
 				// Settle only the attempt actually served to the client; tokens from
 				// failed attempts retried via failover must not be added on top.
@@ -327,10 +367,13 @@ func (h Handler) serveEndpoint(
 				flowPhase = inflight.PhaseCancelled
 				return
 			}
-
 			if bridge != nil && bridgeRescueEligible(result) {
 				h.logger.InfoContext(ctx, "image bridge rescue after upstream image rejection", "scope", "gateway", "request_id", requestID, "site", candidate.Site.Slug, "upstream_status", result.upstreamStatusCode)
 				result = h.forwardBridgedResponses(ctx, w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, request, reservation, resolver, bridge)
+				if errors.Is(context.Cause(ctx), context.Canceled) {
+					flowPhase = inflight.PhaseCancelled
+					return
+				}
 				if result.success {
 					actualRateLimitTokens = rateLimitTokenCount(result)
 					inflight.AddTokens(requestID, actualRateLimitTokens)
@@ -375,6 +418,10 @@ func (h Handler) serveEndpoint(
 		}
 	}
 
+	if errors.Is(context.Cause(ctx), context.Canceled) {
+		flowPhase = inflight.PhaseCancelled
+		return
+	}
 	lastFailure = preferredFinalGatewayFailure(lastFailure, retainedRateLimitFailure)
 	if lastFailure == nil && len(skippedGrokIncompatible) > 0 {
 		message := "no available upstream route candidate can preserve parameters: " + strings.Join(skippedGrokIncompatible, ", ")
@@ -495,6 +542,7 @@ func (h Handler) setupRoute(
 		AllowedSiteIDs:      access.AllowedSiteIDs,
 		AllowedSiteModelIDs: access.AllowedSiteModelIDs,
 		FailoverLimit:       3,
+		AllowExploration:    true,
 	})
 	if err != nil {
 		if errors.Is(err, routeengine.ErrNoRouteCandidates) {

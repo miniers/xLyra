@@ -475,13 +475,30 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 			"canonical_match_confidence": item.Model.MatchConfidence,
 		},
 		"health": map[string]any{
-			"status":                item.Health.Status,
-			"recent_success_rate":   pointerFloat64Value(item.Health.RecentSuccessRate),
-			"recent_avg_latency_ms": pointerInt64Value(item.Health.RecentAvgLatencyMS),
-			"consecutive_failures":  item.Health.ConsecutiveFailures,
-			"model_success_rate":    pointerFloat64Value(item.Health.ModelSuccessRate),
-			"model_avg_latency_ms":  pointerInt64Value(item.Health.ModelAvgLatencyMS),
-			"model_request_count":   item.Health.ModelRequestCount,
+			"status":                          item.Health.Status,
+			"recent_success_rate":             pointerFloat64Value(item.Health.RecentSuccessRate),
+			"recent_avg_latency_ms":           pointerInt64Value(item.Health.RecentAvgLatencyMS),
+			"consecutive_failures":            item.Health.ConsecutiveFailures,
+			"model_success_rate":              pointerFloat64Value(item.Health.ModelSuccessRate),
+			"model_avg_latency_ms":            pointerInt64Value(item.Health.ModelAvgLatencyMS),
+			"model_request_count":             item.Health.ModelRequestCount,
+			"model_total_request_count":       item.Health.ModelTotalRequestCount,
+			"model_last_used_at":              timePtrValue(item.Health.ModelLastUsedAt),
+			"model_avg_first_byte_latency_ms": pointerInt64Value(item.Health.ModelAvgFirstByteLatencyMS),
+			"model_first_byte_request_count":  item.Health.ModelFirstByteRequestCount,
+			"model_cache_hit_rate":            pointerFloat64Value(item.Health.ModelCacheHitRate),
+			"model_cache_request_count":       item.Health.ModelCacheRequestCount,
+		},
+		"exploration": map[string]any{
+			"enabled":         item.Exploration.Enabled,
+			"mode":            item.Exploration.Mode,
+			"status":          item.Exploration.Status,
+			"attempts":        item.Exploration.Attempts,
+			"target":          item.Exploration.Target,
+			"remaining":       item.Exploration.Remaining,
+			"last_attempt_at": timePtrValue(item.Exploration.LastAttemptAt),
+			"last_used_at":    timePtrValue(item.Exploration.LastUsedAt),
+			"reserved":        item.Exploration.Reserved,
 		},
 		"availability": map[string]any{
 			"available_api_key_count": item.Availability.AvailableAPIKeys,
@@ -510,6 +527,27 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 	}
 	if debug {
 		payload["score_breakdown"] = item.ScoreBreakdown
+		payload["score_profiles"] = routeCandidateScoreProfilesPayload(item.ScoreProfiles)
+	}
+	return payload
+}
+
+func routeCandidateScoreProfilesPayload(profiles map[string]routeengine.CandidateScoreProfile) map[string]any {
+	payload := make(map[string]any, len(profiles))
+	for _, preference := range []string{
+		store.RoutingPreferenceDefault,
+		store.RoutingPreferenceValue,
+		store.RoutingPreferenceSpeed,
+	} {
+		profile, ok := profiles[preference]
+		if !ok {
+			continue
+		}
+		payload[preference] = map[string]any{
+			"rank":      profile.Rank,
+			"score":     profile.Score,
+			"breakdown": profile.Breakdown,
+		}
 	}
 	return payload
 }

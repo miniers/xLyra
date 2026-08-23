@@ -13,7 +13,8 @@
       "reasoning": "Reasoning effort",
       "input": "Input",
       "output": "Output",
-      "cost": "Cost"
+      "cost": "Cost",
+      "actions": "Actions"
     },
     "test": "Test",
     "success": "Success",
@@ -40,6 +41,12 @@
       "title": "No request logs",
       "description": "No forwarded request records to display."
     }
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "cancelSuccess": "Request cancellation sent",
+    "alreadyFinished": "The request has already finished; the list was refreshed",
+    "controlFailed": "Request action failed"
   },
   "filters": {
     "dateFrom": "Start date",

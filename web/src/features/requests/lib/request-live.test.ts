@@ -30,6 +30,11 @@ function activity(overrides: Partial<RequestActivityRequest> = {}): RequestActiv
     phase: 'responding',
     started_at: '2026-08-17T08:00:00.000Z',
     updated_at: '2026-08-17T08:00:01.000Z',
+    input_tokens: 128,
+    output_tokens: 32,
+    first_byte_latency_ms: 850,
+    can_cancel: true,
+    tokens_estimated: true,
     ...overrides,
   }
 }
@@ -99,7 +104,7 @@ describe('request activity reducer', () => {
 
     const third = reduceRequestActivityEvent(second, { sequence: 3, type: 'remove', request_id: 'request-1' })
     expect(third.requests).toEqual({})
-    expect(third.startedAtByRequestID).toEqual({ 'request-1': activity().started_at })
+    expect(third.startedAtByRequestID).toEqual({})
   })
 
   it('keeps a terminal request until the history refresh completes', () => {
@@ -114,7 +119,9 @@ describe('request activity reducer', () => {
     })
 
     expect(terminal.requests['request-1']).toEqual(activity({ phase: 'completed' }))
-    expect(removeRequestActivityRequest(terminal, 'request-1').requests).toEqual({})
+    const removed = removeRequestActivityRequest(terminal, 'request-1')
+    expect(removed.requests).toEqual({})
+    expect(removed.startedAtByRequestID).toEqual({})
   })
 
   it('does not let an older snapshot replace newer state', () => {
@@ -136,7 +143,7 @@ describe('request activity reducer', () => {
 })
 
 describe('request log live projection', () => {
-  it('projects an in-progress request without token data', () => {
+  it('projects an in-progress request with live timing, token, and control data', () => {
     const item = requestLogItemFromActivity(activity({ attempt: 2, stream: false }))
 
     expect(item).toMatchObject({
@@ -154,10 +161,13 @@ describe('request log live projection', () => {
       api_key: { id: 'key-1', name: 'Primary key' },
       site: { id: 'site-1', name: 'Primary site', site_type: 'openai' },
       model: { canonical_model: 'gpt-4o-mini', display_name: 'gpt-4o-mini' },
-      usage: {},
+      first_byte_latency_ms: 850,
+      input_tokens: 128,
+      output_tokens: 32,
+      tokens_estimated: true,
+      can_cancel: true,
+      usage: { prompt_tokens: 128, completion_tokens: 32, total_tokens: 160 },
     })
-    expect(item.request_tokens).toBeUndefined()
-    expect(item.response_tokens).toBeUndefined()
   })
 
   it('merges live rows only on the first all-status page', () => {

@@ -430,24 +430,25 @@ func (h Handler) CheckAPIKeyModel(w http.ResponseWriter, r *http.Request) {
 }
 
 type apiKeyRequest struct {
-	Name                 string                  `json:"name"`
-	CustomKey            string                  `json:"custom_key"`
-	Status               string                  `json:"status"`
-	ModelPolicy          string                  `json:"model_policy"`
-	SiteModelIDs         []string                `json:"site_model_ids"`
-	SitePolicy           string                  `json:"site_policy"`
-	SiteIDs              []string                `json:"site_ids"`
-	SiteGroupIDs         []string                `json:"site_group_ids"`
-	ModelMappings        []modelRuleRequest      `json:"model_mappings"`
-	ImageToolBridge      *imageToolBridgeRequest `json:"image_tool_bridge"`
-	QuotaLimit           *float64                `json:"quota_limit"`
-	QuotaUnlimited       *bool                   `json:"quota_unlimited"`
-	QuotaDailyLimit      *float64                `json:"quota_daily_limit"`
-	QuotaDailyUnlimited  *bool                   `json:"quota_daily_unlimited"`
-	QuotaWeeklyLimit     *float64                `json:"quota_weekly_limit"`
-	QuotaWeeklyUnlimited *bool                   `json:"quota_weekly_unlimited"`
-	ExpiresAt            json.RawMessage         `json:"expires_at"`
-	RateLimit            *rateLimitRequest       `json:"rate_limit"`
+	Name                 string                     `json:"name"`
+	CustomKey            string                     `json:"custom_key"`
+	Status               string                     `json:"status"`
+	ModelPolicy          string                     `json:"model_policy"`
+	SiteModelIDs         []string                   `json:"site_model_ids"`
+	SitePolicy           string                     `json:"site_policy"`
+	SiteIDs              []string                   `json:"site_ids"`
+	SiteGroupIDs         []string                   `json:"site_group_ids"`
+	ModelMappings        []modelRuleRequest         `json:"model_mappings"`
+	GatewayConfig        *store.APIKeyGatewayConfig `json:"gateway_config"`
+	ImageToolBridge      *imageToolBridgeRequest    `json:"image_tool_bridge"`
+	QuotaLimit           *float64                   `json:"quota_limit"`
+	QuotaUnlimited       *bool                      `json:"quota_unlimited"`
+	QuotaDailyLimit      *float64                   `json:"quota_daily_limit"`
+	QuotaDailyUnlimited  *bool                      `json:"quota_daily_unlimited"`
+	QuotaWeeklyLimit     *float64                   `json:"quota_weekly_limit"`
+	QuotaWeeklyUnlimited *bool                      `json:"quota_weekly_unlimited"`
+	ExpiresAt            json.RawMessage            `json:"expires_at"`
+	RateLimit            *rateLimitRequest          `json:"rate_limit"`
 }
 
 type modelRuleRequest struct {
@@ -558,6 +559,7 @@ func apiKeyInputFromRequest(w http.ResponseWriter, r *http.Request, payload apiK
 		SiteIDs:              siteIDs,
 		SiteGroupIDs:         siteGroupIDs,
 		ModelRules:           authModelRules(payload.ModelMappings),
+		GatewayConfig:        payload.GatewayConfig,
 		ImageToolBridge:      imageToolBridge,
 		QuotaLimit:           payload.QuotaLimit,
 		QuotaUnlimited:       quotaUnlimited,
@@ -644,6 +646,7 @@ func apiKeyUpdateInputFromRequest(w http.ResponseWriter, r *http.Request, payloa
 		SiteIDs:              siteIDs,
 		SiteGroupIDs:         siteGroupIDs,
 		ModelRules:           authModelRules(payload.ModelMappings),
+		GatewayConfig:        payload.GatewayConfig,
 		ImageToolBridge:      imageToolBridge,
 		QuotaLimit:           quotaLimit,
 		QuotaUnlimited:       quotaUnlimited,
@@ -735,6 +738,7 @@ func (h Handler) apiKeyPayloadWithRateLimit(item store.APIKey, models []store.AP
 		"model_policy":           item.ModelPolicy,
 		"site_policy":            item.SitePolicy,
 		"model_mappings":         modelMappingsPayload(item.ModelMappings),
+		"gateway_config":         item.Gateway(),
 		"image_tool_bridge":      imageToolBridgePayload(item),
 		"quota_limit":            nullFloat64Value(item.QuotaLimit),
 		"quota_used":             item.QuotaUsed,

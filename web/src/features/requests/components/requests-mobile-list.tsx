@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { RequestDetailContent } from '@/features/requests/components/request-detail-row'
+import { RequestLiveControls } from '@/features/requests/components/request-live-controls'
 import { RequestModelMapping } from '@/features/requests/components/request-model-mapping'
 import { RequestTiming } from '@/features/requests/components/request-timing'
 import { requestFailoverBadgeClassName } from '@/features/requests/lib/request-badge-styles'
@@ -33,6 +34,8 @@ type RequestsMobileListProps = {
   items: RequestLogDisplayItem[]
   expandedId: string | null
   onExpandedIdChange: (id: string | null) => void
+  pendingRequestID?: string | null
+  onRequestCancel?: (requestID: string) => void
   className?: string
 }
 
@@ -40,6 +43,8 @@ export function RequestsMobileList({
   items,
   expandedId,
   onExpandedIdChange,
+  pendingRequestID = null,
+  onRequestCancel,
   className,
 }: RequestsMobileListProps) {
   const { t, i18n } = useTranslation('requests')
@@ -140,14 +145,12 @@ export function RequestsMobileList({
                   <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">
                     {t('mobile.statusCode', { code: statusCode })}
                   </Badge>
-                  {!inProgress ? (
-                    <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">
-                      {t('mobile.tokens', {
-                        input: formatInteger(item.usage.prompt_tokens),
-                        output: formatInteger(item.usage.completion_tokens),
-                      })}
-                    </Badge>
-                  ) : null}
+                  <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">
+                    {t('mobile.tokens', {
+                      input: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.prompt_tokens)}`,
+                      output: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.completion_tokens)}`,
+                    })}
+                  </Badge>
                   {(hasCacheRead || hasCacheWrite) ? (
                     <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">
                       {hasCacheRead && hasCacheWrite
@@ -161,6 +164,16 @@ export function RequestsMobileList({
                 </div>
               </div>
             </button>
+
+            {inProgress ? (
+              <div className="border-t border-[hsl(var(--glass-divider))] px-4 py-3">
+                <RequestLiveControls
+                  item={item}
+                  pending={pendingRequestID === item.request_id}
+                  onCancel={onRequestCancel ?? (() => undefined)}
+                />
+              </div>
+            ) : null}
 
             {expanded ? (
               <div className="border-t border-[hsl(var(--glass-divider))] bg-[hsl(var(--surface-subtle))] px-4 py-4">

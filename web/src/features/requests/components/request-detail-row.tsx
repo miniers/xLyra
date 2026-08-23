@@ -41,7 +41,7 @@ import {
 export function RequestDetailRow({ item }: { item: RequestLogItem }) {
   return (
     <tr className="border-t border-[hsl(var(--glass-divider))]">
-      <td colSpan={10} className="rounded-md bg-[hsl(var(--surface-subtle))] px-6 py-5">
+      <td colSpan={11} className="rounded-md bg-[hsl(var(--surface-subtle))] px-6 py-5">
         <RequestDetailContent item={item} />
       </td>
     </tr>

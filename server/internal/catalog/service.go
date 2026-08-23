@@ -341,6 +341,51 @@ func (s *Service) UpdatePricing(ctx context.Context, id uuid.UUID, input UpdateC
 	return store.NewCanonicalModelRepository(s.db.DB()).UpdatePricing(ctx, params)
 }
 
+func (s *Service) UpdateRoutingPreference(ctx context.Context, id uuid.UUID, preference string) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	if !store.ValidRoutingPreference(preference) {
+		return store.CanonicalModel{}, fmt.Errorf("invalid routing preference %q", preference)
+	}
+	return store.NewCanonicalModelRepository(s.db.DB()).UpdateRoutingPreference(ctx, id, preference)
+}
+
+type UpdateRoutingExplorationInput struct {
+	Enabled           bool
+	NewTrialsPerSite  int
+	IdleAfterHours    int
+	IdleTrialsPerSite int
+}
+
+func (s *Service) UpdateRoutingExploration(ctx context.Context, id uuid.UUID, input UpdateRoutingExplorationInput) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	config := store.RoutingExplorationConfig{
+		Enabled:           input.Enabled,
+		NewTrialsPerSite:  input.NewTrialsPerSite,
+		IdleAfterHours:    input.IdleAfterHours,
+		IdleTrialsPerSite: input.IdleTrialsPerSite,
+	}
+	if config.NewTrialsPerSite <= 0 || config.IdleAfterHours <= 0 || config.IdleTrialsPerSite <= 0 {
+		config = store.NormalizeRoutingExplorationConfig(store.CanonicalModel{
+			RoutingExplorationEnabled:           config.Enabled,
+			RoutingExplorationNewTrialsPerSite:  config.NewTrialsPerSite,
+			RoutingExplorationIdleAfterHours:    config.IdleAfterHours,
+			RoutingExplorationIdleTrialsPerSite: config.IdleTrialsPerSite,
+		})
+	}
+	return store.NewCanonicalModelRepository(s.db.DB()).UpdateRoutingExploration(ctx, id, config)
+}
+
+func (s *Service) ResetRoutingExploration(ctx context.Context, id uuid.UUID) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	return store.NewCanonicalModelRepository(s.db.DB()).ResetRoutingExploration(ctx, id)
+}
+
 func nullFloat64FromPtr(value *float64) sql.NullFloat64 {
 	if value == nil {
 		return sql.NullFloat64{}

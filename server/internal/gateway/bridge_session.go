@@ -126,6 +126,7 @@ func (h Handler) forwardBridgedResponses(
 
 	aggPromptTokens := 0
 	aggCompletionTokens := 0
+	aggAudioOutputTokens := 0
 	var lastResult gatewayAttemptResult
 
 	for round := 1; round <= maxRounds; round++ {
@@ -159,6 +160,7 @@ func (h Handler) forwardBridgedResponses(
 		lastResult = result
 		aggPromptTokens += result.promptTokens
 		aggCompletionTokens += result.completionTokens
+		aggAudioOutputTokens += result.audioOutputTokens
 		if round == 1 && result.requestLogID != uuid.Nil {
 			bc.parentLogID = result.requestLogID
 		}
@@ -220,7 +222,9 @@ func (h Handler) forwardBridgedResponses(
 	combined := lastResult
 	combined.promptTokens = aggPromptTokens
 	combined.completionTokens = aggCompletionTokens
+	combined.audioOutputTokens = aggAudioOutputTokens
 	combined.responseStarted = writer.ContentFlushed() || writer.Finished()
+	updateInflightTokenUsage(requestID, combined)
 	return combined
 }
 

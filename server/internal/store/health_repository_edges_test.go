@@ -18,15 +18,16 @@ func TestHealthCreateSnapshotBuildsDefaultsOffline(t *testing.T) {
 	siteModelID := uuid.New()
 	checkedAt := time.Date(2026, 6, 23, 9, 30, 0, 0, time.UTC)
 	item, err := NewHealthRepository(db).CreateSnapshot(t.Context(), CreateHealthSnapshotParams{
-		SiteID:       siteID,
-		SiteModelID:  siteModelID,
-		Endpoint:     "/health",
-		Success:      true,
-		StatusCode:   int32(204),
-		LatencyMS:    int64(17),
-		ErrorType:    " ",
-		ErrorMessage: "ok",
-		CheckedAt:    checkedAt,
+		SiteID:             siteID,
+		SiteModelID:        siteModelID,
+		Endpoint:           "/health",
+		Success:            true,
+		StatusCode:         int32(204),
+		LatencyMS:          int64(17),
+		FirstByteLatencyMS: int64(9),
+		ErrorType:          " ",
+		ErrorMessage:       "ok",
+		CheckedAt:          checkedAt,
 	})
 	if err != nil {
 		t.Fatalf("CreateSnapshot returned error: %v", err)
@@ -46,6 +47,9 @@ func TestHealthCreateSnapshotBuildsDefaultsOffline(t *testing.T) {
 	}
 	if !captured.LatencyMS.Valid || captured.LatencyMS.Int64 != 17 {
 		t.Fatalf("latency = %#v, want 17", captured.LatencyMS)
+	}
+	if !captured.FirstByteLatencyMS.Valid || captured.FirstByteLatencyMS.Int64 != 9 {
+		t.Fatalf("first byte latency = %#v, want 9", captured.FirstByteLatencyMS)
 	}
 	if !captured.ErrorType.Valid || captured.ErrorType.String != " " {
 		t.Fatalf("error type should keep provided string value, got %#v", captured.ErrorType)

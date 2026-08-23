@@ -22,7 +22,7 @@ type RequestLog struct {
 	APIKeyID           uuid.NullUUID  `gorm:"index:request_logs_cache_observation_lookup_idx,priority:1"`
 	SiteID             uuid.NullUUID
 	CanonicalModelID   uuid.NullUUID `gorm:"index:request_logs_cache_observation_lookup_idx,priority:2"`
-	SiteModelID        uuid.NullUUID
+	SiteModelID        uuid.NullUUID `gorm:"index:request_logs_site_model_created_idx,priority:1"`
 	Endpoint           string
 	StatusCode         int
 	Success            bool
@@ -34,7 +34,7 @@ type RequestLog struct {
 	Metadata           JSON          `gorm:"type:jsonb"`
 	Internal           bool          `gorm:"default:false;not null"`
 	ParentRequestLogID uuid.NullUUID `gorm:"type:uuid;index:request_logs_parent_request_log_id_idx"`
-	CreatedAt          time.Time     `gorm:"index:request_logs_cache_observation_lookup_idx,priority:3"`
+	CreatedAt          time.Time     `gorm:"index:request_logs_cache_observation_lookup_idx,priority:3;index:request_logs_site_model_created_idx,priority:2"`
 }
 
 type CreateRequestLogParams struct {

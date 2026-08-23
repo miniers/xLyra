@@ -117,25 +117,26 @@ func (APIKeySiteGroupPermission) TableName() string {
 func (APIKeySiteModelPermission) TableName() string {
 	return "api_key_site_model_permissions"
 }
-func (Site) TableName() string                { return "sites" }
-func (SiteGroup) TableName() string           { return "site_groups" }
-func (SiteGroupSite) TableName() string       { return "site_group_sites" }
-func (SiteCredential) TableName() string      { return "site_credentials" }
-func (SiteState) TableName() string           { return "site_states" }
-func (OAuthSession) TableName() string        { return "oauth_sessions" }
-func (OAuthConnection) TableName() string     { return "oauth_connections" }
-func (SiteAPIKeyState) TableName() string     { return "site_api_key_states" }
-func (SiteAPIKeyModel) TableName() string     { return "site_api_key_models" }
-func (CanonicalModel) TableName() string      { return "canonical_models" }
-func (CanonicalModelAlias) TableName() string { return "canonical_model_aliases" }
-func (SiteModel) TableName() string           { return "site_models" }
-func (SitePricingGroup) TableName() string    { return "site_pricing_groups" }
-func (SiteModelPricing) TableName() string    { return "site_model_pricings" }
-func (HealthSnapshot) TableName() string      { return "health_snapshots" }
-func (SiteHealthState) TableName() string     { return "site_health_states" }
-func (RouteCooldown) TableName() string       { return "route_cooldowns" }
-func (RequestLog) TableName() string          { return "request_logs" }
-func (UsageRecord) TableName() string         { return "usage_records" }
+func (Site) TableName() string                  { return "sites" }
+func (SiteGroup) TableName() string             { return "site_groups" }
+func (SiteGroupSite) TableName() string         { return "site_group_sites" }
+func (SiteCredential) TableName() string        { return "site_credentials" }
+func (SiteState) TableName() string             { return "site_states" }
+func (OAuthSession) TableName() string          { return "oauth_sessions" }
+func (OAuthConnection) TableName() string       { return "oauth_connections" }
+func (SiteAPIKeyState) TableName() string       { return "site_api_key_states" }
+func (SiteAPIKeyModel) TableName() string       { return "site_api_key_models" }
+func (CanonicalModel) TableName() string        { return "canonical_models" }
+func (CanonicalModelAlias) TableName() string   { return "canonical_model_aliases" }
+func (SiteModel) TableName() string             { return "site_models" }
+func (SitePricingGroup) TableName() string      { return "site_pricing_groups" }
+func (SiteModelPricing) TableName() string      { return "site_model_pricings" }
+func (HealthSnapshot) TableName() string        { return "health_snapshots" }
+func (SiteHealthState) TableName() string       { return "site_health_states" }
+func (RouteCooldown) TableName() string         { return "route_cooldowns" }
+func (RouteExplorationState) TableName() string { return "route_exploration_states" }
+func (RequestLog) TableName() string            { return "request_logs" }
+func (UsageRecord) TableName() string           { return "usage_records" }
 func (RequestUsageDailySummary) TableName() string {
 	return "request_usage_daily_summaries"
 }

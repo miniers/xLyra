@@ -13,7 +13,8 @@
       "reasoning": "推理强度",
       "input": "输入",
       "output": "输出",
-      "cost": "花费"
+      "cost": "花费",
+      "actions": "操作"
     },
     "test": "测试",
     "success": "成功",
@@ -40,6 +41,12 @@
       "title": "没有请求日志",
       "description": "当前没有可展示的转发请求记录。"
     }
+  },
+  "actions": {
+    "cancel": "打断",
+    "cancelSuccess": "已发送打断请求",
+    "alreadyFinished": "请求已结束，列表已刷新",
+    "controlFailed": "请求操作失败"
   },
   "filters": {
     "dateFrom": "起始日期",

@@ -39,16 +39,11 @@ export function getInitialRequestFilters(now = new Date()): RequestFilterState {
   const from = new Date(now)
   from.setHours(0, 0, 0, 0)
 
-  const to = new Date(now)
-  to.setHours(to.getHours() + 1)
-
   return {
     ...REQUEST_FILTER_EMPTY,
     hideWithoutSite: true,
     createdFromDate: from,
     createdFromTime: formatTimeFilter(from),
-    createdToDate: to,
-    createdToTime: formatTimeFilter(to),
   }
 }
 

@@ -17,29 +17,115 @@ import (
 
 const CanonicalPricingSourceManual = "manual"
 
+const (
+	RoutingPreferenceDefault = "default"
+	RoutingPreferenceValue   = "value"
+	RoutingPreferenceSpeed   = "speed"
+)
+
+const (
+	DefaultRoutingExplorationNewTrialsPerSite  = 5
+	DefaultRoutingExplorationIdleAfterHours    = 24
+	DefaultRoutingExplorationIdleTrialsPerSite = 2
+)
+
+// RoutingExplorationConfig controls the small, bounded set of normal gateway
+// requests used to refresh a site-model's score.  The requests themselves are
+// not synthetic: they go through the normal routing/failover path and are
+// recorded in the same health and request statistics as every other request.
+type RoutingExplorationConfig struct {
+	Enabled           bool
+	NewTrialsPerSite  int
+	IdleAfterHours    int
+	IdleTrialsPerSite int
+	ResetAt           *time.Time
+}
+
+func NormalizeRoutingExplorationConfig(model CanonicalModel) RoutingExplorationConfig {
+	config := RoutingExplorationConfig{
+		Enabled:           model.RoutingExplorationEnabled,
+		NewTrialsPerSite:  model.RoutingExplorationNewTrialsPerSite,
+		IdleAfterHours:    model.RoutingExplorationIdleAfterHours,
+		IdleTrialsPerSite: model.RoutingExplorationIdleTrialsPerSite,
+	}
+	if model.RoutingExplorationResetAt.Valid {
+		resetAt := model.RoutingExplorationResetAt.Time
+		config.ResetAt = &resetAt
+	}
+	if config.NewTrialsPerSite <= 0 {
+		config.NewTrialsPerSite = DefaultRoutingExplorationNewTrialsPerSite
+	}
+	if config.IdleAfterHours <= 0 {
+		config.IdleAfterHours = DefaultRoutingExplorationIdleAfterHours
+	}
+	if config.IdleTrialsPerSite <= 0 {
+		config.IdleTrialsPerSite = DefaultRoutingExplorationIdleTrialsPerSite
+	}
+	return config
+}
+
+func (config RoutingExplorationConfig) Validate() error {
+	if config.NewTrialsPerSite < 1 || config.NewTrialsPerSite > 100 {
+		return fmt.Errorf("new_trials_per_site must be between 1 and 100")
+	}
+	if config.IdleAfterHours < 1 || config.IdleAfterHours > 720 {
+		return fmt.Errorf("idle_after_hours must be between 1 and 720")
+	}
+	if config.IdleTrialsPerSite < 1 || config.IdleTrialsPerSite > 100 {
+		return fmt.Errorf("idle_trials_per_site must be between 1 and 100")
+	}
+	return nil
+}
+
+func NormalizeRoutingPreference(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case RoutingPreferenceValue:
+		return RoutingPreferenceValue
+	case RoutingPreferenceSpeed:
+		return RoutingPreferenceSpeed
+	default:
+		return RoutingPreferenceDefault
+	}
+}
+
+func ValidRoutingPreference(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case RoutingPreferenceDefault, RoutingPreferenceValue, RoutingPreferenceSpeed:
+		return true
+	default:
+		return false
+	}
+}
+
 type CanonicalModel struct {
-	ID                     uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	ModelKey               string
-	DisplayName            string
-	Provider               string
-	Category               string
-	Capabilities           JSON `gorm:"type:jsonb"`
-	Status                 string
-	InputPrice             sql.NullFloat64
-	OutputPrice            sql.NullFloat64
-	CacheReadRatio         sql.NullFloat64
-	CacheWriteRatio        sql.NullFloat64
-	CacheWrite1hRatio      sql.NullFloat64 `gorm:"column:cache_write_1h_ratio"`
-	AudioRatio             sql.NullFloat64
-	AudioCompletionRatio   sql.NullFloat64
-	SupportedEndpointTypes JSON `gorm:"type:jsonb"`
-	Modalities             JSON `gorm:"type:jsonb"`
-	ContextWindow          sql.NullInt32
-	MaxOutputTokens        sql.NullInt32
-	PricingSource          string
-	LastPricingSyncedAt    sql.NullTime
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	ID                                  uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ModelKey                            string
+	DisplayName                         string
+	Provider                            string
+	Category                            string
+	Capabilities                        JSON `gorm:"type:jsonb"`
+	Status                              string
+	RoutingPreference                   string       `gorm:"column:routing_preference;not null;default:'default'"`
+	RoutingExplorationEnabled           bool         `gorm:"column:routing_exploration_enabled;not null;default:false"`
+	RoutingExplorationNewTrialsPerSite  int          `gorm:"column:routing_exploration_new_trials_per_site;not null;default:5"`
+	RoutingExplorationIdleAfterHours    int          `gorm:"column:routing_exploration_idle_after_hours;not null;default:24"`
+	RoutingExplorationIdleTrialsPerSite int          `gorm:"column:routing_exploration_idle_trials_per_site;not null;default:2"`
+	RoutingExplorationResetAt           sql.NullTime `gorm:"column:routing_exploration_reset_at"`
+	InputPrice                          sql.NullFloat64
+	OutputPrice                         sql.NullFloat64
+	CacheReadRatio                      sql.NullFloat64
+	CacheWriteRatio                     sql.NullFloat64
+	CacheWrite1hRatio                   sql.NullFloat64 `gorm:"column:cache_write_1h_ratio"`
+	AudioRatio                          sql.NullFloat64
+	AudioCompletionRatio                sql.NullFloat64
+	SupportedEndpointTypes              JSON `gorm:"type:jsonb"`
+	Modalities                          JSON `gorm:"type:jsonb"`
+	ContextWindow                       sql.NullInt32
+	MaxOutputTokens                     sql.NullInt32
+	PricingSource                       string
+	LastPricingSyncedAt                 sql.NullTime
+	CreatedAt                           time.Time
+	UpdatedAt                           time.Time
 }
 
 type CanonicalModelWithStats struct {
@@ -518,6 +604,78 @@ func (r CanonicalModelRepository) UpdateProvider(ctx context.Context, id uuid.UU
 		return CanonicalModel{}, fmt.Errorf("update canonical model provider: %w", err)
 	}
 	return item, nil
+}
+
+func (r CanonicalModelRepository) UpdateRoutingPreference(ctx context.Context, id uuid.UUID, preference string) (CanonicalModel, error) {
+	preference = strings.ToLower(strings.TrimSpace(preference))
+	if !ValidRoutingPreference(preference) {
+		return CanonicalModel{}, fmt.Errorf("invalid routing preference %q", preference)
+	}
+	if id == uuid.Nil {
+		return CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+
+	item, err := r.GetByID(ctx, id)
+	if err != nil {
+		return CanonicalModel{}, err
+	}
+	item.RoutingPreference = preference
+	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
+		return CanonicalModel{}, fmt.Errorf("update canonical model routing preference: %w", err)
+	}
+	return item, nil
+}
+
+func (r CanonicalModelRepository) UpdateRoutingExploration(ctx context.Context, id uuid.UUID, config RoutingExplorationConfig) (CanonicalModel, error) {
+	if id == uuid.Nil {
+		return CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	config = normalizeRoutingExplorationConfigValues(config)
+	if err := config.Validate(); err != nil {
+		return CanonicalModel{}, err
+	}
+
+	item, err := r.GetByID(ctx, id)
+	if err != nil {
+		return CanonicalModel{}, err
+	}
+	item.RoutingExplorationEnabled = config.Enabled
+	item.RoutingExplorationNewTrialsPerSite = config.NewTrialsPerSite
+	item.RoutingExplorationIdleAfterHours = config.IdleAfterHours
+	item.RoutingExplorationIdleTrialsPerSite = config.IdleTrialsPerSite
+	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
+		return CanonicalModel{}, fmt.Errorf("update canonical model routing exploration: %w", err)
+	}
+	return item, nil
+}
+
+func (r CanonicalModelRepository) ResetRoutingExploration(ctx context.Context, id uuid.UUID) (CanonicalModel, error) {
+	if id == uuid.Nil {
+		return CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	item, err := r.GetByID(ctx, id)
+	if err != nil {
+		return CanonicalModel{}, err
+	}
+	now := time.Now()
+	item.RoutingExplorationResetAt = sql.NullTime{Time: now, Valid: true}
+	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
+		return CanonicalModel{}, fmt.Errorf("reset canonical model routing exploration: %w", err)
+	}
+	return item, nil
+}
+
+func normalizeRoutingExplorationConfigValues(config RoutingExplorationConfig) RoutingExplorationConfig {
+	if config.NewTrialsPerSite <= 0 {
+		config.NewTrialsPerSite = DefaultRoutingExplorationNewTrialsPerSite
+	}
+	if config.IdleAfterHours <= 0 {
+		config.IdleAfterHours = DefaultRoutingExplorationIdleAfterHours
+	}
+	if config.IdleTrialsPerSite <= 0 {
+		config.IdleTrialsPerSite = DefaultRoutingExplorationIdleTrialsPerSite
+	}
+	return config
 }
 
 func (r CanonicalModelRepository) ListAliases(ctx context.Context, canonicalID uuid.UUID) ([]CanonicalModelAlias, error) {

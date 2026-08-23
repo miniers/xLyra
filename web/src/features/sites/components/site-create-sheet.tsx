@@ -26,6 +26,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { siteTypeIconPath } from '@/components/common/brand-utils'
 import { cn } from '@/lib/utils'
+import { toast } from '@/lib/toast'
 import { useResolvedTheme } from '@/hooks/theme-context'
 import {
   type CreateSiteInput,
@@ -78,6 +79,8 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
       xlyraAuthMode: z.enum(['access_token', 'api_key']),
       xlyraAccessToken: z.string().trim(),
       routingPriority: z.string().trim(),
+      maxSameSiteCredentialRetries: z.string().trim(),
+      firstByteTimeoutMS: z.string().trim(),
       enabled: z.boolean(),
       proxyId: z.string(),
       responsesToolPolicy: z.enum(['passthrough', 'compatibility']),
@@ -218,6 +221,8 @@ const defaultValues: CreateSiteFormValues = {
   xlyraAuthMode: 'api_key',
   xlyraAccessToken: '',
   routingPriority: '1.0',
+  maxSameSiteCredentialRetries: '',
+  firstByteTimeoutMS: '',
   enabled: true,
   proxyId: 'direct',
   responsesToolPolicy: 'passthrough',
@@ -281,6 +286,8 @@ function formValuesFromSite(site?: Site | null): CreateSiteFormValues {
     xlyraAuthMode: site.auth_config?.xlyra?.auth_mode ?? 'api_key',
     xlyraAccessToken: site.auth_config?.xlyra?.access_token ?? '',
     routingPriority: formatRoutingPriorityInput(site.routing_priority),
+    maxSameSiteCredentialRetries: site.gateway_config?.max_same_site_credential_retries == null ? '' : String(site.gateway_config.max_same_site_credential_retries),
+    firstByteTimeoutMS: site.gateway_config?.first_byte_timeout_ms == null ? '' : String(site.gateway_config.first_byte_timeout_ms),
     enabled: site.enabled,
     proxyId: site.proxy_id || 'direct',
     ...responsesToolConfigFromSite(site),
@@ -688,6 +695,18 @@ export function SiteCreateSheet({
     const slug = initialSite?.slug ?? (toSlug(values.name) || toSlug(values.baseUrl) || 'site')
     const credType = credentialTypeOf(values.siteType, siteTypes)
     const selectedProxyID = values.proxyId
+    const sameSiteRetriesValue = values.maxSameSiteCredentialRetries.trim()
+    const firstByteTimeoutValue = values.firstByteTimeoutMS.trim()
+    const sameSiteRetries = sameSiteRetriesValue ? Number(sameSiteRetriesValue) : undefined
+    const firstByteTimeoutMS = firstByteTimeoutValue ? Number(firstByteTimeoutValue) : undefined
+    if (sameSiteRetriesValue && (sameSiteRetries == null || !/^\d+$/.test(sameSiteRetriesValue) || !Number.isInteger(sameSiteRetries) || sameSiteRetries < 0 || sameSiteRetries > 20)) {
+      toast.error(t('form.validation.gatewayRetriesInvalid'))
+      return
+    }
+    if (firstByteTimeoutValue && (firstByteTimeoutMS == null || !/^\d+$/.test(firstByteTimeoutValue) || !Number.isInteger(firstByteTimeoutMS) || firstByteTimeoutMS < 0 || firstByteTimeoutMS > 600000)) {
+      toast.error(t('form.validation.gatewayTimeoutInvalid'))
+      return
+    }
 
     await onSubmit({
       name: values.name.trim(),
@@ -721,6 +740,10 @@ export function SiteCreateSheet({
         ? undefined
         : {
             responsesToolPolicy: values.responsesToolPolicy,
+            maxSameSiteCredentialRetries: sameSiteRetries,
+            firstByteTimeoutMs: firstByteTimeoutMS,
+            clearMaxSameSiteCredentialRetries: !sameSiteRetriesValue,
+            clearFirstByteTimeoutMs: !firstByteTimeoutValue,
             disabledResponsesTools:
               values.responsesToolPolicy === 'compatibility' && values.disableResponsesImageGenerationTool
                 ? ['image_generation']
@@ -1082,6 +1105,26 @@ export function SiteCreateSheet({
                   <div className="space-y-4">
                     {!isGrok ? (
                       <>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <Controller
+                            control={control}
+                            name="maxSameSiteCredentialRetries"
+                            render={({ field }) => (
+                              <FormField label={t('form.fields.maxSameSiteCredentialRetries')} hint={t('form.fields.maxSameSiteCredentialRetriesHint')}>
+                                <Input type="text" inputMode="numeric" {...field} />
+                              </FormField>
+                            )}
+                          />
+                          <Controller
+                            control={control}
+                            name="firstByteTimeoutMS"
+                            render={({ field }) => (
+                              <FormField label={t('form.fields.firstByteTimeout')} hint={t('form.fields.firstByteTimeoutHint')}>
+                                <Input type="text" inputMode="numeric" {...field} />
+                              </FormField>
+                            )}
+                          />
+                        </div>
                         {canConfigureQuotaProbe ? (
                           <Controller
                             control={control}

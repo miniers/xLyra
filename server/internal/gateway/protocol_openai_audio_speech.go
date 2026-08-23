@@ -158,7 +158,7 @@ func (a openAIAudioSpeechProtocolAdapter) ProxyStream(ctx context.Context, w htt
 }
 
 func (a openAIAudioSpeechProtocolAdapter) proxySSEAsAudio(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	reader := bufio.NewReader(resp.Body)
 	flusher, _ := w.(http.Flusher)
 	headersWritten := false
@@ -182,6 +182,7 @@ func (a openAIAudioSpeechProtocolAdapter) proxySSEAsAudio(ctx context.Context, w
 			if ok {
 				if usage != nil {
 					capture.usage = *usage
+					capture.observeOutputUsage(capture.usage)
 				}
 				if len(chunk) > 0 {
 					if !headersWritten {
@@ -227,7 +228,8 @@ func (a openAIAudioSpeechProtocolAdapter) proxySSEAsAudio(ctx context.Context, w
 }
 
 func (a openAIAudioSpeechProtocolAdapter) proxyRawAudio(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{usage: gatewayUsage{PromptTokens: a.inputChars}}
+	capture := newStreamCaptureState(ctx)
+	capture.usage = gatewayUsage{PromptTokens: a.inputChars}
 	flusher, _ := w.(http.Flusher)
 	headersWritten := false
 	buffer := make([]byte, 32*1024)
@@ -293,6 +295,7 @@ func inspectAudioSpeechStreamLine(line []byte, capture *streamCaptureState) {
 	}
 	if usage != nil {
 		capture.usage = *usage
+		capture.observeOutputUsage(capture.usage)
 	}
 	if done {
 		capture.sawDone = true

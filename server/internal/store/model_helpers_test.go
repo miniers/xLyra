@@ -287,6 +287,31 @@ func TestRequestLogSchemaIncludesParentRequestIndex(t *testing.T) {
 	}
 }
 
+func TestRequestLogSchemaIncludesSiteModelCreatedIndex(t *testing.T) {
+	t.Parallel()
+
+	requestLogSchema := parseStoreSchema(t, &RequestLog{})
+	index := requestLogSchema.LookIndex("request_logs_site_model_created_idx")
+	if index == nil || len(index.Fields) != 2 {
+		t.Fatalf("request log site model index = %#v, want two fields", index)
+	}
+	if index.Fields[0].Field == nil || index.Fields[0].Field.DBName != "site_model_id" || index.Fields[1].Field == nil || index.Fields[1].Field.DBName != "created_at" {
+		t.Fatalf("request log site model index fields = %#v", index.Fields)
+	}
+}
+
+func TestRouteExplorationSchemaIncludesBootstrapIndexes(t *testing.T) {
+	t.Parallel()
+
+	explorationSchema := parseStoreSchema(t, &RouteExplorationState{})
+	for _, name := range []string{"route_exploration_states_model_idx", "route_exploration_states_last_attempt_idx"} {
+		index := explorationSchema.LookIndex(name)
+		if index == nil || len(index.Fields) != 1 {
+			t.Fatalf("route exploration index %q = %#v, want one field", name, index)
+		}
+	}
+}
+
 func parseStoreSchema(t *testing.T, model any) *schema.Schema {
 	t.Helper()
 

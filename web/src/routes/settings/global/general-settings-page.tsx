@@ -35,6 +35,8 @@ type GeneralSettingsDraft = {
   requestDetailCleanupEnabled: boolean
   requestDetailRetentionDays: string
   sessionLifetimeHours: string
+  maxSameSiteCredentialRetries: string
+  firstByteTimeoutMS: string
 }
 
 const DEFAULT_GENERAL_SETTINGS: GeneralSettingsDraft = {
@@ -48,6 +50,8 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettingsDraft = {
   requestDetailCleanupEnabled: true,
   requestDetailRetentionDays: '90',
   sessionLifetimeHours: '24',
+  maxSameSiteCredentialRetries: '0',
+  firstByteTimeoutMS: '0',
 }
 
 const logLevels = ['debug', 'info', 'warn', 'error'] as const
@@ -85,6 +89,8 @@ export function GeneralSettingsPage() {
   const retentionError = draft.cleanupEnabled ? validateRetentionDays(draft.retentionDays, t) : undefined
   const requestDetailRetentionError = draft.requestDetailCleanupEnabled ? validateRetentionDays(draft.requestDetailRetentionDays, t) : undefined
   const sessionLifetimeError = validateSessionLifetimeHours(draft.sessionLifetimeHours, t)
+  const maxSameSiteCredentialRetriesError = validateGatewayInteger(draft.maxSameSiteCredentialRetries, 0, 20, t('general.validation.gatewayRetries'))
+  const firstByteTimeoutError = validateGatewayInteger(draft.firstByteTimeoutMS, 0, 600000, t('general.validation.gatewayTimeout'))
 
   function patchDraft(patch: Partial<GeneralSettingsDraft>) {
     setDraft((current) => ({ ...current, ...patch }))
@@ -113,6 +119,10 @@ export function GeneralSettingsPage() {
     }
     if (sessionLifetimeError) {
       toast.error(t('general.validation.sessionLifetimeInvalid'), { description: sessionLifetimeError })
+      return
+    }
+    if (maxSameSiteCredentialRetriesError || firstByteTimeoutError) {
+      toast.error(t('general.validation.gatewayInvalid'), { description: maxSameSiteCredentialRetriesError ?? firstByteTimeoutError })
       return
     }
     saveMutation.mutate(draftToGeneralSettings(draft))
@@ -257,6 +267,19 @@ export function GeneralSettingsPage() {
       </section>
 
       <section className="space-y-4 border-t border-[hsl(var(--divider))] pt-6">
+        <h4 className="text-sm font-semibold text-foreground">{t('general.gateway.title')}</h4>
+        <p className="text-muted-soft text-xs">{t('general.gateway.description')}</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('general.gateway.sameSiteRetries')} description={t('general.gateway.sameSiteRetriesDesc')} error={maxSameSiteCredentialRetriesError}>
+            <Input type="text" inputMode="numeric" value={draft.maxSameSiteCredentialRetries} onChange={(event) => patchDraft({ maxSameSiteCredentialRetries: event.target.value })} />
+          </FormField>
+          <FormField label={t('general.gateway.firstByteTimeout')} description={t('general.gateway.firstByteTimeoutDesc')} error={firstByteTimeoutError}>
+            <Input type="text" inputMode="numeric" value={draft.firstByteTimeoutMS} onChange={(event) => patchDraft({ firstByteTimeoutMS: event.target.value })} />
+          </FormField>
+        </div>
+      </section>
+
+      <section className="space-y-4 border-t border-[hsl(var(--divider))] pt-6">
         <h4 className="text-sm font-semibold text-foreground">{t('general.data.title')}</h4>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -313,6 +336,8 @@ function generalSettingsToDraft(config: GeneralSettingsConfig): GeneralSettingsD
     requestDetailCleanupEnabled: config.data?.request_detail_cleanup_enabled ?? true,
     requestDetailRetentionDays: String(config.data?.request_detail_retention_days ?? 90),
     sessionLifetimeHours: String(config.security?.session_lifetime_hours ?? 24),
+    maxSameSiteCredentialRetries: String(config.gateway?.max_same_site_credential_retries ?? 0),
+    firstByteTimeoutMS: String(config.gateway?.first_byte_timeout_ms ?? 0),
   }
 }
 
@@ -337,6 +362,10 @@ function draftToGeneralSettings(draft: GeneralSettingsDraft): GeneralSettingsCon
     },
     security: {
       session_lifetime_hours: Number(draft.sessionLifetimeHours.trim()),
+    },
+    gateway: {
+      max_same_site_credential_retries: Number(draft.maxSameSiteCredentialRetries.trim()),
+      first_byte_timeout_ms: Number(draft.firstByteTimeoutMS.trim()),
     },
   }
 }
@@ -424,5 +453,13 @@ function validateSessionLifetimeHours(value: string, t: (key: string) => string)
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed)) return t('general.validation.sessionLifetimeInteger')
   if (parsed < 0 || parsed > 720) return t('general.validation.sessionLifetimeRange')
+  return undefined
+}
+
+function validateGatewayInteger(value: string, min: number, max: number, message: string) {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return message
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) return message
   return undefined
 }

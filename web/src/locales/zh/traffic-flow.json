@@ -21,7 +21,8 @@
     "refresh": "重新载入",
     "fullscreen": "进入全屏",
     "exitFullscreen": "退出全屏",
-    "close": "关闭详情"
+    "close": "关闭详情",
+    "cancel": "取消请求"
   },
   "metrics": {
     "label": "实时指标",
@@ -76,6 +77,10 @@
     "upstream": "上游站点",
     "phase": "当前阶段",
     "attempt": "路由尝试",
-    "waiting": "等待路由"
+    "waiting": "等待路由",
+    "tokens": "输入 / 输出 Token",
+    "estimated": "估算中",
+    "actual": "已统计",
+    "cancelFailed": "取消请求失败"
   }
 }

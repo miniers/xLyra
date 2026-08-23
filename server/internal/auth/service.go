@@ -111,6 +111,7 @@ type CreateAPIKeyInput struct {
 	SiteIDs              []uuid.UUID
 	SiteGroupIDs         []uuid.UUID
 	ModelRules           []store.APIKeyModelRule
+	GatewayConfig        *store.APIKeyGatewayConfig
 	ImageToolBridge      *ImageToolBridgeInput
 	QuotaLimit           *float64
 	QuotaUnlimited       bool
@@ -131,6 +132,7 @@ type UpdateAPIKeyInput struct {
 	SiteIDs              []uuid.UUID
 	SiteGroupIDs         []uuid.UUID
 	ModelRules           []store.APIKeyModelRule
+	GatewayConfig        *store.APIKeyGatewayConfig
 	ImageToolBridge      *ImageToolBridgeInput
 	QuotaLimit           *float64
 	QuotaUnlimited       bool
@@ -647,6 +649,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, input CreateAPIKeyInput, adm
 	if err != nil {
 		return CreateAPIKeyResult{}, err
 	}
+	gatewayConfig, err := store.NormalizeAPIKeyGatewayConfig(input.GatewayConfig)
+	if err != nil {
+		return CreateAPIKeyResult{}, err
+	}
 
 	key, keyKind, err := s.createGatewayAPIKeyValue(ctx, input.CustomKey)
 	if err != nil {
@@ -674,6 +680,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, input CreateAPIKeyInput, adm
 			ModelPolicy:          modelPolicy,
 			SitePolicy:           sitePolicy,
 			ModelMappings:        modelRules,
+			GatewayConfig:        gatewayConfig,
 			ImageToolBridge:      imageToolBridge,
 			QuotaLimit:           nullableFloat(input.QuotaLimit),
 			QuotaUnlimited:       quotaUnlimited,
@@ -960,6 +967,10 @@ func (s *Service) UpdateAPIKey(ctx context.Context, id uuid.UUID, input UpdateAP
 	if err != nil {
 		return store.APIKey{}, err
 	}
+	gatewayConfig, err := store.NormalizeAPIKeyGatewayConfig(input.GatewayConfig)
+	if err != nil {
+		return store.APIKey{}, err
+	}
 
 	var updated store.APIKey
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -971,6 +982,7 @@ func (s *Service) UpdateAPIKey(ctx context.Context, id uuid.UUID, input UpdateAP
 			ModelPolicy:          modelPolicy,
 			SitePolicy:           sitePolicy,
 			ModelMappings:        modelRules,
+			GatewayConfig:        gatewayConfig,
 			ImageToolBridge:      imageToolBridge,
 			QuotaLimit:           nullableFloat(input.QuotaLimit),
 			QuotaUnlimited:       quotaUnlimited,

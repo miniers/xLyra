@@ -134,7 +134,7 @@ func proxyOpenAIImagesStream(
 	resp *http.Response,
 	startedAt time.Time,
 ) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -241,6 +241,7 @@ func inspectOpenAIImagesStreamLine(line []byte, capture *streamCaptureState) {
 			capture.sawDone = true
 		}
 	}
+	capture.observeOutputUsage(capture.usage)
 	if strings.Contains(strings.ToLower(eventType), "completed") {
 		capture.streamCompleted = true
 		capture.sawDone = true

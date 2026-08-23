@@ -8,8 +8,8 @@ import {
 
 describe('request table column resizing', () => {
   it('uses a compact timing column by default', () => {
-    expect(REQUEST_TABLE_COLUMN_DEFAULT_WIDTHS[2]).toBe(18)
-    expect(REQUEST_TABLE_COLUMN_DEFAULT_WIDTHS[6]).toBe(10)
+    expect(REQUEST_TABLE_COLUMN_DEFAULT_WIDTHS[2]).toBe(17)
+    expect(REQUEST_TABLE_COLUMN_DEFAULT_WIDTHS[6]).toBe(9)
   })
 
   it('resizes the target and proportionally links all other columns', () => {
@@ -50,7 +50,7 @@ describe('request table column resizing', () => {
   it('accepts stored ratios with valid hundredth-percent floating-point representations', () => {
     const widths = [...REQUEST_TABLE_COLUMN_DEFAULT_WIDTHS]
     widths[5] = 0.07
-    widths[9] = 24.93
+    widths[9] = 20.93
 
     expect(isRequestTableColumnWidths(widths)).toBe(true)
   })

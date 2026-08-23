@@ -41,6 +41,11 @@ type GeneralSecurityConfig struct {
 	SessionLifetimeHours int `json:"session_lifetime_hours"`
 }
 
+type GeneralGatewayConfig struct {
+	MaxSameSiteCredentialRetries int `json:"max_same_site_credential_retries"`
+	FirstByteTimeoutMS           int `json:"first_byte_timeout_ms"`
+}
+
 type GeneralConfig struct {
 	Tasks       GeneralTaskConfig        `json:"tasks"`
 	IPWhitelist GeneralIPWhitelistConfig `json:"ip_whitelist"`
@@ -48,6 +53,7 @@ type GeneralConfig struct {
 	Data        GeneralDataConfig        `json:"data"`
 	Cache       GeneralCacheConfig       `json:"cache"`
 	Security    GeneralSecurityConfig    `json:"security"`
+	Gateway     GeneralGatewayConfig     `json:"gateway"`
 }
 
 func DefaultGeneralConfig() GeneralConfig {
@@ -77,6 +83,10 @@ func DefaultGeneralConfig() GeneralConfig {
 		},
 		Security: GeneralSecurityConfig{
 			SessionLifetimeHours: 24,
+		},
+		Gateway: GeneralGatewayConfig{
+			MaxSameSiteCredentialRetries: 0,
+			FirstByteTimeoutMS:           0,
 		},
 	}
 }
@@ -125,6 +135,10 @@ func GeneralConfigFromRaw(raw any) GeneralConfig {
 	if security, ok := root["security"].(map[string]any); ok {
 		cfg.Security.SessionLifetimeHours = intFromMap(security, "session_lifetime_hours", cfg.Security.SessionLifetimeHours)
 	}
+	if gateway, ok := root["gateway"].(map[string]any); ok {
+		cfg.Gateway.MaxSameSiteCredentialRetries = intFromMap(gateway, "max_same_site_credential_retries", cfg.Gateway.MaxSameSiteCredentialRetries)
+		cfg.Gateway.FirstByteTimeoutMS = intFromMap(gateway, "first_byte_timeout_ms", cfg.Gateway.FirstByteTimeoutMS)
+	}
 	return NormalizeGeneralConfig(cfg)
 }
 
@@ -164,6 +178,12 @@ func NormalizeGeneralConfig(cfg GeneralConfig) GeneralConfig {
 	if cfg.Cache.ObservationHistoryLimit == 0 {
 		cfg.Cache.ObservationHistoryLimit = defaults.Cache.ObservationHistoryLimit
 	}
+	if cfg.Gateway.MaxSameSiteCredentialRetries < 0 {
+		cfg.Gateway.MaxSameSiteCredentialRetries = defaults.Gateway.MaxSameSiteCredentialRetries
+	}
+	if cfg.Gateway.FirstByteTimeoutMS < 0 {
+		cfg.Gateway.FirstByteTimeoutMS = defaults.Gateway.FirstByteTimeoutMS
+	}
 	return cfg
 }
 
@@ -201,6 +221,12 @@ func ValidateGeneralConfig(cfg GeneralConfig) error {
 	if cfg.Security.SessionLifetimeHours < 0 || cfg.Security.SessionLifetimeHours > 720 {
 		return fmt.Errorf("security.session_lifetime_hours must be between 0 and 720")
 	}
+	if cfg.Gateway.MaxSameSiteCredentialRetries < 0 || cfg.Gateway.MaxSameSiteCredentialRetries > 20 {
+		return fmt.Errorf("gateway.max_same_site_credential_retries must be between 0 and 20")
+	}
+	if cfg.Gateway.FirstByteTimeoutMS < 0 || cfg.Gateway.FirstByteTimeoutMS > 600000 {
+		return fmt.Errorf("gateway.first_byte_timeout_ms must be between 0 and 600000")
+	}
 	return nil
 }
 
@@ -231,6 +257,10 @@ func GeneralConfigToMap(cfg GeneralConfig) map[string]any {
 		},
 		"security": map[string]any{
 			"session_lifetime_hours": cfg.Security.SessionLifetimeHours,
+		},
+		"gateway": map[string]any{
+			"max_same_site_credential_retries": cfg.Gateway.MaxSameSiteCredentialRetries,
+			"first_byte_timeout_ms":            cfg.Gateway.FirstByteTimeoutMS,
 		},
 	}
 }

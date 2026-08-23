@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowLeft, CircleHelp, Database, Maximize2, Minimize2, MonitorUp, Network, Pause, Play, Radio, RotateCcw, ShieldCheck, Undo2, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowLeft, Ban, CircleHelp, Database, Maximize2, Minimize2, MonitorUp, Network, Pause, Play, Radio, RotateCcw, ShieldCheck, Undo2, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { ProtectedRoute } from '@/components/auth/auth-guard'
 import { useMobileDevice, useMobileLayout } from '@/hooks/use-media-query'
 import {
   createTrafficFlowStream,
+  cancelTrafficFlowRequest,
   getTrafficFlowTopology,
   type TrafficFlowEvent,
   type TrafficFlowRequest,
@@ -15,6 +16,7 @@ import {
   type TrafficFlowUsageTotal,
 } from '@/features/traffic-flow/api/traffic-flow'
 import { modelVisual } from '@/features/traffic-flow/lib/model-visual'
+import { toast } from '@/lib/toast'
 import { fetchRateLimitSettings } from '@/features/settings/api/settings'
 import { GatewayCore } from './gateway-core/GatewayCore'
 import { TrafficFlowMapCanvas } from './traffic-flow-map-canvas'
@@ -374,6 +376,22 @@ function TrafficFlowPage() {
   const respondingCount = activeRequests.filter((request) => request.phase === 'responding' || request.phase === 'completed').length
   const rateLimit = rateLimitQuery.data?.rate_limit
   const rpmLimit = rateLimit?.status === 'enabled' && rateLimit.rpm_limit != null ? rateLimit.rpm_limit : null
+  const markRequestCancelled = useCallback((requestID: string) => {
+    setRequests((current) => {
+      const request = current[requestID]
+      if (!request) return current
+      return {
+        ...current,
+        [requestID]: {
+          ...request,
+          phase: 'cancelled',
+          can_cancel: false,
+          updated_at: new Date().toISOString(),
+        },
+      }
+    })
+    setSelectedRequestID((current) => current === requestID ? null : current)
+  }, [])
 
   return (
     <main ref={pageRef} className="traffic-flow-page">
@@ -429,7 +447,7 @@ function TrafficFlowPage() {
       </section>
 
       <section className={`traffic-flow-activity ${selectedRequest ? 'is-detail' : ''}`} aria-label={t('activity.label')}>
-        {selectedRequest ? <FlowDetailDock request={selectedRequest} onClose={() => setSelectedRequestID(null)} t={t} /> : <>
+        {selectedRequest ? <FlowDetailDock request={selectedRequest} onClose={() => setSelectedRequestID(null)} onCancelled={markRequestCancelled} t={t} /> : <>
           <div className="traffic-flow-activity-heading"><Activity className="size-4" /><span>{t('activity.label')}</span><i /></div>
           <div className="traffic-flow-activity-list">
             {activeRequests.slice(0, 5).map((request) => <FlowActivity key={request.request_id} request={request} onSelect={() => setSelectedRequestID(request.request_id)} t={t} />)}
@@ -525,16 +543,37 @@ function FlowActivity({ request, onSelect, t }: { request: TrafficFlowRequest; o
   </button>
 }
 
-function FlowDetailDock({ request, onClose, t }: { request: TrafficFlowRequest; onClose: () => void; t: (key: string) => string }) {
+function FlowDetailDock({ request, onClose, onCancelled, t }: { request: TrafficFlowRequest; onClose: () => void; onCancelled: (requestID: string) => void; t: (key: string) => string }) {
   const visual = modelVisual(request.model_provider, request.model_key)
+  const [pendingCancel, setPendingCancel] = useState(false)
+  const performCancel = async () => {
+    if (pendingCancel || !request.can_cancel) return
+    setPendingCancel(true)
+    try {
+      await cancelTrafficFlowRequest(request.request_id)
+      onCancelled(request.request_id)
+    } catch (error) {
+      toast.error(t('inspector.cancelFailed'), { description: error instanceof Error ? error.message : undefined })
+    } finally {
+      setPendingCancel(false)
+    }
+  }
   return <div className="traffic-flow-detail-dock" style={{ '--model-color': visual.color } as CSSProperties}>
     <div className="traffic-flow-detail-heading"><Activity className="size-4" /><span>{t('inspector.request')}</span><i /></div>
     <div className="traffic-flow-detail-endpoint"><span>{t('inspector.downstream')}</span><strong>{request.api_key_name}</strong></div>
     <div className="traffic-flow-detail-model"><span className="traffic-flow-detail-model-icon">{visual.iconPath ? <img src={visual.iconPath} alt="" /> : visual.fallback}</span><div><span>{t('inspector.request')}</span><strong>{request.model_key || t('inspector.unknownModel')}</strong></div></div>
     <div className="traffic-flow-detail-endpoint"><span>{t('inspector.upstream')}</span><strong>{request.upstream_site_name || t('inspector.waiting')}</strong></div>
     <div className="traffic-flow-detail-phase"><span>{t('inspector.phase')}</span><strong>{t(`phase.${request.phase}`)}</strong><i>{t('inspector.attempt')} {request.attempt || 1}</i></div>
+    <div className="traffic-flow-detail-tokens"><span>{t('inspector.tokens')}</span><strong>{formatTokenCount(request.input_tokens)} / {formatTokenCount(request.output_tokens)}</strong><i>{request.tokens_estimated ? t('inspector.estimated') : t('inspector.actual')}</i></div>
+    <div className="traffic-flow-detail-controls">
+      <button type="button" disabled={!request.can_cancel || pendingCancel} onClick={() => void performCancel()}><Ban className="size-3.5" />{t('actions.cancel')}</button>
+    </div>
     <button type="button" className="traffic-flow-detail-close" onClick={onClose} aria-label={t('actions.close')}><X className="size-4" /></button>
   </div>
+}
+
+function formatTokenCount(value: number) {
+  return Number.isFinite(value) && value > 0 ? value.toLocaleString() : '-'
 }
 
 async function toggleFullscreen(element: HTMLElement | null, setFullscreen: (value: boolean) => void) {

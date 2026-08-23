@@ -44,6 +44,17 @@ func TestRegistryPreservesProvidedRequestStartTime(t *testing.T) {
 	}
 }
 
+func TestRegistryDoesNotOverwriteActiveRequestID(t *testing.T) {
+	registry := NewRegistry()
+	registry.Start(Request{RequestID: "req-duplicate", APIKeyName: "first"})
+	registry.Start(Request{RequestID: "req-duplicate", APIKeyName: "second"})
+
+	request, ok := registry.Request("req-duplicate")
+	if !ok || request.APIKeyName != "first" {
+		t.Fatalf("active request after duplicate start = %#v, ok=%v", request, ok)
+	}
+}
+
 func TestRegistryFinishIsIdempotentAndSnapshotIsSorted(t *testing.T) {
 	registry := NewRegistry()
 	registry.Start(Request{RequestID: "earlier"})
@@ -89,6 +100,114 @@ func TestRegistryAccumulatesAndPublishesTokens(t *testing.T) {
 	}
 	if snapshot := registry.Snapshot(); snapshot.TotalTokens != 1500 || len(snapshot.DownstreamUsage) != 1 || snapshot.DownstreamUsage[0].TotalTokens != 1500 || len(snapshot.UpstreamUsage) != 1 || snapshot.UpstreamUsage[0].TotalTokens != 1500 {
 		t.Fatalf("snapshot usage = %#v", snapshot)
+	}
+}
+
+func TestRegistryTracksLiveCancelControl(t *testing.T) {
+	registry := NewRegistry()
+	registry.Start(Request{RequestID: "req-control"})
+
+	cancelled := false
+	registry.AttachControl("req-control", func() bool {
+		cancelled = true
+		return true
+	})
+
+	if !registry.CancelRequest("req-control") || !cancelled {
+		t.Fatal("cancel control was not invoked")
+	}
+
+	registry.Finish("req-control", PhaseCompleted)
+	if registry.CancelRequest("req-control") {
+		t.Fatal("terminal request should not expose cancel control")
+	}
+}
+
+func TestRegistryCancelMarksRequestTerminalBeforeExecutionStops(t *testing.T) {
+	registry := NewRegistry()
+	registry.terminalRetention = time.Hour
+	events, unsubscribe := registry.Subscribe()
+	defer unsubscribe()
+
+	registry.Start(Request{RequestID: "req-cancel-terminal"})
+	assertEvent(t, events, "upsert", "req-cancel-terminal", PhaseAccepted)
+	stopped := false
+	registry.AttachControl("req-cancel-terminal", func() bool {
+		stopped = true
+		return true
+	})
+	assertEvent(t, events, "upsert", "req-cancel-terminal", PhaseAccepted)
+
+	if !registry.CancelRequest("req-cancel-terminal") {
+		t.Fatal("cancel request was not accepted")
+	}
+	if !stopped {
+		t.Fatal("cancel callback was not invoked")
+	}
+	cancelled := assertEvent(t, events, "upsert", "req-cancel-terminal", PhaseCancelled)
+	if cancelled.Request == nil || cancelled.Request.CanCancel {
+		t.Fatalf("cancelled event = %#v, want no live control", cancelled)
+	}
+	if request, ok := registry.Request("req-cancel-terminal"); !ok || request.Phase != PhaseCancelled {
+		t.Fatalf("request after cancellation = %#v, ok=%v", request, ok)
+	}
+	registry.Finish("req-cancel-terminal", PhaseCompleted)
+	if request, ok := registry.Request("req-cancel-terminal"); !ok || request.Phase != PhaseCancelled {
+		t.Fatalf("late finish changed cancelled request = %#v, ok=%v", request, ok)
+	}
+	if registry.CancelRequest("req-cancel-terminal") {
+		t.Fatal("terminal request should not accept a second cancellation")
+	}
+}
+
+func TestRegistryReplacesEstimatedTokenUsageWithActualUsage(t *testing.T) {
+	registry := NewRegistry()
+	registry.Start(Request{RequestID: "req-token", InputTokens: 100, TokensEstimated: true})
+	registry.SetTokenUsage("req-token", 12, 7, false)
+
+	request, ok := registry.Request("req-token")
+	if !ok || request.InputTokens != 12 || request.OutputTokens != 7 || request.TokensEstimated {
+		t.Fatalf("actual token usage = %#v", request)
+	}
+}
+
+func TestRegistrySetsExactOutputBelowLiveEstimate(t *testing.T) {
+	registry := NewRegistry()
+	registry.Start(Request{RequestID: "req-output-exact", InputTokens: 100, OutputTokens: 50, TokensEstimated: true})
+	registry.SetExactOutputTokens("req-output-exact", 7)
+
+	request, ok := registry.Request("req-output-exact")
+	if !ok || request.InputTokens != 100 || request.OutputTokens != 7 || !request.TokensEstimated {
+		t.Fatalf("exact output usage = %#v, want input=100 output=7 and estimated input", request)
+	}
+}
+
+func TestRegistryResetsOutputEstimateForRetry(t *testing.T) {
+	registry := NewRegistry()
+	registry.Start(Request{RequestID: "req-output-retry", InputTokens: 100, OutputTokens: 50, TokensEstimated: true})
+
+	registry.ResetOutputTokenEstimate("req-output-retry")
+	request, ok := registry.Request("req-output-retry")
+	if !ok || request.InputTokens != 100 || request.OutputTokens != 0 || !request.TokensEstimated {
+		t.Fatalf("reset output estimate = %#v, want input=100 output=0 estimated=true", request)
+	}
+	registry.UpdateTokenEstimate("req-output-retry", 0, 7)
+	request, ok = registry.Request("req-output-retry")
+	if !ok || request.OutputTokens != 7 {
+		t.Fatalf("retry output estimate = %#v, want 7", request)
+	}
+}
+
+func TestRegistryTracksFirstByteLatencyOnce(t *testing.T) {
+	registry := NewRegistry()
+	registry.Start(Request{RequestID: "req-first-byte"})
+
+	registry.SetFirstByteLatency("req-first-byte", 42)
+	registry.SetFirstByteLatency("req-first-byte", 84)
+
+	request, ok := registry.Request("req-first-byte")
+	if !ok || request.FirstByteLatencyMS != 42 {
+		t.Fatalf("first byte latency = %#v, want 42ms", request)
 	}
 }
 

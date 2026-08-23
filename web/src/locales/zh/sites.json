@@ -124,6 +124,10 @@
       "xlyraApiKeyHint": "通过 /v1/models 获取该 Key 可用模型。",
       "routingPriority": "路由权重",
       "routingPriorityHint": "默认 1.0，可设置 1.0 - 5.0，权重越高优先路由。",
+      "maxSameSiteCredentialRetries": "同站 Credential 重试次数",
+      "maxSameSiteCredentialRetriesHint": "留空继承全局配置；填写 0 表示在本站点禁用同站重试。",
+      "firstByteTimeout": "站点首字超时（毫秒）",
+      "firstByteTimeoutHint": "留空继承全局配置；填写 0 表示在本站点禁用首字超时。",
       "systemToken": "系统授权令牌",
       "systemTokenPlaceholder": "NewAPI 系统级 Access Token",
       "systemTokenHint": "用于管理站点和模型的系统级授权令牌。",
@@ -195,7 +199,9 @@
       "userIdNumeric": "用户 ID 需要是数字",
       "headerNameRequired": "请输入 Header 名",
       "responsesToolRequired": "兼容模式下至少选择一个禁用工具",
-      "urlContainsV1": "地址无需包含 /v1，系统会自动追加"
+      "urlContainsV1": "地址无需包含 /v1，系统会自动追加",
+      "gatewayRetriesInvalid": "同站 Credential 重试次数必须是 0 到 20 的整数",
+      "gatewayTimeoutInvalid": "站点首字超时必须是 0 到 600000 的整数"
     },
     "actions": {
       "save": "保存修改",

@@ -20,6 +20,11 @@ import {
   type SiteModel,
   updateSiteAPIKeyModelStatus,
   updateSiteModelStatus,
+  updateCanonicalModelRoutingPreference,
+  updateCanonicalModelRoutingExploration,
+  resetCanonicalModelRoutingExploration,
+  type RoutingExplorationConfig,
+  type RoutingPreference,
 } from '@/features/sites/api/sites'
 import { sortSitesByName } from '@/features/sites/lib/site-utils'
 import {
@@ -169,9 +174,9 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
   const candidatesQuery = useQuery({
     queryKey: routeQueryKeys.candidates({
       modelKey: activeModelKey,
-      debug: false,
+      debug: true,
     }),
-    queryFn: () => listRouteCandidates(activeModelKey),
+    queryFn: () => listRouteCandidates(activeModelKey, { debug: true }),
     enabled: Boolean(activeModelKey),
   })
   const tracesQuery = useQuery({
@@ -235,7 +240,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.overview({ windowHours: 24 }) })
       if (activeModelKey) {
         await queryClient.invalidateQueries({ queryKey: routeQueryKeys.selection({ modelKey: activeModelKey, debug: true, failoverLimit: 3 }) })
-        await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: false }) })
+        await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: true }) })
       }
       toast.success(t('workspace.toast.cooldownCleared'))
     },
@@ -243,6 +248,46 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
       toast.error(t('workspace.toast.cooldownClearFailed'), {
         description: error.message,
       })
+    },
+  })
+
+  const routingPreferenceMutation = useMutation({
+    mutationFn: ({ modelId, preference }: { modelId: string; preference: RoutingPreference }) =>
+      updateCanonicalModelRoutingPreference(modelId, preference),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'canonical-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.preferenceUpdated'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.preferenceUpdateFailed'), {
+        description: error.message,
+      })
+    },
+  })
+
+  const routingExplorationMutation = useMutation({
+    mutationFn: ({ modelId, config }: { modelId: string; config: Omit<RoutingExplorationConfig, 'reset_at'> }) =>
+      updateCanonicalModelRoutingExploration(modelId, config),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'canonical-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.explorationUpdated'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.explorationUpdateFailed'), { description: error.message })
+    },
+  })
+
+  const routingExplorationResetMutation = useMutation({
+    mutationFn: (modelId: string) => resetCanonicalModelRoutingExploration(modelId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'canonical-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.explorationReset'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.explorationResetFailed'), { description: error.message })
     },
   })
 
@@ -272,13 +317,14 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     await queryClient.invalidateQueries({ queryKey: routeQueryKeys.overview({ windowHours: 24 }) })
     if (activeModelKey) {
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.selection({ modelKey: activeModelKey, debug: true, failoverLimit: 3 }) })
-      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: false }) })
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: true }) })
     }
   }
 
   function renderRouteDetails(item?: RouteOverviewItem, compact = false) {
     const allCooldowns = cooldownsQuery.data?.items ?? EMPTY_COOLDOWNS
-    const canonicalId = item?.canonical_model.id ?? ''
+    const canonicalId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id ?? ''
+    const canonical = canonicalMap.get(canonicalId)
     const cooldowns = canonicalId
       ? filterCooldownsForCanonicalModel(allCooldowns, canonicalId, modelsMap)
       : EMPTY_COOLDOWNS
@@ -286,6 +332,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     return (
       <RouteModelDetails
         item={item}
+        canonical={canonical}
         selectionQuery={selectionQuery}
         candidatesQuery={candidatesQuery}
         tracesQuery={tracesQuery}
@@ -295,6 +342,8 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
         apiKeysMap={apiKeysMap}
         cooldownsLoading={cooldownsQuery.isLoading}
         clearingId={clearCooldownMutation.variables?.siteId}
+        routingPreferencePending={routingPreferenceMutation.isPending}
+        routingExplorationPending={routingExplorationMutation.isPending || routingExplorationResetMutation.isPending}
         pendingChannelState={pendingChannelState}
         compact={compact}
         onToggleChannel={handleToggleChannel}
@@ -304,6 +353,18 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
           siteCredentialId: cooldown.site_credential_id,
           source: cooldown.source,
         })}
+        onRoutingPreferenceChange={(preference) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingPreferenceMutation.mutate({ modelId, preference })
+        }}
+        onRoutingExplorationChange={(config) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingExplorationMutation.mutate({ modelId, config })
+        }}
+        onRoutingExplorationReset={() => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingExplorationResetMutation.mutate(modelId)
+        }}
       />
     )
   }

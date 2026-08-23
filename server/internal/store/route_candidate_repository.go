@@ -40,6 +40,12 @@ type RouteCandidateRow struct {
 	ModelSuccessRate                   sql.NullFloat64
 	ModelAvgLatencyMS                  sql.NullInt64
 	ModelRequestCount                  int
+	ModelTotalRequestCount             int
+	ModelLastUsedAt                    sql.NullTime
+	ModelAvgFirstByteLatencyMS         sql.NullInt64
+	ModelFirstByteRequestCount         int
+	ModelCacheHitRate                  sql.NullFloat64
+	ModelCacheRequestCount             int
 	ModelAPIKeyCount                   int
 	ModelAvailableKeyCount             int
 	SiteCredentialCount                int
@@ -108,6 +114,10 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	if err := r.db.WithContext(ctx).Where(&SiteModelPricing{Available: true}).Find(&pricings).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
+	cacheStats, err := r.listModelCacheStats(ctx, siteModels)
+	if err != nil {
+		return nil, fmt.Errorf("list route candidates: %w", err)
+	}
 	cooldowns, err := NewRouteCooldownRepository(r.db).ListActive(ctx, time.Now())
 	if err != nil {
 		return nil, err
@@ -162,6 +172,7 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 			SiteHealthCheckedAt:    state.CheckedAt,
 		}
 		fillModelHealth(&row, healthSnapshots)
+		fillModelCacheStats(&row, cacheStats[model.ID])
 		fillRouteKeyCounts(&row, apiKeyModels, credentialsByID, keyStatesByCredentialID, cooldowns)
 		fillRouteSiteCredentialCount(&row, credentials, keyStatesByCredentialID, cooldowns)
 		fillRoutePricing(&row, pricings)
@@ -177,6 +188,65 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	return items, nil
 }
 
+type RouteModelCacheStats struct {
+	SiteModelID  uuid.UUID `gorm:"column:site_model_id"`
+	RequestCount int64     `gorm:"column:request_count"`
+	PromptTokens int64     `gorm:"column:prompt_tokens"`
+	CachedTokens int64     `gorm:"column:cached_tokens"`
+}
+
+func (r RouteCandidateRepository) listModelCacheStats(ctx context.Context, siteModels []SiteModel) (map[uuid.UUID]RouteModelCacheStats, error) {
+	result := make(map[uuid.UUID]RouteModelCacheStats)
+	if len(siteModels) == 0 {
+		return result, nil
+	}
+
+	siteModelIDs := make([]uuid.UUID, 0, len(siteModels))
+	for _, model := range siteModels {
+		if model.ID != uuid.Nil {
+			siteModelIDs = append(siteModelIDs, model.ID)
+		}
+	}
+	if len(siteModelIDs) == 0 {
+		return result, nil
+	}
+
+	var rows []RouteModelCacheStats
+	query := r.db.WithContext(ctx).
+		Table("usage_records").
+		Select(`request_logs.site_model_id AS site_model_id,
+			COUNT(*) AS request_count,
+			COALESCE(SUM(usage_records.prompt_tokens), 0) AS prompt_tokens,
+			COALESCE(SUM(CASE WHEN usage_records.cached_tokens IS NULL OR usage_records.cached_tokens < 0 THEN 0 ELSE usage_records.cached_tokens END), 0) AS cached_tokens`).
+		Joins("JOIN request_logs ON request_logs.id = usage_records.request_log_id").
+		Where("request_logs.site_model_id IN ? AND request_logs.internal = ? AND request_logs.created_at >= ?", siteModelIDs, false, time.Now().Add(-24*time.Hour)).
+		Group("request_logs.site_model_id").
+		Find(&rows)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	for _, row := range rows {
+		result[row.SiteModelID] = row
+	}
+	return result, nil
+}
+
+func fillModelCacheStats(row *RouteCandidateRow, stats RouteModelCacheStats) {
+	row.ModelCacheRequestCount = int(stats.RequestCount)
+	if stats.PromptTokens <= 0 {
+		return
+	}
+	cachedTokens := stats.CachedTokens
+	if cachedTokens < 0 {
+		cachedTokens = 0
+	}
+	rate := float64(cachedTokens) / float64(stats.PromptTokens)
+	if rate > 1 {
+		rate = 1
+	}
+	row.ModelCacheHitRate = sql.NullFloat64{Float64: rate, Valid: true}
+}
+
 func defaultHealthStatus(value string) string {
 	if value == "" {
 		return "unknown"
@@ -186,12 +256,23 @@ func defaultHealthStatus(value string) string {
 
 func fillModelHealth(row *RouteCandidateRow, snapshots []HealthSnapshot) {
 	since := time.Now().Add(-24 * time.Hour)
+	lifetimeTotal := 0
+	var lastUsedAt time.Time
 	total := 0
 	success := 0
 	latencySum := int64(0)
 	latencyCount := int64(0)
+	firstByteLatencySum := int64(0)
+	firstByteLatencyCount := int64(0)
 	for _, snapshot := range snapshots {
-		if !snapshot.SiteModelID.Valid || snapshot.SiteModelID.UUID != row.SiteModelID || snapshot.Scope != "model" || snapshot.Source != "gateway" || snapshot.CheckedAt.Before(since) {
+		if !snapshot.SiteModelID.Valid || snapshot.SiteModelID.UUID != row.SiteModelID || snapshot.Scope != "model" || snapshot.Source != "gateway" {
+			continue
+		}
+		lifetimeTotal++
+		if lastUsedAt.IsZero() || snapshot.CheckedAt.After(lastUsedAt) {
+			lastUsedAt = snapshot.CheckedAt
+		}
+		if snapshot.CheckedAt.Before(since) {
 			continue
 		}
 		total++
@@ -202,6 +283,14 @@ func fillModelHealth(row *RouteCandidateRow, snapshots []HealthSnapshot) {
 			latencySum += snapshot.LatencyMS.Int64
 			latencyCount++
 		}
+		if snapshot.FirstByteLatencyMS.Valid {
+			firstByteLatencySum += snapshot.FirstByteLatencyMS.Int64
+			firstByteLatencyCount++
+		}
+	}
+	row.ModelTotalRequestCount = lifetimeTotal
+	if !lastUsedAt.IsZero() {
+		row.ModelLastUsedAt = sql.NullTime{Time: lastUsedAt, Valid: true}
 	}
 	row.ModelRequestCount = total
 	if total > 0 {
@@ -209,6 +298,10 @@ func fillModelHealth(row *RouteCandidateRow, snapshots []HealthSnapshot) {
 	}
 	if latencyCount > 0 {
 		row.ModelAvgLatencyMS = sql.NullInt64{Int64: latencySum / latencyCount, Valid: true}
+	}
+	row.ModelFirstByteRequestCount = int(firstByteLatencyCount)
+	if firstByteLatencyCount > 0 {
+		row.ModelAvgFirstByteLatencyMS = sql.NullInt64{Int64: firstByteLatencySum / firstByteLatencyCount, Valid: true}
 	}
 }
 

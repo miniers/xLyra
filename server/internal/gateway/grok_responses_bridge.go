@@ -731,7 +731,7 @@ func newGrokStreamBridge(bridged map[string]struct{}) *grokStreamBridge {
 }
 
 func proxyGrokResponsesStreamBridged(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time, bridged map[string]struct{}) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")

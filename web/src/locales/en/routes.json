@@ -41,7 +41,13 @@
     "toast": {
       "modelToggleFailed": "Failed to update model toggle",
       "cooldownCleared": "Cooldown cleared",
-      "cooldownClearFailed": "Failed to clear cooldown"
+      "cooldownClearFailed": "Failed to clear cooldown",
+      "preferenceUpdated": "Scoring preference updated",
+      "preferenceUpdateFailed": "Failed to update scoring preference",
+      "explorationUpdated": "Exploration settings updated",
+      "explorationUpdateFailed": "Failed to update exploration settings",
+      "explorationReset": "Exploration restarted for all sites",
+      "explorationResetFailed": "Failed to restart exploration"
     }
   },
   "details": {
@@ -56,6 +62,59 @@
       "fallbackHint": "Showing configured site models below",
       "current": "Current",
       "routable": "Routable #{{rank}}"
+    },
+    "scores": {
+      "title": "Score breakdown",
+      "loadFailed": "Failed to load scores",
+      "noCandidates": "No candidate scores",
+      "rank": "Candidate #{{rank}}",
+      "badge": "Score {{score}}",
+      "tooltip": "Total {{total}} · Site {{site}} · Model {{model}}",
+      "total": "Total {{score}}",
+      "site": "Site {{score}}",
+      "model": "Model {{score}}",
+      "unavailable": "Score breakdown unavailable",
+      "components": {
+        "siteHealth": "Site health",
+        "siteSuccessRate": "Site success",
+        "siteLatency": "Site latency",
+        "modelSuccessRate": "Model success",
+        "modelLatency": "Model latency",
+        "modelFirstByteLatency": "Model first byte",
+        "modelCacheHitRate": "Model cache hit rate",
+        "apiKeyCapacity": "Key capacity",
+        "price": "Price"
+      }
+    },
+    "preference": {
+      "title": "Model scoring preference",
+      "description": "The preference changes candidate scoring and ordering.",
+      "default": "Default",
+      "value": "Value",
+      "speed": "Speed"
+    },
+    "exploration": {
+      "title": "Quota exploration",
+      "description": "Sends a small number of real requests per model × site model. Results feed the official score; existing cooldown and failover rules still apply.",
+      "enabled": "Enable quota exploration",
+      "newTrials": "New sites per-site trials",
+      "idleAfterHours": "Idle after (hours)",
+      "idleTrials": "Idle sites per-site trials",
+      "save": "Save settings",
+      "reset": "Restart all sites",
+      "progress": "Site progress",
+      "noCandidates": "No site models are ready for exploration",
+      "validationTrials": "New-site trials must be an integer from 1 to 100",
+      "validationIdleHours": "Idle hours must be an integer from 1 to 720",
+      "validationIdleTrials": "Idle-site trials must be an integer from 1 to 100",
+      "status": {
+        "normal": "Normal",
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Completed",
+        "cooldown": "Cooling",
+        "disabled": "Disabled"
+      }
     },
     "coverage": {
       "title": "Site models",

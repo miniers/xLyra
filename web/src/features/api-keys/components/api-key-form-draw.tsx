@@ -464,6 +464,23 @@ export function APIKeyFormDraw({
       return
     }
 
+    const gatewayTimeout = parseGatewayTimeout(values.gatewayFirstByteTimeoutMS)
+    if (gatewayTimeout === false) {
+      toast.error(t('form.validation.gatewayTimeoutInvalid'))
+      return
+    }
+    const gatewayModels: Record<string, { first_byte_timeout_ms: number }> = {}
+    for (const [rawModel, rawTimeout] of Object.entries(values.gatewayModelTimeouts)) {
+      const model = rawModel.trim()
+      if (!model || !rawTimeout.trim()) continue
+      const timeout = parseGatewayTimeout(rawTimeout)
+      if (timeout === false || timeout == null) {
+        toast.error(t('form.validation.gatewayTimeoutInvalid'))
+        return
+      }
+      gatewayModels[model] = { first_byte_timeout_ms: timeout }
+    }
+
     const submittedSiteModelIds = effectiveModelPolicy === 'allow_list'
       ? selectedSiteModelIds.filter((id) => availableSiteModelIds.has(id))
       : []
@@ -478,6 +495,12 @@ export function APIKeyFormDraw({
       modelPolicy: effectiveModelPolicy,
       siteModelIds: submittedSiteModelIds,
       modelMappings,
+      gatewayConfig: gatewayTimeout == null && Object.keys(gatewayModels).length === 0
+        ? null
+        : {
+            ...(gatewayTimeout == null ? {} : { first_byte_timeout_ms: gatewayTimeout }),
+            ...(Object.keys(gatewayModels).length === 0 ? {} : { models: gatewayModels }),
+          },
       imageToolBridge: {
         enabled: values.imageBridgeEnabled,
         model: values.imageBridgeModel.trim(),
@@ -981,6 +1004,42 @@ export function APIKeyFormDraw({
                 </div>
 
                 <div className="space-y-3 border-t border-[hsl(var(--glass-divider))] pt-5">
+                  <div>
+                    <span className="block text-sm font-medium">{t('form.advanced.gatewayTimeout')}</span>
+                    <p className="text-muted-soft mt-1 text-xs">{t('form.advanced.gatewayTimeoutDesc')}</p>
+                  </div>
+                  <FormField label={t('form.advanced.gatewayDefaultTimeout')} description={t('form.advanced.gatewayDefaultTimeoutDesc')}>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={values.gatewayFirstByteTimeoutMS}
+                      onChange={(event) => setValues((current) => ({ ...current, gatewayFirstByteTimeoutMS: event.target.value }))}
+                      placeholder={t('form.advanced.gatewayUnset')}
+                    />
+                  </FormField>
+                  {mappingModelKeys.length ? (
+                    <div className="space-y-2 rounded-lg border border-[hsl(var(--glass-border))] p-3">
+                      <p className="text-muted-soft text-xs">{t('form.advanced.gatewayModelTimeouts')}</p>
+                      {mappingModelKeys.map((modelKey) => (
+                        <div key={modelKey} className="grid grid-cols-[minmax(0,1fr)_150px] items-center gap-3">
+                          <span className="truncate text-sm text-foreground" title={modelKey}>{modelKey}</span>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            value={values.gatewayModelTimeouts[modelKey] ?? ''}
+                            onChange={(event) => setValues((current) => ({
+                              ...current,
+                              gatewayModelTimeouts: { ...current.gatewayModelTimeouts, [modelKey]: event.target.value },
+                            }))}
+                            placeholder={t('form.advanced.gatewayUnset')}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="space-y-3 border-t border-[hsl(var(--glass-divider))] pt-5">
                   <Switch
                     checked={values.imageBridgeEnabled}
                     onCheckedChange={(checked) => setValues((current) => ({ ...current, imageBridgeEnabled: checked }))}
@@ -1120,6 +1179,14 @@ function parsePositiveIntegerLimit(value: string): number | null | false {
   if (!trimmed) return null
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed) || parsed <= 0) return false
+  return parsed
+}
+
+function parseGatewayTimeout(value: string): number | null | false {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 600000) return false
   return parsed
 }
 

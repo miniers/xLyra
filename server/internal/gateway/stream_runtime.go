@@ -13,6 +13,9 @@ import (
 
 type streamCaptureState struct {
 	usage                    completionUsage
+	outputTokenObserver      gatewayOutputTokenObserver
+	outputToolTokenObserver  gatewayOutputTokenToolObserver
+	outputUsageObserver      gatewayOutputTokenUsageObserver
 	sawDone                  bool
 	streamCompleted          bool
 	endReason                string
@@ -23,6 +26,39 @@ type streamCaptureState struct {
 	annotations              []any
 	preOutputEventsBuffered  int
 	preOutputFailureDeferred bool
+}
+
+func newStreamCaptureState(ctx context.Context) streamCaptureState {
+	return streamCaptureState{
+		outputTokenObserver:     gatewayOutputTokenObserverFromContext(ctx),
+		outputToolTokenObserver: gatewayOutputTokenToolObserverFromContext(ctx),
+		outputUsageObserver:     gatewayOutputTokenUsageObserverFromContext(ctx),
+	}
+}
+
+func (capture *streamCaptureState) observeOutputText(text string) {
+	if capture == nil || capture.outputTokenObserver == nil || text == "" {
+		return
+	}
+	capture.outputTokenObserver(text)
+}
+
+func (capture *streamCaptureState) observeOutputToolArguments(text string) {
+	if capture == nil || text == "" {
+		return
+	}
+	if capture.outputToolTokenObserver != nil {
+		capture.outputToolTokenObserver(text)
+		return
+	}
+	capture.observeOutputText(text)
+}
+
+func (capture *streamCaptureState) observeOutputUsage(usage completionUsage) {
+	if capture == nil || capture.outputUsageObserver == nil {
+		return
+	}
+	capture.outputUsageObserver(usage)
 }
 
 func proxyUpstreamStream(
@@ -41,7 +77,7 @@ func proxyUpstreamStreamWithInspector(
 	startedAt time.Time,
 	inspectLine func([]byte, *streamCaptureState),
 ) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -138,13 +174,44 @@ func inspectOpenAIChatStreamLine(line []byte, capture *streamCaptureState) {
 	}
 
 	var envelope struct {
-		Usage completionUsage `json:"usage"`
+		Choices []chatChoice    `json:"choices"`
+		Usage   completionUsage `json:"usage"`
 	}
 	if err := json.Unmarshal([]byte(data), &envelope); err != nil {
 		return
 	}
+	for _, choice := range envelope.Choices {
+		observeChatMessageContent(capture, choice.Delta.Content)
+		reasoning := choice.Delta.ReasoningContent
+		if strings.TrimSpace(reasoning) == "" {
+			reasoning = choice.Delta.Thinking
+		}
+		capture.observeOutputText(reasoning)
+		for _, toolCall := range choice.Delta.ToolCalls {
+			capture.observeOutputToolArguments(toolCall.Function.Arguments)
+		}
+	}
 	if envelope.Usage.TotalTokens > 0 || envelope.Usage.PromptTokens > 0 || envelope.Usage.CompletionTokens > 0 {
 		capture.usage = envelope.Usage.normalized()
+		capture.observeOutputUsage(capture.usage)
+	}
+}
+
+func observeChatMessageContent(capture *streamCaptureState, content any) {
+	if capture == nil {
+		return
+	}
+	switch value := content.(type) {
+	case string:
+		capture.observeOutputText(value)
+	case []any:
+		for _, rawPart := range value {
+			part, ok := rawPart.(map[string]any)
+			if !ok || strings.TrimSpace(anyString(part["type"])) != "text" {
+				continue
+			}
+			capture.observeOutputText(anyString(part["text"]))
+		}
 	}
 }
 

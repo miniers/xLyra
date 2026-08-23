@@ -21,6 +21,7 @@ func (h Handler) recordAttempt(
 	result gatewayAttemptResult,
 	upstreamResponse any,
 ) uuid.UUID {
+	result = applyGatewayAttemptContextFailure(ctx, result)
 	recordCtx, cancel := detachedRecordingContext(ctx)
 	defer cancel()
 

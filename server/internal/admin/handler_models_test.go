@@ -137,6 +137,17 @@ func TestModelHandlersRejectInvalidRouteIDsBeforeCatalogWork(t *testing.T) {
 	}
 }
 
+func TestUpdateModelRoutingPreferenceRejectsUnknownValueBeforeRepositoryAccess(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{catalog: catalog.NewService(nil)}
+	modelID := uuid.NewString()
+	req := adminRequestWithRouteParam(http.MethodPut, "/api/v1/models/"+modelID+"/routing-preference", "", "modelID", modelID)
+	req.Body = ioNopCloserString(`{"routing_preference":"balanced"}`)
+	rec := adminPerform(handler.UpdateModelRoutingPreference, req)
+	assertAdminErrorCode(t, rec, http.StatusBadRequest, "canonical_model_routing_preference_update_failed")
+}
+
 func TestCanonicalModelRequestToInputPreservesFields(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +211,9 @@ func TestCanonicalModelItemPayloadIncludesAliasesStatsAndProviderIcon(t *testing
 	}
 	if payload["site_model_count"] != 3 || payload["site_count"] != 2 {
 		t.Fatalf("unexpected stats: %#v", payload)
+	}
+	if payload["routing_preference"] != store.RoutingPreferenceDefault {
+		t.Fatalf("routing_preference = %#v, want %q", payload["routing_preference"], store.RoutingPreferenceDefault)
 	}
 
 	capabilities, ok := payload["capabilities"].(map[string]any)

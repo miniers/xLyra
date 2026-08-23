@@ -21,11 +21,13 @@ func TestSiteGatewayRequestToConfigPreservesFields(t *testing.T) {
 	timeout := 30
 	impersonateCodex := true
 	req := &siteGatewayRequest{
-		RequestTimeoutMS:               &timeout,
-		ResponsesToolPolicy:            "compatibility",
-		DisabledResponsesTools:         []string{"image_generation"},
-		ResponsesImageGenerationPolicy: "auto",
-		ImpersonateCodexClient:         &impersonateCodex,
+		RequestTimeoutMS:                  &timeout,
+		ResponsesToolPolicy:               "compatibility",
+		DisabledResponsesTools:            []string{"image_generation"},
+		ResponsesImageGenerationPolicy:    "auto",
+		ImpersonateCodexClient:            &impersonateCodex,
+		ClearMaxSameSiteCredentialRetries: true,
+		ClearFirstByteTimeoutMS:           true,
 	}
 	cfg := req.toSiteGatewayConfig()
 	if cfg == nil || cfg.RequestTimeoutMS == nil || *cfg.RequestTimeoutMS != timeout {
@@ -36,6 +38,9 @@ func TestSiteGatewayRequestToConfigPreservesFields(t *testing.T) {
 	}
 	if cfg.ImpersonateCodexClient == nil || *cfg.ImpersonateCodexClient != true {
 		t.Fatalf("impersonation flag was not preserved: %#v", cfg)
+	}
+	if !cfg.ClearMaxSameSiteCredentialRetries || !cfg.ClearFirstByteTimeoutMS {
+		t.Fatalf("gateway clear flags were not preserved: %#v", cfg)
 	}
 }
 

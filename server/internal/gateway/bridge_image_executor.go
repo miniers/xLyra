@@ -56,9 +56,10 @@ func (h Handler) executeBridgeImageGeneration(
 	defer cancel()
 
 	query := routeengine.CandidateQuery{
-		ModelKey:      cfg.Model,
-		EndpointType:  upstreamEndpointTypeOpenAIImage,
-		FailoverLimit: 3,
+		ModelKey:         cfg.Model,
+		EndpointType:     upstreamEndpointTypeOpenAIImage,
+		FailoverLimit:    3,
+		AllowExploration: true,
 	}
 	if cfg.SiteID != nil {
 		query.AllowedSiteIDs = []uuid.UUID{*cfg.SiteID}

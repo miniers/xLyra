@@ -86,16 +86,19 @@ export function reduceRequestActivityEvent(
     startedAtByRequestID[event.request.request_id] = event.request.started_at
   } else if (event.type === 'remove' && event.request_id) {
     delete requests[event.request_id]
+    delete startedAtByRequestID[event.request_id]
   }
 
   return { sequence: event.sequence, requests, startedAtByRequestID }
 }
 
 export function removeRequestActivityRequest(state: RequestActivityState, requestID: string): RequestActivityState {
-  if (!state.requests[requestID]) return state
   const requests = { ...state.requests }
+  const startedAtByRequestID = { ...state.startedAtByRequestID }
+  if (!state.requests[requestID] && !startedAtByRequestID[requestID]) return state
   delete requests[requestID]
-  return { ...state, requests }
+  delete startedAtByRequestID[requestID]
+  return { ...state, requests, startedAtByRequestID }
 }
 
 export function requestLogItemFromActivity(request: RequestActivityRequest): RequestLogDisplayItem {
@@ -130,7 +133,16 @@ export function requestLogItemFromActivity(request: RequestActivityRequest): Req
       canonical_model: model,
       display_name: model,
     },
-    usage: {},
+    first_byte_latency_ms: request.first_byte_latency_ms ?? null,
+    input_tokens: request.input_tokens,
+    output_tokens: request.output_tokens,
+    tokens_estimated: request.tokens_estimated,
+    can_cancel: request.can_cancel,
+    usage: {
+      prompt_tokens: request.input_tokens,
+      completion_tokens: request.output_tokens,
+      total_tokens: request.input_tokens + request.output_tokens,
+    },
     created_at: request.started_at,
   }
 }
@@ -269,6 +281,11 @@ function normalizeRequestActivity(value: unknown): RequestActivityRequest | null
     phase,
     started_at: startedAt,
     updated_at: updatedAt,
+    input_tokens: numberValue(raw.input_tokens) ?? 0,
+    output_tokens: numberValue(raw.output_tokens) ?? 0,
+    first_byte_latency_ms: numberValue(raw.first_byte_latency_ms) ?? undefined,
+    can_cancel: raw.can_cancel === true,
+    tokens_estimated: raw.tokens_estimated === true,
   }
 }
 
