@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import cronstrue from 'cronstrue/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, RotateCcw, Save } from 'lucide-react'
+import { LoaderCircle, RefreshCw, RotateCcw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,7 @@ import {
   updateGeneralSettings,
   type GeneralSettingsConfig,
 } from '@/features/settings/api/settings'
+import { updateServiceWorker } from '@/lib/pwa-update'
 import { toast } from '@/lib/toast'
 
 const generalSettingsKey = ['settings', 'general'] as const
@@ -75,6 +76,7 @@ export function GeneralSettingsPage() {
     },
   })
   const [draft, setDraft] = useState<GeneralSettingsDraft>(DEFAULT_GENERAL_SETTINGS)
+  const [serviceWorkerUpdating, setServiceWorkerUpdating] = useState(false)
 
   useEffect(() => {
     if (generalQuery.data) {
@@ -130,6 +132,20 @@ export function GeneralSettingsPage() {
 
   function handleReset() {
     setDraft(generalQuery.data ? generalSettingsToDraft(generalQuery.data) : DEFAULT_GENERAL_SETTINGS)
+  }
+
+  async function handleServiceWorkerUpdate() {
+    setServiceWorkerUpdating(true)
+    try {
+      await updateServiceWorker()
+      toast.success(t('general.serviceWorker.updated'))
+    } catch (error) {
+      toast.error(t('general.serviceWorker.updateFailed'), {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setServiceWorkerUpdating(false)
+    }
   }
 
   if (generalQuery.isLoading) {
@@ -308,6 +324,15 @@ export function GeneralSettingsPage() {
             </FormField>
           ) : null}
         </div>
+      </section>
+
+      <section className="space-y-4 border-t border-[hsl(var(--divider))] pt-6">
+        <h4 className="text-sm font-semibold text-foreground">{t('general.serviceWorker.title')}</h4>
+        <p className="text-muted-soft text-xs">{t('general.serviceWorker.description')}</p>
+        <Button variant="outline" onClick={handleServiceWorkerUpdate} disabled={serviceWorkerUpdating}>
+          {serviceWorkerUpdating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {serviceWorkerUpdating ? t('general.serviceWorker.updating') : t('general.serviceWorker.update')}
+        </Button>
       </section>
 
       <div className="flex items-center gap-3 border-t border-[hsl(var(--divider))] pt-6">

@@ -42,6 +42,14 @@
       "requestDetailRetentionDays": "リクエスト詳細の保持日数",
       "requestDetailRetentionDesc": "日次サマリーが完了した後、この日数を超えた request_logs と usage_records の詳細を削除します。"
     },
+    "serviceWorker": {
+      "title": "Service Worker",
+      "description": "バージョン更新に失敗した場合に、フロントエンドの Service Worker を手動で確認・更新します。",
+      "update": "Service Worker を手動更新",
+      "updating": "Service Worker を更新中...",
+      "updated": "Service Worker の更新確認を開始しました",
+      "updateFailed": "Service Worker の更新に失敗しました"
+    },
     "validation": {
       "cronInvalid": "Cron 式が無効です",
       "cronInvalidWithMessage": "Cron 式が無効です: {{message}}",

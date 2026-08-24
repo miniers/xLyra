@@ -220,6 +220,11 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("ensure canonical_models.routing_preference column: %w", err)
 		}
 	}
+	if !migrator.HasColumn(&CanonicalModel{}, "RoutingExpiryRescueEnabled") {
+		if err := migrator.AddColumn(&CanonicalModel{}, "RoutingExpiryRescueEnabled"); err != nil {
+			return fmt.Errorf("ensure canonical_models.routing_expiry_rescue_enabled column: %w", err)
+		}
+	}
 	for _, field := range []string{"RoutingExplorationEnabled", "RoutingExplorationNewTrialsPerSite", "RoutingExplorationIdleAfterHours", "RoutingExplorationIdleTrialsPerSite", "RoutingExplorationResetAt"} {
 		if migrator.HasColumn(&CanonicalModel{}, field) {
 			continue

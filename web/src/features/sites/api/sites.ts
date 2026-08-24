@@ -277,6 +277,7 @@ export type CanonicalModel = {
   capabilities: Record<string, unknown>
   status: string
   routing_preference?: RoutingPreference
+  routing_expiry_rescue_enabled?: boolean
   routing_exploration?: RoutingExplorationConfig
   created_at: string
   updated_at: string
@@ -364,23 +365,29 @@ export type SiteAPIKey = {
   can_complete?: boolean
   models: string[]
   model_items?: SiteAPIKeyModel[]
-  usage?: {
-    data?: {
-      total_available?: number | null
-      total_granted?: number | null
-      unlimited_quota?: boolean
-    }
-    source?: string
-    official_realtime_available?: boolean
-    available?: boolean
-    limit_name?: string
-    workspace?: string
-    retry_after_seconds?: number
-    reset_at?: string
-    observed_at?: string
-  }
+  usage?: SiteAPIKeyUsage
   quota_probe?: SiteQuotaProbeResult | null
   message?: string
+}
+
+export type SiteAPIKeyUsage = {
+  data?: SiteAPIKeyUsageData
+  source?: string
+  official_realtime_available?: boolean
+  available?: boolean
+  limit_name?: string
+  workspace?: string
+  retry_after_seconds?: number
+  reset_at?: string
+  observed_at?: string
+}
+
+export type SiteAPIKeyUsageData = {
+  total_available?: number | null
+  total_granted?: number | null
+  total_used?: number | null
+  unlimited_quota?: boolean
+  expires_at?: string | number | null
 }
 
 export type SiteAPIKeyModel = {
@@ -881,6 +888,13 @@ export async function updateCanonicalModelRoutingPreference(
   })
 }
 
+export async function updateCanonicalModelRoutingExpiryRescue(modelId: string, enabled: boolean) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-expiry-rescue`, {
+    method: 'PUT',
+    body: { enabled },
+  })
+}
+
 export async function updateCanonicalModelRoutingExploration(
   modelId: string,
   config: Omit<RoutingExplorationConfig, 'reset_at'>,
@@ -894,6 +908,13 @@ export async function updateCanonicalModelRoutingExploration(
 export async function resetCanonicalModelRoutingExploration(modelId: string) {
   return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-exploration/reset`, {
     method: 'POST',
+  })
+}
+
+export async function resetCanonicalModelRoutingExplorationSite(modelId: string, siteModelId: string) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-exploration/reset-site`, {
+    method: 'POST',
+    body: { site_model_id: siteModelId },
   })
 }
 

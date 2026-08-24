@@ -74,6 +74,10 @@ import {
   parseSiteAPIKeyForm,
   type APIKeyFormDraft,
 } from '@/features/sites/components/site-api-key-form-data'
+import {
+  SiteAPIKeyQuotaDetailsContent,
+  SiteQuotaDetailsPopover,
+} from '@/features/sites/components/site-quota-details'
 
 const EMPTY_API_KEYS: SiteAPIKey[] = []
 
@@ -528,6 +532,20 @@ export function SiteAPIKeysDraw({
                         : null
                     : null
                   const probeFailed = Boolean(probe && probe.status !== 'ok')
+                  const usageData = item.usage?.data
+                  const hasUsageDetails = Boolean(
+                    usageData && (
+                      usageData.unlimited_quota === true ||
+                      usageData.total_available != null ||
+                      usageData.total_granted != null ||
+                      usageData.total_used != null ||
+                      usageData.expires_at != null
+                    ),
+                  )
+                  const hasQuotaDetails = Boolean(probe || hasUsageDetails)
+                  const compactQuotaText = probeFailed
+                    ? t('apiKeys.quotaProbeFailed')
+                    : openCodeGoQuotaText ?? probeText ?? quotaText ?? '-'
                   const syncBadge = apiKeySyncBadge(item.sync_status)
 
                   return (
@@ -642,17 +660,23 @@ export function SiteAPIKeysDraw({
 
                       <div className="flex items-center justify-between text-xs text-muted-soft">
                         <div className="flex min-w-0 flex-wrap items-center gap-3">
-                          {probeFailed ? (
-                            <span className="text-red-400" title={probe?.error}>
-                              {t('apiKeys.quotaProbeFailed')}
-                            </span>
-                          ) : (openCodeGoQuotaText ?? probeText ?? quotaText) ? (
-                            <span className="tabular-nums whitespace-normal" title={site?.site_type === 'opencode_go' ? t('apiKeys.openCodeGoUnavailable') : undefined}>
-                              {openCodeGoQuotaText ?? probeText ?? quotaText}
-                            </span>
-                          ) : (
-                            <span>-</span>
-                          )}
+                          <SiteQuotaDetailsPopover
+                            enabled={hasQuotaDetails}
+                            description={compactQuotaText}
+                            content={<SiteAPIKeyQuotaDetailsContent apiKey={item} showIdentity={false} />}
+                          >
+                            {probeFailed ? (
+                              <span className="text-red-400" title={probe?.error}>
+                                {t('apiKeys.quotaProbeFailed')}
+                              </span>
+                            ) : (openCodeGoQuotaText ?? probeText ?? quotaText) ? (
+                              <span className="tabular-nums whitespace-normal" title={site?.site_type === 'opencode_go' ? t('apiKeys.openCodeGoUnavailable') : undefined}>
+                                {openCodeGoQuotaText ?? probeText ?? quotaText}
+                              </span>
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </SiteQuotaDetailsPopover>
                           <button
                             type="button"
                             className="hover:text-foreground cursor-pointer"

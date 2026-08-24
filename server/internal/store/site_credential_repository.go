@@ -53,6 +53,38 @@ func SiteCredentialCacheDomain(credential SiteCredential) string {
 	return strings.TrimSpace(value)
 }
 
+func siteCredentialSubscriptionExpiresAt(credential SiteCredential) (time.Time, bool) {
+	if len(credential.Meta) == 0 {
+		return time.Time{}, false
+	}
+
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(credential.Meta, &metadata); err != nil {
+		return time.Time{}, false
+	}
+	quotaProbe, ok := metadata["quota_probe"]
+	if !ok {
+		return time.Time{}, false
+	}
+
+	var payload struct {
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(quotaProbe, &payload); err != nil {
+		return time.Time{}, false
+	}
+	expiresAt := strings.TrimSpace(payload.ExpiresAt)
+	if expiresAt == "" {
+		return time.Time{}, false
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed, true
+}
+
 func NewSiteCredentialRepository(db *gorm.DB) SiteCredentialRepository {
 	return SiteCredentialRepository{db: db}
 }

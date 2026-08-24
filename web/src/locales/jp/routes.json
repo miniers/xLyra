@@ -44,10 +44,14 @@
       "cooldownClearFailed": "クールダウン解除に失敗しました",
       "preferenceUpdated": "スコア設定を更新しました",
       "preferenceUpdateFailed": "スコア設定の更新に失敗しました",
+      "expiryRescueUpdated": "期限切れ救済ボーナスを更新しました",
+      "expiryRescueUpdateFailed": "期限切れ救済ボーナスの更新に失敗しました",
       "explorationUpdated": "試行設定を更新しました",
       "explorationUpdateFailed": "試行設定の更新に失敗しました",
       "explorationReset": "全サイトの試行を再開しました",
-      "explorationResetFailed": "試行の再開に失敗しました"
+      "explorationResetFailed": "試行の再開に失敗しました",
+      "explorationSiteReset": "このサイトの試行を再開しました",
+      "explorationSiteResetFailed": "このサイトの試行の再開に失敗しました"
     }
   },
   "details": {
@@ -83,7 +87,13 @@
         "modelFirstByteLatency": "モデルの初回バイトレイテンシ",
         "modelCacheHitRate": "モデルキャッシュヒット率",
         "apiKeyCapacity": "キー容量",
-        "price": "価格"
+        "actualPrice": "実際の価格",
+        "subscriptionExpiryUrgency": "サブスクリプション期限の緊急度",
+        "subscriptionExpiryRescueBonus": "期限切れ救済ボーナス"
+      },
+      "raw": {
+        "actualPriceCacheHitRate": "キャッシュ{{value}}",
+        "actualPriceCacheReadRatio": "読取{{value}}"
       }
     },
     "preference": {
@@ -91,7 +101,9 @@
       "description": "設定により候補のスコアと順序が変わります。",
       "default": "デフォルト",
       "value": "コストパフォーマンス",
-      "speed": "速度"
+      "speed": "速度",
+      "expiryRescue": "期限切れ救済ボーナスを有効化",
+      "expiryRescueDescription": "残り3日以内の候補を加点し、期限切れ前にサブスクリプション枠を消費します。"
     },
     "exploration": {
       "title": "割当試行",
@@ -102,6 +114,7 @@
       "idleTrials": "アイドルサイトの回数",
       "save": "設定を保存",
       "reset": "全サイトを再開",
+      "resetSite": "再開",
       "progress": "サイトの進捗",
       "noCandidates": "試行可能なサイトモデルがありません",
       "validationTrials": "新規サイト回数は1〜100の整数です",
@@ -180,6 +193,9 @@
     "healthLatency": "レイテンシ: {{latency}}",
     "pricingPerRequest": "リクエスト単価 {{price}}",
     "pricingTokens": "入力 {{input}} / 出力 {{output}}",
-    "perRequestUnit": "{{price}}/回"
+    "perRequestUnit": "{{price}}/回",
+    "durationDays": "日",
+    "durationHours": "時間",
+    "durationMinutes": "分"
   }
 }

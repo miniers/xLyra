@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net"
 	"strings"
@@ -73,6 +74,101 @@ func TestSortGatewayCredentialsUsesPriorityQuotaAndStableTies(t *testing.T) {
 		if items[index].Credential.ID != id {
 			t.Fatalf("sorted credential %d = %s, want %s", index, items[index].Credential.ID, id)
 		}
+	}
+}
+
+func TestSortGatewayCredentialsPrioritizesSoonestSubscriptionExpiry(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+	urgentID := uuid.MustParse("00000000-0000-0000-0000-000000000011")
+	laterID := uuid.MustParse("00000000-0000-0000-0000-000000000012")
+	stableID := uuid.MustParse("00000000-0000-0000-0000-000000000013")
+	items := []GatewayCredential{
+		{
+			Credential: SiteCredential{ID: stableID, RoutingPriority: 5},
+			State:      SiteAPIKeyState{SiteCredentialID: stableID},
+		},
+		{
+			Credential: SiteCredential{ID: laterID, RoutingPriority: 3},
+			State: SiteAPIKeyState{
+				SiteCredentialID: laterID,
+				ExpiredTime:      sql.NullInt64{Int64: now.Add(48 * time.Hour).Unix(), Valid: true},
+			},
+		},
+		{
+			Credential: SiteCredential{ID: urgentID, RoutingPriority: 1},
+			State: SiteAPIKeyState{
+				SiteCredentialID: urgentID,
+				ExpiredTime:      sql.NullInt64{Int64: now.Add(2 * time.Hour).Unix(), Valid: true},
+			},
+		},
+	}
+
+	SortGatewayCredentialsAt(items, now)
+	want := []uuid.UUID{urgentID, laterID, stableID}
+	for index, id := range want {
+		if items[index].Credential.ID != id {
+			t.Fatalf("sorted credential %d = %s, want %s", index, items[index].Credential.ID, id)
+		}
+	}
+}
+
+func TestCredentialStateExpiresAtNormalizesMilliseconds(t *testing.T) {
+	t.Parallel()
+
+	expiresAt := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	for _, value := range []int64{expiresAt.Unix(), expiresAt.UnixMilli()} {
+		got, ok := CredentialStateExpiresAt(SiteAPIKeyState{ExpiredTime: sql.NullInt64{Int64: value, Valid: true}})
+		if !ok || !got.Equal(expiresAt) {
+			t.Fatalf("CredentialStateExpiresAt(%d) = %v, %v; want %v, true", value, got, ok, expiresAt)
+		}
+	}
+}
+
+func TestSiteCredentialSubscriptionExpiresAtReadsQuotaProbeMetadata(t *testing.T) {
+	t.Parallel()
+
+	expiresAt := time.Date(2026, 9, 17, 17, 12, 24, 203076000, time.FixedZone("CST", 8*60*60))
+	got, ok := siteCredentialSubscriptionExpiresAt(SiteCredential{
+		Meta: JSON(`{"quota_probe":{"status":"ok","expires_at":"2026-09-17T17:12:24.203076+08:00"}}`),
+	})
+	if !ok || !got.Equal(expiresAt) {
+		t.Fatalf("siteCredentialSubscriptionExpiresAt() = %v, %v; want %v, true", got, ok, expiresAt)
+	}
+
+	for _, meta := range []JSON{
+		JSON(`{}`),
+		JSON(`{"quota_probe":{"status":"ok"}}`),
+		JSON(`{"quota_probe":{"expires_at":"not-a-time"}}`),
+	} {
+		if _, ok := siteCredentialSubscriptionExpiresAt(SiteCredential{Meta: meta}); ok {
+			t.Fatalf("siteCredentialSubscriptionExpiresAt(%s) should not return an expiry", meta)
+		}
+	}
+}
+
+func TestFillRouteSiteCredentialCountUsesQuotaProbeSubscriptionExpiry(t *testing.T) {
+	t.Parallel()
+
+	siteID := uuid.New()
+	credentialID := uuid.New()
+	expiresAt := time.Now().Add(2 * time.Hour).UTC()
+	credential := SiteCredential{
+		ID:             credentialID,
+		SiteID:         siteID,
+		CredentialType: "api_key",
+		Meta:           JSON(fmt.Sprintf(`{"quota_probe":{"status":"ok","expires_at":%q}}`, expiresAt.Format(time.RFC3339Nano))),
+	}
+	row := RouteCandidateRow{SiteID: siteID}
+
+	fillRouteSiteCredentialCount(&row, []SiteCredential{credential}, map[uuid.UUID]SiteAPIKeyState{}, nil)
+
+	if row.SubscriptionKeyCount != 1 || !row.SubscriptionRemainingSeconds.Valid || !row.SubscriptionExpiresAt.Valid {
+		t.Fatalf("subscription expiry = count %d, remaining %#v, expires %#v; want populated", row.SubscriptionKeyCount, row.SubscriptionRemainingSeconds, row.SubscriptionExpiresAt)
+	}
+	if !row.SubscriptionExpiresAt.Time.Equal(expiresAt) {
+		t.Fatalf("subscription expiry = %v, want %v", row.SubscriptionExpiresAt.Time, expiresAt)
 	}
 }
 
@@ -875,6 +971,7 @@ func TestFillRoutePricingChoosesLowestRankedAvailablePricing(t *testing.T) {
 			GroupName:       "default",
 			Currency:        "EUR",
 			BillingType:     "per_request",
+			CacheRatio:      sql.NullFloat64{Float64: 0.1, Valid: true},
 			PerRequestValue: sql.NullFloat64{Float64: 0.05, Valid: true},
 			QuotaType:       1,
 		},
@@ -885,6 +982,9 @@ func TestFillRoutePricingChoosesLowestRankedAvailablePricing(t *testing.T) {
 	}
 	if !row.PricingPerRequestValue.Valid || row.PricingPerRequestValue.Float64 != 0.05 {
 		t.Fatalf("unexpected per-request pricing: %#v", row.PricingPerRequestValue)
+	}
+	if !row.PricingCacheReadRatio.Valid || row.PricingCacheReadRatio.Float64 != 0.1 {
+		t.Fatalf("unexpected cache read ratio: %#v", row.PricingCacheReadRatio)
 	}
 	if row.PricingQuotaType.Int64 != 1 {
 		t.Fatalf("quota type = %#v, want 1", row.PricingQuotaType)

@@ -367,7 +367,7 @@ func TestScoreCandidateIncludesHealthCapacityAndPrice(t *testing.T) {
 		"model_success_rate": 15,
 		"model_latency":      15,
 		"api_key_capacity":   15,
-		"price":              5,
+		"actual_price":       10,
 	}
 	for key, want := range wantBreakdown {
 		if breakdown[key] != want {
@@ -378,8 +378,8 @@ func TestScoreCandidateIncludesHealthCapacityAndPrice(t *testing.T) {
 		t.Fatalf("breakdown should not include routing_priority, got %#v", breakdown)
 	}
 
-	if score != 103 {
-		t.Fatalf("scoreCandidate = %v, want 103", score)
+	if score != 108 {
+		t.Fatalf("scoreCandidate = %v, want 108", score)
 	}
 }
 

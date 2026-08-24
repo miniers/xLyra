@@ -42,6 +42,14 @@
       "requestDetailRetentionDays": "Request Detail Retention Days",
       "requestDetailRetentionDesc": "After daily summaries are complete, request_logs and usage_records older than this value are cleaned up."
     },
+    "serviceWorker": {
+      "title": "Service Worker",
+      "description": "Manually check and update the frontend Service Worker when a version update fails.",
+      "update": "Update Service Worker",
+      "updating": "Updating Service Worker...",
+      "updated": "Service Worker update check started",
+      "updateFailed": "Service Worker update failed"
+    },
     "validation": {
       "cronInvalid": "Cron expression is invalid",
       "cronInvalidWithMessage": "Cron expression is invalid: {{message}}",

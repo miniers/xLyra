@@ -228,9 +228,12 @@ func attemptMetadata(
 		"pricing":            pricingMetadata(result.pricing),
 		"cost_calculation":   costCalculation,
 		"routing_exploration": map[string]any{
-			"enabled":  candidate.Exploration.Enabled,
-			"mode":     emptyToNil(candidate.Exploration.Mode),
-			"reserved": candidate.Exploration.Reserved,
+			"enabled":             candidate.Exploration.Enabled,
+			"mode":                emptyToNil(candidate.Exploration.Mode),
+			"cycle_key":           emptyToNil(candidate.Exploration.CycleKey),
+			"reserved":            candidate.Exploration.Reserved,
+			"exploration_attempt": candidate.Exploration.Attempts,
+			"warmup":              candidate.Exploration.Reserved && candidate.Exploration.Attempts == 1,
 		},
 	}
 	if effort, ok := reasoningEffortFromContext(ctx); ok {

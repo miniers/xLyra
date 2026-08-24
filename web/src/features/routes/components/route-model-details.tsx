@@ -29,6 +29,7 @@ import {
   formatDuration,
   formatLatency,
   formatModelHealth,
+  formatRemainingDuration,
   formatRoutePricing,
   routeCooldownReasonLabel,
   routeCooldownSiteName,
@@ -61,8 +62,11 @@ export function RouteModelDetails({
   onClearCooldown,
   onRoutingPreferenceChange,
   routingPreferencePending = false,
+  onRoutingExpiryRescueChange,
+  routingExpiryRescuePending = false,
   onRoutingExplorationChange,
   onRoutingExplorationReset,
+  onRoutingExplorationResetSite,
   routingExplorationPending = false,
   compact = false,
 }: {
@@ -82,14 +86,20 @@ export function RouteModelDetails({
   onClearCooldown: (item: RouteCooldown) => void
   onRoutingPreferenceChange?: (preference: RoutingPreference) => void
   routingPreferencePending?: boolean
+  onRoutingExpiryRescueChange?: (enabled: boolean) => void
+  routingExpiryRescuePending?: boolean
   onRoutingExplorationChange?: (config: Omit<RoutingExplorationConfig, 'reset_at'>) => void
   onRoutingExplorationReset?: () => void
+  onRoutingExplorationResetSite?: (siteModelId: string) => void
   routingExplorationPending?: boolean
   compact?: boolean
 }) {
   const { t } = useTranslation('routes')
   const modelId = item?.canonical_model.id || selectionQuery.data?.canonical_model.id || ''
   const currentPreference = canonical?.routing_preference ?? selectionQuery.data?.canonical_model.routing_preference ?? 'default'
+  const currentExpiryRescueEnabled = canonical?.routing_expiry_rescue_enabled
+    ?? selectionQuery.data?.canonical_model.routing_expiry_rescue_enabled
+    ?? false
   const matrixQuery = useQuery({
     queryKey: [...sitesQueryKeys.all, 'routes-matrix', modelId],
     queryFn: () => getCanonicalModelMatrix(modelId),
@@ -131,6 +141,9 @@ export function RouteModelDetails({
               value={currentPreference}
               disabled={!onRoutingPreferenceChange || routingPreferencePending}
               onChange={onRoutingPreferenceChange}
+              rescueEnabled={currentExpiryRescueEnabled}
+              rescueDisabled={!onRoutingExpiryRescueChange || routingExpiryRescuePending}
+              onRescueChange={onRoutingExpiryRescueChange}
               t={t}
             />
             <RoutingExplorationSection
@@ -140,6 +153,7 @@ export function RouteModelDetails({
               disabled={routingExplorationPending}
               onChange={onRoutingExplorationChange}
               onReset={onRoutingExplorationReset}
+              onResetSite={onRoutingExplorationResetSite}
               t={t}
             />
             <CandidateScoresSection key={currentPreference} query={candidatesQuery} currentPreference={currentPreference} t={t} />
@@ -247,17 +261,19 @@ function CandidateScoreLine({
   t: TFunction
 }) {
   const scoreBreakdown = profile?.breakdown
+  const subscriptionExpiryRaw = formatRemainingDuration(candidate.availability.subscription_remaining_seconds, t)
   const breakdownItems = ([
-    [t('details.scores.components.siteHealth'), scoreBreakdown?.site_health],
-    [t('details.scores.components.siteSuccessRate'), scoreBreakdown?.site_success_rate],
-    [t('details.scores.components.siteLatency'), scoreBreakdown?.site_latency],
-    [t('details.scores.components.modelSuccessRate'), scoreBreakdown?.model_success_rate],
-    [t('details.scores.components.modelLatency'), scoreBreakdown?.model_latency],
-    [t('details.scores.components.modelFirstByteLatency'), scoreBreakdown?.model_first_byte_latency],
-    [t('details.scores.components.modelCacheHitRate'), scoreBreakdown?.model_cache_hit_rate],
-    [t('details.scores.components.apiKeyCapacity'), scoreBreakdown?.api_key_capacity],
-    [t('details.scores.components.price'), scoreBreakdown?.price],
-  ] as Array<[string, number | undefined]>).filter(([, value]) => typeof value === 'number')
+    { label: t('details.scores.components.siteHealth'), value: scoreBreakdown?.site_health, raw: candidate.health.status },
+    { label: t('details.scores.components.siteSuccessRate'), value: scoreBreakdown?.site_success_rate, raw: formatScoreRate(candidate.health.recent_success_rate) },
+    { label: t('details.scores.components.siteLatency'), value: scoreBreakdown?.site_latency, raw: formatScoreLatency(candidate.health.recent_avg_latency_ms) },
+    { label: t('details.scores.components.modelSuccessRate'), value: scoreBreakdown?.model_success_rate, raw: formatScoreRate(candidate.health.model_success_rate) },
+    { label: t('details.scores.components.modelLatency'), value: scoreBreakdown?.model_latency, raw: formatScoreLatency(candidate.health.model_avg_latency_ms) },
+    { label: t('details.scores.components.modelFirstByteLatency'), value: scoreBreakdown?.model_first_byte_latency, raw: formatScoreLatency(modelFirstByteLatencyInput(candidate)) },
+    { label: t('details.scores.components.apiKeyCapacity'), value: scoreBreakdown?.api_key_capacity, raw: `${candidate.availability.available_api_key_count}/${candidate.availability.total_api_key_count}` },
+    { label: t('details.scores.components.actualPrice'), value: scoreBreakdown?.actual_price, raw: formatActualPriceRaw(candidate, t) },
+    { label: t('details.scores.components.subscriptionExpiryUrgency'), value: scoreBreakdown?.api_key_subscription_expiry_urgency, raw: subscriptionExpiryRaw, visible: subscriptionExpiryRaw !== undefined },
+    { label: t('details.scores.components.subscriptionExpiryRescueBonus'), value: scoreBreakdown?.api_key_subscription_expiry_rescue_bonus, raw: subscriptionExpiryRaw, visible: subscriptionExpiryRaw !== undefined },
+  ] as Array<{ label: string; value: number | undefined; raw?: string; visible?: boolean }>).filter(({ value, visible = true }) => typeof value === 'number' && visible)
 
   return (
     <div className="rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
@@ -279,8 +295,8 @@ function CandidateScoreLine({
       </div>
       {breakdownItems.length ? (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-soft">
-          {breakdownItems.map(([label, value]) => (
-            <span key={label}>{label} {formatRouteScore(value)}</span>
+          {breakdownItems.map(({ label, value, raw }) => (
+            <span key={label}>{label}{raw ? `(${raw})` : ''}: {formatRouteScore(value)}</span>
           ))}
         </div>
       ) : (
@@ -288,6 +304,41 @@ function CandidateScoreLine({
       )}
     </div>
   )
+}
+
+function formatScoreRate(value?: number | null) {
+  return typeof value === 'number' ? `${Math.round(value * 100)}%` : undefined
+}
+
+function formatScoreLatency(value?: number | null) {
+  return typeof value === 'number' ? `${Math.round(value)} ms` : undefined
+}
+
+function formatScoreMultiplier(value?: number | null) {
+  const multiplier = typeof value === 'number' && value > 0 ? value : 1
+  return `${multiplier}x`
+}
+
+function formatActualPriceRaw(candidate: RouteCandidateItem, t: TFunction) {
+  const parts = [formatScoreMultiplier(candidate.pricing.upstream_cost_multiplier)]
+  if (typeof candidate.pricing.per_request_value === 'number') return parts.join(',')
+
+  const cacheHitRate = formatScoreRate(candidate.health.model_cache_hit_rate)
+  if (cacheHitRate !== undefined) {
+    parts.push(t('details.scores.raw.actualPriceCacheHitRate', { value: cacheHitRate }))
+  }
+  if (typeof candidate.pricing.cache_read_ratio === 'number') {
+    parts.push(t('details.scores.raw.actualPriceCacheReadRatio', { value: `${candidate.pricing.cache_read_ratio}x` }))
+  }
+  return parts.join(',')
+}
+
+function modelFirstByteLatencyInput(candidate: RouteCandidateItem) {
+  const requestCount = candidate.health.model_first_byte_request_count ?? 0
+  if (requestCount > 0 && requestCount < 3) {
+    return candidate.health.model_avg_latency_ms
+  }
+  return candidate.health.model_avg_first_byte_latency_ms
 }
 
 function candidateScoreProfile(candidate: RouteCandidateItem, preference: RoutingPreference) {
@@ -323,33 +374,53 @@ function RoutingPreferenceSection({
   value,
   disabled,
   onChange,
+  rescueEnabled,
+  rescueDisabled,
+  onRescueChange,
   t,
 }: {
   value: RoutingPreference
   disabled: boolean
   onChange?: (preference: RoutingPreference) => void
+  rescueEnabled: boolean
+  rescueDisabled: boolean
+  onRescueChange?: (enabled: boolean) => void
   t: TFunction
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-foreground">{t('details.preference.title')}</div>
-        <div className="mt-1 text-xs text-muted-soft">{t('details.preference.description')}</div>
+    <div className="space-y-3 rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{t('details.preference.title')}</div>
+          <div className="mt-1 text-xs text-muted-soft">{t('details.preference.description')}</div>
+        </div>
+        <Select
+          value={value}
+          disabled={disabled}
+          onValueChange={(next) => onChange?.(next as RoutingPreference)}
+        >
+          <SelectTrigger className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent searchable={false} widthMode="content">
+            <SelectItem value="default">{t('details.preference.default')}</SelectItem>
+            <SelectItem value="value">{t('details.preference.value')}</SelectItem>
+            <SelectItem value="speed">{t('details.preference.speed')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <Select
-        value={value}
-        disabled={disabled}
-        onValueChange={(next) => onChange?.(next as RoutingPreference)}
-      >
-        <SelectTrigger className="w-36">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent searchable={false} widthMode="content">
-          <SelectItem value="default">{t('details.preference.default')}</SelectItem>
-          <SelectItem value="value">{t('details.preference.value')}</SelectItem>
-          <SelectItem value="speed">{t('details.preference.speed')}</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-3 border-t border-[hsl(var(--glass-divider))] pt-3">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{t('details.preference.expiryRescue')}</div>
+          <div className="mt-1 text-xs text-muted-soft">{t('details.preference.expiryRescueDescription')}</div>
+        </div>
+        <Switch
+          checked={rescueEnabled}
+          disabled={rescueDisabled}
+          onCheckedChange={(checked) => onRescueChange?.(checked)}
+          aria-label={t('details.preference.expiryRescue')}
+        />
+      </div>
     </div>
   )
 }
@@ -367,6 +438,7 @@ function RoutingExplorationSection({
   disabled,
   onChange,
   onReset,
+  onResetSite,
   t,
 }: {
   config?: RoutingExplorationConfig
@@ -374,6 +446,7 @@ function RoutingExplorationSection({
   disabled: boolean
   onChange?: (config: Omit<RoutingExplorationConfig, 'reset_at'>) => void
   onReset?: () => void
+  onResetSite?: (siteModelId: string) => void
   t: TFunction
 }) {
   const initial = config ? { ...DEFAULT_EXPLORATION_CONFIG, ...config } : DEFAULT_EXPLORATION_CONFIG
@@ -439,16 +512,27 @@ function RoutingExplorationSection({
           {activeCandidates.length === 0 ? (
             <div className="text-xs text-muted-soft">{t('details.exploration.noCandidates')}</div>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="divide-y divide-[hsl(var(--glass-divider))] rounded border border-[hsl(var(--glass-border))]">
               {activeCandidates.map((candidate) => {
                 const exploration = candidate.exploration
                 if (!exploration) return null
                 return (
-                  <div key={candidate.model.site_model_id} className="flex items-center justify-between gap-2 rounded border border-[hsl(var(--glass-border))] px-2.5 py-2 text-xs">
+                  <div key={candidate.model.site_model_id} className="flex min-h-9 items-center gap-2 px-2.5 py-1.5 text-xs">
                     <span className="min-w-0 truncate text-foreground">{candidate.site.name}</span>
-                    <span className="shrink-0 text-muted-soft">
+                    <span className="ml-auto shrink-0 text-muted-soft">
                       {t(`details.exploration.status.${exploration.status}`, { defaultValue: exploration.status })} · {exploration.attempts}/{exploration.target || 0}
                     </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => onResetSite?.(candidate.model.site_model_id)}
+                      disabled={disabled || !onResetSite}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {t('details.exploration.resetSite')}
+                    </Button>
                   </div>
                 )
               })}

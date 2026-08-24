@@ -42,6 +42,14 @@
       "requestDetailRetentionDays": "请求明细保留天数",
       "requestDetailRetentionDesc": "日汇总完成后，系统会清理超过该天数的 request_logs 与 usage_records 明细。"
     },
+    "serviceWorker": {
+      "title": "Service Worker",
+      "description": "当版本更新异常时，手动检查并更新前端 Service Worker。",
+      "update": "手动更新 Service Worker",
+      "updating": "正在更新 Service Worker...",
+      "updated": "Service Worker 更新检查已触发",
+      "updateFailed": "Service Worker 更新失败"
+    },
     "validation": {
       "cronInvalid": "Cron 表达式无效",
       "cronInvalidWithMessage": "Cron 表达式无效：{{message}}",

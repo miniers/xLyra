@@ -10,6 +10,7 @@ type RouteCanonicalModel = {
   capabilities?: Record<string, unknown>
   status: string
   routing_preference?: RoutingPreference
+  routing_expiry_rescue_enabled?: boolean
   routing_exploration?: {
     enabled: boolean
     new_trials_per_site: number
@@ -83,6 +84,9 @@ type RouteCandidateHealth = {
 type RouteCandidateAvailability = {
   available_api_key_count: number
   total_api_key_count: number
+  subscription_key_count?: number
+  subscription_remaining_seconds?: number | null
+  subscription_expires_at?: string | null
 }
 
 type RouteCandidatePricing = {
@@ -93,6 +97,7 @@ type RouteCandidatePricing = {
   base_per_request_value?: number | null
   input_value?: number | null
   output_value?: number | null
+  cache_read_ratio?: number | null
   per_request_value?: number | null
   upstream_cost_multiplier?: number | null
   billing_type?: string | null
@@ -106,9 +111,10 @@ export type RouteScoreBreakdown = {
   model_success_rate?: number
   model_latency?: number
   model_first_byte_latency?: number
-  model_cache_hit_rate?: number
   api_key_capacity?: number
-  price?: number
+  actual_price?: number
+  api_key_subscription_expiry_urgency?: number
+  api_key_subscription_expiry_rescue_bonus?: number
 }
 
 export type RouteScoreProfile = {

@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { registerSW } from 'virtual:pwa-register'
 import { Button } from '@/components/ui/button'
+import { updateServiceWorker } from '@/lib/pwa-update'
 
 const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000
 
@@ -46,9 +47,7 @@ export function PwaUpdatePrompt() {
         return
       }
 
-      updateCheckRef.current = registration
-        .update()
-        .then(() => undefined)
+      updateCheckRef.current = updateServiceWorker(registration)
         .catch(() => undefined)
         .finally(() => {
           updateCheckRef.current = null

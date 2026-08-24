@@ -106,6 +106,7 @@ type CanonicalModel struct {
 	Capabilities                        JSON `gorm:"type:jsonb"`
 	Status                              string
 	RoutingPreference                   string       `gorm:"column:routing_preference;not null;default:'default'"`
+	RoutingExpiryRescueEnabled          bool         `gorm:"column:routing_expiry_rescue_enabled;not null;default:false"`
 	RoutingExplorationEnabled           bool         `gorm:"column:routing_exploration_enabled;not null;default:false"`
 	RoutingExplorationNewTrialsPerSite  int          `gorm:"column:routing_exploration_new_trials_per_site;not null;default:5"`
 	RoutingExplorationIdleAfterHours    int          `gorm:"column:routing_exploration_idle_after_hours;not null;default:24"`
@@ -622,6 +623,22 @@ func (r CanonicalModelRepository) UpdateRoutingPreference(ctx context.Context, i
 	item.RoutingPreference = preference
 	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
 		return CanonicalModel{}, fmt.Errorf("update canonical model routing preference: %w", err)
+	}
+	return item, nil
+}
+
+func (r CanonicalModelRepository) UpdateRoutingExpiryRescue(ctx context.Context, id uuid.UUID, enabled bool) (CanonicalModel, error) {
+	if id == uuid.Nil {
+		return CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+
+	item, err := r.GetByID(ctx, id)
+	if err != nil {
+		return CanonicalModel{}, err
+	}
+	item.RoutingExpiryRescueEnabled = enabled
+	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
+		return CanonicalModel{}, fmt.Errorf("update canonical model routing expiry rescue: %w", err)
 	}
 	return item, nil
 }

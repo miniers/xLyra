@@ -1,9 +1,12 @@
 package store
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 func TestFillModelCacheStatsCalculatesBoundedHitRate(t *testing.T) {
@@ -32,5 +35,27 @@ func TestFillModelCacheStatsCalculatesBoundedHitRate(t *testing.T) {
 	fillModelCacheStats(&unknown, RouteModelCacheStats{RequestCount: 1, CachedTokens: 10})
 	if unknown.ModelCacheHitRate.Valid {
 		t.Fatalf("cache hit rate without prompt tokens = %#v, want invalid", unknown.ModelCacheHitRate)
+	}
+}
+
+func TestRouteCandidateCacheStatsExcludesExplorationWarmupRecords(t *testing.T) {
+	t.Parallel()
+
+	db := storeRepositoryOfflineGorm(t)
+	var captured string
+	storeReplaceQueryCallback(t, db, func(tx *gorm.DB) {
+		tx.Statement.Build("SELECT", "FROM", "WHERE", "GROUP BY")
+		captured = strings.Join(tx.Statement.Selects, " ") + " " + tx.Statement.SQL.String()
+	})
+
+	_, err := NewRouteCandidateRepository(db).listModelCacheStats(context.Background(), []SiteModel{{ID: uuid.New()}})
+	if err != nil {
+		t.Fatalf("listModelCacheStats returned error: %v", err)
+	}
+	lower := strings.ToLower(captured)
+	for _, fragment := range []string{"routing_exploration", "warmup", "is distinct from"} {
+		if !strings.Contains(lower, fragment) {
+			t.Fatalf("cache stats SQL %q does not contain %q", captured, fragment)
+		}
 	}
 }

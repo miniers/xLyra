@@ -10,14 +10,13 @@ describe('route score helpers', () => {
         site_latency: 5,
         model_success_rate: 27,
         model_latency: 12,
-        model_cache_hit_rate: 4,
+        actual_price: 8,
         api_key_capacity: 6,
-        price: 8,
       },
     }
 
     expect(routeSiteScore(candidate)).toBe(54)
-    expect(routeModelScore(candidate)).toBe(57)
+    expect(routeModelScore(candidate)).toBe(53)
   })
 
   it('returns a placeholder when the breakdown is not available', () => {
@@ -25,5 +24,14 @@ describe('route score helpers', () => {
     expect(routeModelScore({})).toBeUndefined()
     expect(formatRouteScore(undefined)).toBe('-')
     expect(formatRouteScore(103.5)).toBe('103.5')
+  })
+
+  it('includes subscription expiry components in the model score', () => {
+    expect(routeModelScore({
+      score_breakdown: {
+        api_key_subscription_expiry_urgency: 8,
+        api_key_subscription_expiry_rescue_bonus: 30,
+      },
+    })).toBe(38)
   })
 })

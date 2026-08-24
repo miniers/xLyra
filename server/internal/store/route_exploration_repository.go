@@ -59,6 +59,30 @@ func (r RouteExplorationRepository) ListByCanonicalModel(ctx context.Context, ca
 	return items, nil
 }
 
+func (r RouteExplorationRepository) ResetSite(ctx context.Context, canonicalModelID uuid.UUID, siteModelID uuid.UUID) error {
+	if canonicalModelID == uuid.Nil || siteModelID == uuid.Nil {
+		return fmt.Errorf("canonical_model_id and site_model_id are required")
+	}
+	resetKey := "manual_reset:" + time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := upsertByKey(ctx, r.db, RouteExplorationState{
+		CanonicalModelID: canonicalModelID,
+		SiteModelID:      siteModelID,
+	}, "reset route exploration site", func(state *RouteExplorationState) {
+		if state.ID == uuid.Nil {
+			state.ID = uuid.New()
+		}
+		state.CycleKind = RouteExplorationCycleInitial
+		state.CycleKey = resetKey
+		state.Attempts = 0
+		// A positive target makes the candidate builder expose this state as
+		// pending even when the model has recent traffic and no global reset.
+		state.Target = 1
+		state.LastAttemptAt = nil
+		state.CompletedAt = nil
+	})
+	return err
+}
+
 // Reserve atomically advances a pair's cursor.  It returns false when the
 // current cycle has consumed its target; callers should then use the regular
 // score ordering.  Reservation failures are returned to the caller so the

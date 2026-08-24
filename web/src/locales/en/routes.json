@@ -44,10 +44,14 @@
       "cooldownClearFailed": "Failed to clear cooldown",
       "preferenceUpdated": "Scoring preference updated",
       "preferenceUpdateFailed": "Failed to update scoring preference",
+      "expiryRescueUpdated": "Expiry rescue bonus updated",
+      "expiryRescueUpdateFailed": "Failed to update expiry rescue bonus",
       "explorationUpdated": "Exploration settings updated",
       "explorationUpdateFailed": "Failed to update exploration settings",
       "explorationReset": "Exploration restarted for all sites",
-      "explorationResetFailed": "Failed to restart exploration"
+      "explorationResetFailed": "Failed to restart exploration",
+      "explorationSiteReset": "Exploration restarted for this site",
+      "explorationSiteResetFailed": "Failed to restart exploration for this site"
     }
   },
   "details": {
@@ -83,7 +87,13 @@
         "modelFirstByteLatency": "Model first byte",
         "modelCacheHitRate": "Model cache hit rate",
         "apiKeyCapacity": "Key capacity",
-        "price": "Price"
+        "actualPrice": "Actual price",
+        "subscriptionExpiryUrgency": "Subscription expiry urgency",
+        "subscriptionExpiryRescueBonus": "Expiry rescue bonus"
+      },
+      "raw": {
+        "actualPriceCacheHitRate": "cache{{value}}",
+        "actualPriceCacheReadRatio": "read{{value}}"
       }
     },
     "preference": {
@@ -91,7 +101,9 @@
       "description": "The preference changes candidate scoring and ordering.",
       "default": "Default",
       "value": "Value",
-      "speed": "Speed"
+      "speed": "Speed",
+      "expiryRescue": "Enable expiry rescue bonus",
+      "expiryRescueDescription": "Boost candidates with 3 days or less remaining to consume expiring subscription quota."
     },
     "exploration": {
       "title": "Quota exploration",
@@ -102,6 +114,7 @@
       "idleTrials": "Idle sites per-site trials",
       "save": "Save settings",
       "reset": "Restart all sites",
+      "resetSite": "Restart",
       "progress": "Site progress",
       "noCandidates": "No site models are ready for exploration",
       "validationTrials": "New-site trials must be an integer from 1 to 100",
@@ -180,6 +193,9 @@
     "healthLatency": "Latency: {{latency}}",
     "pricingPerRequest": "Per-request {{price}}",
     "pricingTokens": "Input {{input}} / Output {{output}}",
-    "perRequestUnit": "{{price}}/req"
+    "perRequestUnit": "{{price}}/req",
+    "durationDays": "d",
+    "durationHours": "h",
+    "durationMinutes": "m"
   }
 }

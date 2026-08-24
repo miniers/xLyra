@@ -126,8 +126,11 @@ type CandidateHealth struct {
 }
 
 type CandidateAvailability struct {
-	AvailableAPIKeys int
-	TotalAPIKeys     int
+	AvailableAPIKeys             int
+	TotalAPIKeys                 int
+	SubscriptionKeyCount         int
+	SubscriptionRemainingSeconds *int64
+	SubscriptionExpiresAt        *time.Time
 }
 
 type CandidateCredential struct {
@@ -147,6 +150,7 @@ type CandidatePricing struct {
 	BasePerRequestValue    *float64
 	InputValue             *float64
 	OutputValue            *float64
+	CacheReadRatio         *float64
 	ImageRatio             *float64
 	PerRequestValue        *float64
 	BillingType            *string
@@ -309,8 +313,11 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 				ModelLastUsedAt:            nullableTimePointer(row.ModelLastUsedAt),
 			},
 			Availability: CandidateAvailability{
-				AvailableAPIKeys: availableAPIKeys,
-				TotalAPIKeys:     totalAPIKeys,
+				AvailableAPIKeys:             availableAPIKeys,
+				TotalAPIKeys:                 totalAPIKeys,
+				SubscriptionKeyCount:         row.SubscriptionKeyCount,
+				SubscriptionRemainingSeconds: nullableInt64(row.SubscriptionRemainingSeconds),
+				SubscriptionExpiresAt:        nullableTimePointer(row.SubscriptionExpiresAt),
 			},
 			Credential: CandidateCredential{
 				ID:                     nullableUUIDPointer(row.PreferredCredentialID),
@@ -328,6 +335,7 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 				BasePerRequestValue:    basePerRequestValue,
 				InputValue:             multipliedFloat(baseInputValue, costMultiplier),
 				OutputValue:            multipliedFloat(baseOutputValue, costMultiplier),
+				CacheReadRatio:         nullableFloat(row.PricingCacheReadRatio),
 				ImageRatio:             nullableFloat(row.PricingImageRatio),
 				PerRequestValue:        multipliedFloat(basePerRequestValue, costMultiplier),
 				BillingType:            nullableString(row.PricingBillingType),
@@ -340,7 +348,7 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 
 	priceValues := make([]float64, 0)
 	for _, item := range candidates {
-		if value, ok := candidatePriceValue(item); ok {
+		if value, ok := candidateActualPriceValue(item); ok {
 			priceValues = append(priceValues, value)
 		}
 	}
@@ -362,13 +370,13 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 
 	preference := store.NormalizeRoutingPreference(canonicalModel.RoutingPreference)
 	for index := range candidates {
-		activeScore, activeBreakdown := scoreCandidateWithPreference(candidates[index], minPrice, maxPrice, preference)
+		activeScore, activeBreakdown := scoreCandidateWithPreferenceConfig(candidates[index], minPrice, maxPrice, preference, canonicalModel.RoutingExpiryRescueEnabled)
 		candidates[index].Score = activeScore
 		if query.Debug {
 			candidates[index].ScoreBreakdown = activeBreakdown
 			candidates[index].ScoreProfiles = make(map[string]CandidateScoreProfile, len(routingPreferences))
 			for _, profilePreference := range routingPreferences {
-				score, breakdown := scoreCandidateWithPreference(candidates[index], minPrice, maxPrice, profilePreference)
+				score, breakdown := scoreCandidateWithPreferenceConfig(candidates[index], minPrice, maxPrice, profilePreference, canonicalModel.RoutingExpiryRescueEnabled)
 				candidates[index].ScoreProfiles[profilePreference] = CandidateScoreProfile{
 					Score:     score,
 					Breakdown: breakdown,
@@ -661,21 +669,7 @@ func (s *Service) reserveExplorationCandidate(ctx context.Context, model store.C
 		order = append(order, index)
 	}
 	sort.SliceStable(order, func(i, j int) bool {
-		a := items[order[i]]
-		b := items[order[j]]
-		if a.Exploration.Attempts != b.Exploration.Attempts {
-			return a.Exploration.Attempts < b.Exploration.Attempts
-		}
-		if a.Exploration.LastAttemptAt == nil && b.Exploration.LastAttemptAt != nil {
-			return true
-		}
-		if a.Exploration.LastAttemptAt != nil && b.Exploration.LastAttemptAt == nil {
-			return false
-		}
-		if a.Exploration.LastAttemptAt != nil && b.Exploration.LastAttemptAt != nil && !a.Exploration.LastAttemptAt.Equal(*b.Exploration.LastAttemptAt) {
-			return a.Exploration.LastAttemptAt.Before(*b.Exploration.LastAttemptAt)
-		}
-		return a.Score > b.Score
+		return explorationCandidateComesBefore(items[order[i]], items[order[j]])
 	})
 
 	for _, index := range order {
@@ -713,6 +707,36 @@ func (s *Service) reserveExplorationCandidate(ctx context.Context, model store.C
 		return result
 	}
 	return items
+}
+
+func explorationCandidateComesBefore(a, b Candidate) bool {
+	aInProgress := a.Exploration.Attempts > 0 && a.Exploration.Attempts < a.Exploration.Target && a.Exploration.Remaining > 0
+	bInProgress := b.Exploration.Attempts > 0 && b.Exploration.Attempts < b.Exploration.Target && b.Exploration.Remaining > 0
+	if aInProgress != bInProgress {
+		return aInProgress
+	}
+	if !aInProgress {
+		// Candidates that have not started a cycle keep the score-derived order
+		// produced by Candidates.  Stable sorting preserves that order.
+		return false
+	}
+
+	// There can be more than one active cycle after upgrading from the old
+	// round-robin behavior.  Finish the most advanced cycle first, then prefer
+	// the cycle that was touched most recently.
+	if a.Exploration.Attempts != b.Exploration.Attempts {
+		return a.Exploration.Attempts > b.Exploration.Attempts
+	}
+	if a.Exploration.LastAttemptAt == nil && b.Exploration.LastAttemptAt != nil {
+		return false
+	}
+	if a.Exploration.LastAttemptAt != nil && b.Exploration.LastAttemptAt == nil {
+		return true
+	}
+	if a.Exploration.LastAttemptAt != nil && b.Exploration.LastAttemptAt != nil && !a.Exploration.LastAttemptAt.Equal(*b.Exploration.LastAttemptAt) {
+		return a.Exploration.LastAttemptAt.After(*b.Exploration.LastAttemptAt)
+	}
+	return a.Score > b.Score
 }
 
 func (s *Service) ActiveCooldowns(ctx context.Context) ([]store.RouteCooldown, error) {
@@ -810,55 +834,60 @@ func scoreCandidate(item Candidate, minPrice float64, maxPrice float64) (float64
 }
 
 func scoreCandidateWithPreference(item Candidate, minPrice float64, maxPrice float64, preference string) (float64, map[string]float64) {
+	return scoreCandidateWithPreferenceConfig(item, minPrice, maxPrice, preference, false)
+}
+
+func scoreCandidateWithPreferenceConfig(item Candidate, minPrice float64, maxPrice float64, preference string, rescueEnabled bool) (float64, map[string]float64) {
 	preference = store.NormalizeRoutingPreference(preference)
 	modelFirstByte := modelFirstByteLatency(item)
 	weights := map[string]float64{
-		"site_health":              40,
-		"site_success_rate":        10,
-		"site_latency":             5,
-		"model_success_rate":       30,
-		"model_latency":            15,
-		"model_first_byte_latency": 5,
-		"model_cache_hit_rate":     5,
-		"api_key_capacity":         15,
-		"price":                    10,
+		"site_health":                         40,
+		"site_success_rate":                   10,
+		"site_latency":                        5,
+		"model_success_rate":                  30,
+		"model_latency":                       15,
+		"model_first_byte_latency":            5,
+		"api_key_capacity":                    15,
+		"actual_price":                        20,
+		"api_key_subscription_expiry_urgency": 10,
 	}
 	switch preference {
 	case store.RoutingPreferenceValue:
 		weights = map[string]float64{
-			"site_health":              40,
-			"site_success_rate":        15,
-			"site_latency":             3,
-			"model_success_rate":       25,
-			"model_latency":            5,
-			"model_first_byte_latency": 2,
-			"model_cache_hit_rate":     15,
-			"api_key_capacity":         5,
-			"price":                    35,
+			"site_health":                         40,
+			"site_success_rate":                   15,
+			"site_latency":                        3,
+			"model_success_rate":                  25,
+			"model_latency":                       5,
+			"model_first_byte_latency":            2,
+			"api_key_capacity":                    5,
+			"actual_price":                        50,
+			"api_key_subscription_expiry_urgency": 20,
 		}
 	case store.RoutingPreferenceSpeed:
 		weights = map[string]float64{
-			"site_health":              35,
-			"site_success_rate":        10,
-			"site_latency":             15,
-			"model_success_rate":       20,
-			"model_latency":            15,
-			"model_first_byte_latency": 25,
-			"model_cache_hit_rate":     5,
-			"api_key_capacity":         5,
-			"price":                    5,
+			"site_health":                         35,
+			"site_success_rate":                   10,
+			"site_latency":                        15,
+			"model_success_rate":                  20,
+			"model_latency":                       15,
+			"model_first_byte_latency":            25,
+			"api_key_capacity":                    5,
+			"actual_price":                        10,
+			"api_key_subscription_expiry_urgency": 8,
 		}
 	}
 	breakdown := map[string]float64{
-		"site_health":              healthScore(item.Health.Status) * weights["site_health"] / 40,
-		"site_success_rate":        successRateScore(item.Health.RecentSuccessRate, weights["site_success_rate"]),
-		"site_latency":             latencyScore(item.Health.RecentAvgLatencyMS, weights["site_latency"]),
-		"model_success_rate":       successRateScore(item.Health.ModelSuccessRate, weights["model_success_rate"]),
-		"model_latency":            latencyScore(item.Health.ModelAvgLatencyMS, weights["model_latency"]),
-		"model_first_byte_latency": firstByteLatencyScore(modelFirstByte, weights["model_first_byte_latency"]),
-		"model_cache_hit_rate":     cacheHitRateScore(item.Health.ModelCacheHitRate, weights["model_cache_hit_rate"]),
-		"api_key_capacity":         float64(min(item.Availability.AvailableAPIKeys, 5)) * weights["api_key_capacity"] / 5,
-		"price":                    priceScore(item, minPrice, maxPrice) * weights["price"] / 10,
+		"site_health":                              healthScore(item.Health.Status) * weights["site_health"] / 40,
+		"site_success_rate":                        successRateScore(item.Health.RecentSuccessRate, weights["site_success_rate"]),
+		"site_latency":                             latencyScore(item.Health.RecentAvgLatencyMS, weights["site_latency"]),
+		"model_success_rate":                       successRateScore(item.Health.ModelSuccessRate, weights["model_success_rate"]),
+		"model_latency":                            latencyScore(item.Health.ModelAvgLatencyMS, weights["model_latency"]),
+		"model_first_byte_latency":                 firstByteLatencyScore(modelFirstByte, weights["model_first_byte_latency"]),
+		"api_key_capacity":                         float64(min(item.Availability.AvailableAPIKeys, 5)) * weights["api_key_capacity"] / 5,
+		"actual_price":                             priceScore(item, minPrice, maxPrice) * weights["actual_price"] / 10,
+		"api_key_subscription_expiry_urgency":      subscriptionExpiryUrgencyScore(item.Availability.SubscriptionRemainingSeconds, weights["api_key_subscription_expiry_urgency"]),
+		"api_key_subscription_expiry_rescue_bonus": subscriptionExpiryRescueBonus(item.Availability.SubscriptionRemainingSeconds, preference, rescueEnabled),
 	}
 
 	total := 0.0
@@ -867,6 +896,62 @@ func scoreCandidateWithPreference(item Candidate, minPrice float64, maxPrice flo
 	}
 
 	return total, breakdown
+}
+
+func subscriptionExpiryUrgencyScore(remainingSeconds *int64, maxScore float64) float64 {
+	if remainingSeconds == nil || *remainingSeconds <= 0 {
+		return 0
+	}
+	switch {
+	case *remainingSeconds <= int64(24*time.Hour/time.Second):
+		return maxScore
+	case *remainingSeconds <= int64(3*24*time.Hour/time.Second):
+		return maxScore * 0.8
+	case *remainingSeconds <= int64(7*24*time.Hour/time.Second):
+		return maxScore * 0.6
+	case *remainingSeconds <= int64(30*24*time.Hour/time.Second):
+		return maxScore * 0.3
+	default:
+		return 0
+	}
+}
+
+func subscriptionExpiryRescueBonus(remainingSeconds *int64, preference string, enabled bool) float64 {
+	if !enabled || remainingSeconds == nil || *remainingSeconds <= 0 {
+		return 0
+	}
+	preference = store.NormalizeRoutingPreference(preference)
+	bonus := 0.0
+	switch preference {
+	case store.RoutingPreferenceValue:
+		switch {
+		case *remainingSeconds <= int64(24*time.Hour/time.Second):
+			bonus = 45
+		case *remainingSeconds <= int64(3*24*time.Hour/time.Second):
+			bonus = 30
+		case *remainingSeconds <= int64(7*24*time.Hour/time.Second):
+			bonus = 10
+		}
+	case store.RoutingPreferenceSpeed:
+		switch {
+		case *remainingSeconds <= int64(24*time.Hour/time.Second):
+			bonus = 12
+		case *remainingSeconds <= int64(3*24*time.Hour/time.Second):
+			bonus = 8
+		case *remainingSeconds <= int64(7*24*time.Hour/time.Second):
+			bonus = 3
+		}
+	default:
+		switch {
+		case *remainingSeconds <= int64(24*time.Hour/time.Second):
+			bonus = 25
+		case *remainingSeconds <= int64(3*24*time.Hour/time.Second):
+			bonus = 15
+		case *remainingSeconds <= int64(7*24*time.Hour/time.Second):
+			bonus = 5
+		}
+	}
+	return bonus
 }
 
 type cooldownIndex struct {
@@ -940,20 +1025,6 @@ func successRateScore(rate *float64, maxScore float64) float64 {
 	return *rate * maxScore
 }
 
-func cacheHitRateScore(rate *float64, maxScore float64) float64 {
-	if rate == nil {
-		return 0
-	}
-	value := *rate
-	if value < 0 {
-		value = 0
-	}
-	if value > 1 {
-		value = 1
-	}
-	return value * maxScore
-}
-
 func latencyScore(latency *int64, maxScore float64) float64 {
 	if latency == nil {
 		return 0
@@ -999,7 +1070,7 @@ func modelFirstByteLatency(item Candidate) *int64 {
 }
 
 func priceScore(item Candidate, minPrice float64, maxPrice float64) float64 {
-	value, ok := candidatePriceValue(item)
+	value, ok := candidateActualPriceValue(item)
 	if !ok {
 		return 2
 	}
@@ -1007,6 +1078,40 @@ func priceScore(item Candidate, minPrice float64, maxPrice float64) float64 {
 		return 10
 	}
 	return 10 * ((maxPrice - value) / (maxPrice - minPrice))
+}
+
+func candidateActualPriceValue(item Candidate) (float64, bool) {
+	if item.Pricing.PerRequestValue != nil {
+		return *item.Pricing.PerRequestValue, true
+	}
+
+	inputMultiplier := 1.0
+	if item.Pricing.InputValue != nil && item.Health.ModelCacheHitRate != nil && item.Pricing.CacheReadRatio != nil {
+		hitRate := *item.Health.ModelCacheHitRate
+		if hitRate < 0 {
+			hitRate = 0
+		}
+		if hitRate > 1 {
+			hitRate = 1
+		}
+		cacheReadRatio := *item.Pricing.CacheReadRatio
+		if cacheReadRatio < 0 {
+			cacheReadRatio = 0
+		}
+		inputMultiplier = (1 - hitRate) + hitRate*cacheReadRatio
+	}
+
+	value := 0.0
+	found := false
+	if item.Pricing.InputValue != nil {
+		value += *item.Pricing.InputValue * inputMultiplier
+		found = true
+	}
+	if item.Pricing.OutputValue != nil {
+		value += *item.Pricing.OutputValue
+		found = true
+	}
+	return value, found
 }
 
 func candidatePriceValue(item Candidate) (float64, bool) {

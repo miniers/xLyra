@@ -10,9 +10,10 @@ const MODEL_SCORE_KEYS: ReadonlyArray<keyof RouteScoreBreakdown> = [
   'model_success_rate',
   'model_latency',
   'model_first_byte_latency',
-  'model_cache_hit_rate',
   'api_key_capacity',
-  'price',
+  'actual_price',
+  'api_key_subscription_expiry_urgency',
+  'api_key_subscription_expiry_rescue_bonus',
 ]
 
 export function routeSiteScore(candidate?: Pick<RouteCandidateItem, 'score_breakdown'>) {

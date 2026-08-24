@@ -148,6 +148,34 @@ func (h Handler) UpdateModelRoutingPreference(w http.ResponseWriter, r *http.Req
 	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
 }
 
+func (h Handler) UpdateModelRoutingExpiryRescue(w http.ResponseWriter, r *http.Request) {
+	if h.catalog == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
+		return
+	}
+
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+
+	model, err := h.catalog.UpdateRoutingExpiryRescue(r.Context(), modelID, payload.Enabled)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "canonical_model_routing_expiry_rescue_update_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
+}
+
 func (h Handler) UpdateModelRoutingExploration(w http.ResponseWriter, r *http.Request) {
 	if h.catalog == nil {
 		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
@@ -196,6 +224,37 @@ func (h Handler) ResetModelRoutingExploration(w http.ResponseWriter, r *http.Req
 	model, err := h.catalog.ResetRoutingExploration(r.Context(), modelID)
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "canonical_model_routing_exploration_reset_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
+}
+
+func (h Handler) ResetModelRoutingExplorationSite(w http.ResponseWriter, r *http.Request) {
+	if h.catalog == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "catalog_service_unavailable", "catalog service is not available")
+		return
+	}
+
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+	var payload struct {
+		SiteModelID uuid.UUID `json:"site_model_id"`
+	}
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+	if payload.SiteModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_site_model_id", "site_model_id is required")
+		return
+	}
+
+	model, err := h.catalog.ResetRoutingExplorationSite(r.Context(), modelID, payload.SiteModelID)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "canonical_model_routing_exploration_site_reset_failed", err.Error())
 		return
 	}
 
@@ -381,15 +440,16 @@ func (r canonicalModelRequest) toInput() catalog.UpsertCanonicalModelInput {
 func canonicalModelPayload(model store.CanonicalModel) map[string]any {
 	exploration := store.NormalizeRoutingExplorationConfig(model)
 	return map[string]any{
-		"id":                 model.ID.String(),
-		"model_key":          model.ModelKey,
-		"display_name":       model.DisplayName,
-		"provider":           model.Provider,
-		"icon_url":           providerIconURL(model.Provider),
-		"category":           model.Category,
-		"capabilities":       jsonRaw(model.Capabilities),
-		"status":             model.Status,
-		"routing_preference": store.NormalizeRoutingPreference(model.RoutingPreference),
+		"id":                            model.ID.String(),
+		"model_key":                     model.ModelKey,
+		"display_name":                  model.DisplayName,
+		"provider":                      model.Provider,
+		"icon_url":                      providerIconURL(model.Provider),
+		"category":                      model.Category,
+		"capabilities":                  jsonRaw(model.Capabilities),
+		"status":                        model.Status,
+		"routing_preference":            store.NormalizeRoutingPreference(model.RoutingPreference),
+		"routing_expiry_rescue_enabled": model.RoutingExpiryRescueEnabled,
 		"routing_exploration": map[string]any{
 			"enabled":              exploration.Enabled,
 			"new_trials_per_site":  exploration.NewTrialsPerSite,

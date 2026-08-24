@@ -501,8 +501,11 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 			"reserved":        item.Exploration.Reserved,
 		},
 		"availability": map[string]any{
-			"available_api_key_count": item.Availability.AvailableAPIKeys,
-			"total_api_key_count":     item.Availability.TotalAPIKeys,
+			"available_api_key_count":        item.Availability.AvailableAPIKeys,
+			"total_api_key_count":            item.Availability.TotalAPIKeys,
+			"subscription_key_count":         item.Availability.SubscriptionKeyCount,
+			"subscription_remaining_seconds": pointerInt64Value(item.Availability.SubscriptionRemainingSeconds),
+			"subscription_expires_at":        timePtrValue(item.Availability.SubscriptionExpiresAt),
 		},
 		"credential": map[string]any{
 			"id":                       pointerUUIDValue(item.Credential.ID),
@@ -519,6 +522,7 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 			"base_per_request_value":   pointerFloat64Value(item.Pricing.BasePerRequestValue),
 			"input_value":              pointerFloat64Value(item.Pricing.InputValue),
 			"output_value":             pointerFloat64Value(item.Pricing.OutputValue),
+			"cache_read_ratio":         pointerFloat64Value(item.Pricing.CacheReadRatio),
 			"per_request_value":        pointerFloat64Value(item.Pricing.PerRequestValue),
 			"upstream_cost_multiplier": item.Pricing.UpstreamCostMultiplier,
 			"billing_type":             pointerStringValue(item.Pricing.BillingType),

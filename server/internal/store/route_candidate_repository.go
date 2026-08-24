@@ -49,6 +49,9 @@ type RouteCandidateRow struct {
 	ModelAPIKeyCount                   int
 	ModelAvailableKeyCount             int
 	SiteCredentialCount                int
+	SubscriptionKeyCount               int
+	SubscriptionRemainingSeconds       sql.NullInt64
+	SubscriptionExpiresAt              sql.NullTime
 	PreferredCredentialID              uuid.NullUUID
 	PreferredCredentialName            sql.NullString
 	PreferredCredentialRoutingPriority float64
@@ -59,6 +62,7 @@ type RouteCandidateRow struct {
 	PricingCurrency                    sql.NullString
 	PricingInputValue                  sql.NullFloat64
 	PricingOutputValue                 sql.NullFloat64
+	PricingCacheReadRatio              sql.NullFloat64
 	PricingImageRatio                  sql.NullFloat64
 	PricingPerRequestValue             sql.NullFloat64
 	PricingBillingType                 sql.NullString
@@ -215,9 +219,13 @@ func (r RouteCandidateRepository) listModelCacheStats(ctx context.Context, siteM
 	query := r.db.WithContext(ctx).
 		Table("usage_records").
 		Select(`request_logs.site_model_id AS site_model_id,
-			COUNT(*) AS request_count,
-			COALESCE(SUM(usage_records.prompt_tokens), 0) AS prompt_tokens,
-			COALESCE(SUM(CASE WHEN usage_records.cached_tokens IS NULL OR usage_records.cached_tokens < 0 THEN 0 ELSE usage_records.cached_tokens END), 0) AS cached_tokens`).
+			COUNT(*) FILTER (WHERE request_logs.metadata #>> '{routing_exploration,warmup}' IS DISTINCT FROM 'true') AS request_count,
+			COALESCE(SUM(CASE WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' THEN 0 ELSE usage_records.prompt_tokens END), 0) AS prompt_tokens,
+			COALESCE(SUM(CASE
+				WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' THEN 0
+				WHEN usage_records.cached_tokens IS NULL OR usage_records.cached_tokens < 0 THEN 0
+				ELSE usage_records.cached_tokens
+			END), 0) AS cached_tokens`).
 		Joins("JOIN request_logs ON request_logs.id = usage_records.request_log_id").
 		Where("request_logs.site_model_id IN ? AND request_logs.internal = ? AND request_logs.created_at >= ?", siteModelIDs, false, time.Now().Add(-24*time.Hour)).
 		Group("request_logs.site_model_id").
@@ -330,6 +338,7 @@ func fillRouteKeyCounts(row *RouteCandidateRow, apiKeyModels []SiteAPIKeyModel, 
 		items = append(items, item)
 	}
 	SortGatewayCredentials(items)
+	setRouteSubscriptionExpiry(row, items, now)
 	if len(items) > 0 {
 		setPreferredRouteCredential(row, items[0])
 	}
@@ -350,9 +359,39 @@ func fillRouteSiteCredentialCount(row *RouteCandidateRow, credentials []SiteCred
 	}
 	SortGatewayCredentials(items)
 	row.SiteCredentialCount = len(items)
+	if row.ModelAPIKeyCount == 0 {
+		setRouteSubscriptionExpiry(row, items, now)
+	}
 	if !row.PreferredCredentialID.Valid && len(items) > 0 {
 		setPreferredRouteCredential(row, items[0])
 	}
+}
+
+func setRouteSubscriptionExpiry(row *RouteCandidateRow, items []GatewayCredential, now time.Time) {
+	row.SubscriptionKeyCount = 0
+	row.SubscriptionRemainingSeconds = sql.NullInt64{}
+	row.SubscriptionExpiresAt = sql.NullTime{}
+
+	var earliest time.Time
+	for _, item := range items {
+		expiresAt, ok := gatewayCredentialExpiry(item, now)
+		if !ok || !expiresAt.After(now) {
+			continue
+		}
+		row.SubscriptionKeyCount++
+		if earliest.IsZero() || expiresAt.Before(earliest) {
+			earliest = expiresAt
+		}
+	}
+	if earliest.IsZero() {
+		return
+	}
+	remaining := int64(earliest.Sub(now).Seconds())
+	if remaining < 1 {
+		remaining = 1
+	}
+	row.SubscriptionRemainingSeconds = sql.NullInt64{Int64: remaining, Valid: true}
+	row.SubscriptionExpiresAt = sql.NullTime{Time: earliest, Valid: true}
 }
 
 func setPreferredRouteCredential(row *RouteCandidateRow, item GatewayCredential) {
@@ -387,6 +426,7 @@ func fillRoutePricing(row *RouteCandidateRow, pricings []SiteModelPricing) {
 	row.PricingCurrency = sql.NullString{String: pricing.Currency, Valid: pricing.Currency != ""}
 	row.PricingInputValue = pricing.InputValue
 	row.PricingOutputValue = pricing.OutputValue
+	row.PricingCacheReadRatio = pricing.CacheRatio
 	row.PricingImageRatio = pricing.ImageRatio
 	row.PricingPerRequestValue = pricing.PerRequestValue
 	row.PricingBillingType = sql.NullString{String: pricing.BillingType, Valid: pricing.BillingType != ""}

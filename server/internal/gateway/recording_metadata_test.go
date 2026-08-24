@@ -94,6 +94,74 @@ func TestAttemptMetadataIncludesNormalizedGatewayFields(t *testing.T) {
 	}
 }
 
+func TestAttemptMetadataMarksFirstReservedExplorationAttemptAsWarmup(t *testing.T) {
+	t.Parallel()
+
+	metadata := attemptMetadata(
+		context.Background(),
+		"req-attempt",
+		"req-parent",
+		uuid.Nil,
+		uuid.Nil,
+		routeengine.Candidate{
+			Exploration: routeengine.CandidateExploration{
+				Enabled:  true,
+				Mode:     "initial",
+				CycleKey: "initial",
+				Attempts: 1,
+				Reserved: true,
+			},
+		},
+		gatewayAttemptResult{},
+	)
+	exploration, ok := metadata["routing_exploration"].(map[string]any)
+	if !ok {
+		t.Fatalf("routing exploration metadata = %T, want map[string]any", metadata["routing_exploration"])
+	}
+	if exploration["warmup"] != true {
+		t.Fatalf("warmup metadata = %#v, want true", exploration["warmup"])
+	}
+	if exploration["exploration_attempt"] != 1 || exploration["cycle_key"] != "initial" {
+		t.Fatalf("exploration metadata = %#v, want attempt 1 and initial cycle", exploration)
+	}
+
+	metadata = attemptMetadata(
+		context.Background(),
+		"req-attempt",
+		"req-parent",
+		uuid.Nil,
+		uuid.Nil,
+		routeengine.Candidate{
+			Exploration: routeengine.CandidateExploration{
+				Enabled:  true,
+				Attempts: 2,
+				Reserved: true,
+			},
+		},
+		gatewayAttemptResult{},
+	)
+	exploration = metadata["routing_exploration"].(map[string]any)
+	if exploration["warmup"] != false {
+		t.Fatalf("second exploration attempt warmup = %#v, want false", exploration["warmup"])
+	}
+
+	metadata = attemptMetadata(
+		context.Background(),
+		"req-attempt",
+		"req-parent",
+		uuid.Nil,
+		uuid.Nil,
+		routeengine.Candidate{
+			Exploration: routeengine.CandidateExploration{Enabled: true, Attempts: 1},
+		},
+		gatewayAttemptResult{},
+	)
+	exploration = metadata["routing_exploration"].(map[string]any)
+	if exploration["warmup"] != false {
+		t.Fatalf("unreserved exploration attempt warmup = %#v, want false", exploration["warmup"])
+	}
+}
+
 func TestStreamMetadataClassifiesReadFailureAsIncomplete(t *testing.T) {
 	t.Parallel()
 

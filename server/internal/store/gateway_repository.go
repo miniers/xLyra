@@ -337,12 +337,8 @@ func credentialStateUsableAt(state SiteAPIKeyState, now time.Time) bool {
 	if strings.EqualFold(strings.TrimSpace(state.SyncStatus), "stale") {
 		return false
 	}
-	if state.ExpiredTime.Valid && state.ExpiredTime.Int64 > 0 {
-		expiresAt := state.ExpiredTime.Int64
-		if expiresAt > 10_000_000_000 {
-			expiresAt /= 1000
-		}
-		if expiresAt <= now.Unix() {
+	if expiresAt, ok := CredentialStateExpiresAt(state); ok {
+		if !expiresAt.After(now) {
 			return false
 		}
 	}
@@ -361,6 +357,20 @@ func CredentialStateUsable(state SiteAPIKeyState) bool {
 
 func CredentialStateUsableAt(state SiteAPIKeyState, now time.Time) bool {
 	return credentialStateUsableAt(state, now)
+}
+
+func CredentialStateExpiresAt(state SiteAPIKeyState) (time.Time, bool) {
+	if !state.ExpiredTime.Valid || state.ExpiredTime.Int64 <= 0 {
+		return time.Time{}, false
+	}
+	expiresAt := state.ExpiredTime.Int64
+	if expiresAt > 10_000_000_000 {
+		expiresAt /= 1000
+	}
+	if expiresAt <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(expiresAt, 0), true
 }
 
 func CredentialStateUsableForCredential(credential SiteCredential, state SiteAPIKeyState) bool {
@@ -428,9 +438,21 @@ func SiteCredentialDisplayName(credential SiteCredential, state SiteAPIKeyState)
 }
 
 func SortGatewayCredentials(items []GatewayCredential) {
+	SortGatewayCredentialsAt(items, time.Now())
+}
+
+func SortGatewayCredentialsAt(items []GatewayCredential, now time.Time) {
 	sort.SliceStable(items, func(i, j int) bool {
 		left := items[i]
 		right := items[j]
+		leftExpiry, leftHasExpiry := gatewayCredentialExpiry(left, now)
+		rightExpiry, rightHasExpiry := gatewayCredentialExpiry(right, now)
+		if leftHasExpiry != rightHasExpiry {
+			return leftHasExpiry
+		}
+		if leftHasExpiry && !leftExpiry.Equal(rightExpiry) {
+			return leftExpiry.Before(rightExpiry)
+		}
 		leftPriority := SiteCredentialRoutingPriority(left.Credential)
 		rightPriority := SiteCredentialRoutingPriority(right.Credential)
 		if leftPriority != rightPriority {
@@ -452,6 +474,17 @@ func SortGatewayCredentials(items []GatewayCredential) {
 		}
 		return left.Credential.ID.String() < right.Credential.ID.String()
 	})
+}
+
+func gatewayCredentialExpiry(credential GatewayCredential, now time.Time) (time.Time, bool) {
+	expiresAt, ok := CredentialStateExpiresAt(credential.State)
+	if !ok {
+		expiresAt, ok = siteCredentialSubscriptionExpiresAt(credential.Credential)
+	}
+	if !ok || !expiresAt.After(now) {
+		return time.Time{}, false
+	}
+	return expiresAt, true
 }
 
 func gatewayCredentialQuotaRank(state SiteAPIKeyState) (int, int64) {

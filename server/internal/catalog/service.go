@@ -351,6 +351,13 @@ func (s *Service) UpdateRoutingPreference(ctx context.Context, id uuid.UUID, pre
 	return store.NewCanonicalModelRepository(s.db.DB()).UpdateRoutingPreference(ctx, id, preference)
 }
 
+func (s *Service) UpdateRoutingExpiryRescue(ctx context.Context, id uuid.UUID, enabled bool) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	return store.NewCanonicalModelRepository(s.db.DB()).UpdateRoutingExpiryRescue(ctx, id, enabled)
+}
+
 type UpdateRoutingExplorationInput struct {
 	Enabled           bool
 	NewTrialsPerSite  int
@@ -384,6 +391,24 @@ func (s *Service) ResetRoutingExploration(ctx context.Context, id uuid.UUID) (st
 		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
 	}
 	return store.NewCanonicalModelRepository(s.db.DB()).ResetRoutingExploration(ctx, id)
+}
+
+func (s *Service) ResetRoutingExplorationSite(ctx context.Context, id uuid.UUID, siteModelID uuid.UUID) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	if siteModelID == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("site_model_id is required")
+	}
+
+	model, err := store.NewCanonicalModelRepository(s.db.DB()).GetByID(ctx, id)
+	if err != nil {
+		return store.CanonicalModel{}, err
+	}
+	if err := store.NewRouteExplorationRepository(s.db.DB()).ResetSite(ctx, id, siteModelID); err != nil {
+		return store.CanonicalModel{}, err
+	}
+	return model, nil
 }
 
 func nullFloat64FromPtr(value *float64) sql.NullFloat64 {

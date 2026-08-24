@@ -44,10 +44,14 @@
       "cooldownClearFailed": "冷却清理失败",
       "preferenceUpdated": "评分偏好已更新",
       "preferenceUpdateFailed": "评分偏好更新失败",
+      "expiryRescueUpdated": "订阅到期抢救加分已更新",
+      "expiryRescueUpdateFailed": "订阅到期抢救加分更新失败",
       "explorationUpdated": "试运行配置已更新",
       "explorationUpdateFailed": "试运行配置更新失败",
       "explorationReset": "已重新开始全部站点试运行",
-      "explorationResetFailed": "重新开始试运行失败"
+      "explorationResetFailed": "重新开始试运行失败",
+      "explorationSiteReset": "已重新开始该站点试运行",
+      "explorationSiteResetFailed": "重新开始该站点试运行失败"
     }
   },
   "details": {
@@ -83,7 +87,13 @@
         "modelFirstByteLatency": "模型首字延迟",
         "modelCacheHitRate": "模型缓存命中率",
         "apiKeyCapacity": "Key 容量",
-        "price": "价格"
+        "actualPrice": "实际价格",
+        "subscriptionExpiryUrgency": "订阅到期紧迫度",
+        "subscriptionExpiryRescueBonus": "订阅到期抢救加分"
+      },
+      "raw": {
+        "actualPriceCacheHitRate": "缓存{{value}}",
+        "actualPriceCacheReadRatio": "读取{{value}}"
       }
     },
     "preference": {
@@ -91,7 +101,9 @@
       "description": "偏好会影响候选路由的评分和排序。",
       "default": "默认",
       "value": "性价比",
-      "speed": "速度"
+      "speed": "速度",
+      "expiryRescue": "开启订阅到期抢救加分",
+      "expiryRescueDescription": "剩余 3 天内提高候选分数，优先消耗即将过期的订阅额度。"
     },
     "exploration": {
       "title": "配额试运行",
@@ -102,6 +114,7 @@
       "idleTrials": "闲置站点每站次数",
       "save": "保存配置",
       "reset": "重新开始全部站点",
+      "resetSite": "重新开始",
       "progress": "站点进度",
       "noCandidates": "暂无可试运行的站点模型",
       "validationTrials": "新站点次数需为 1–100 的整数",
@@ -180,6 +193,9 @@
     "healthLatency": "延迟 {{latency}}",
     "pricingPerRequest": "按次 {{price}}",
     "pricingTokens": "输入 {{input}} / 输出 {{output}}",
-    "perRequestUnit": "{{price}}/次"
+    "perRequestUnit": "{{price}}/次",
+    "durationDays": "天",
+    "durationHours": "时",
+    "durationMinutes": "分"
   }
 }

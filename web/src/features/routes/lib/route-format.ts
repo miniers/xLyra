@@ -186,6 +186,23 @@ export function formatDuration(seconds?: number | null) {
   return `${Math.ceil(seconds / 3600)}h`
 }
 
+export function formatRemainingDuration(seconds?: number | null, t?: TFunction) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return undefined
+
+  const totalMinutes = Math.max(1, Math.ceil(seconds / 60))
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  const unit = (key: 'days' | 'hours' | 'minutes', fallback: string) =>
+    t ? t(`format.duration${key[0].toUpperCase()}${key.slice(1)}`) : fallback
+  const parts: string[] = []
+
+  if (days > 0) parts.push(`${days}${unit('days', 'd')}`)
+  if (hours > 0 || days > 0) parts.push(`${hours}${unit('hours', 'h')}`)
+  parts.push(`${minutes}${unit('minutes', 'm')}`)
+  return parts.join('')
+}
+
 function formatDecimal(value: number, digits = 4, fixed = false) {
   return new Intl.NumberFormat('zh-CN', {
     minimumFractionDigits: fixed ? digits : 0,

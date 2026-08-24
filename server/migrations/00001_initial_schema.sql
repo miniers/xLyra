@@ -281,6 +281,7 @@ CREATE TABLE canonical_models (
   capabilities JSONB NOT NULL DEFAULT '{}'::jsonb,
   status TEXT NOT NULL DEFAULT 'active',
   routing_preference TEXT NOT NULL DEFAULT 'default',
+  routing_expiry_rescue_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   routing_exploration_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   routing_exploration_new_trials_per_site INTEGER NOT NULL DEFAULT 5,
   routing_exploration_idle_after_hours INTEGER NOT NULL DEFAULT 24,
