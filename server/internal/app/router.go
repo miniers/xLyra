@@ -27,6 +27,7 @@ import (
 	"xlyra/server/internal/newapi"
 	oauthsvc "xlyra/server/internal/oauth"
 	"xlyra/server/internal/observability"
+	"xlyra/server/internal/playground"
 	routeengine "xlyra/server/internal/router"
 	"xlyra/server/internal/settings"
 	"xlyra/server/internal/site"
@@ -71,6 +72,9 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 	downloadService := downloads.NewService()
 	gatewayHandler := gateway.NewHandlerWithTimeZone(logger.With("thread", "gateway"), authService, routerService, db, masterKey, appTimeZone, confFile)
 	playgroundGatewayHandler := gatewayHandler.WithRouteSiteHeader()
+	playgroundRoot := filepath.Join(config.ResolveWorkdir(), "playground")
+	playgroundService := playground.NewService(logger.With("thread", "playground"), db, gatewayHandler, playgroundRoot)
+	playgroundHandler := playground.NewHandler(playgroundService)
 	if db != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -80,7 +84,12 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 	}
 	adminHandler := admin.NewHandler(logger.With("thread", "admin"), authService, siteService, catalogService, routerService, usageService, dashboardService, systemStatsService, &gatewayHandler, newAPIService, oauthService, appTimeZone).WithDownloadService(downloadService).WithTrafficFlowStore(db).WithAnalyticsService(analyticsService)
 	healthHandler := health.NewHandler(cfg, db)
-	settingsHandler := settings.NewHandlerWithBackup(logger.With("thread", "settings"), confFile, db, masterKey, downloadService, appTimeZone)
+	var preRestore, postRestore func(context.Context) error
+	if playgroundService != nil {
+		preRestore = playgroundService.QuiesceForRestore
+		postRestore = playgroundService.RecoverAfterRestore
+	}
+	settingsHandler := settings.NewHandlerWithBackup(logger.With("thread", "settings"), confFile, db, masterKey, downloadService, playgroundRoot, preRestore, postRestore, appTimeZone)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -131,6 +140,16 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Use(adminHandler.AuditAdminMutation)
 				protected.Get("/auth/session", adminHandler.CurrentSession)
 				protected.Delete("/auth/session", adminHandler.DeleteSession)
+				protected.Route("/playground", func(playgroundRouter chi.Router) {
+					playgroundRouter.Get("/models", playgroundHandler.Models)
+					playgroundRouter.Get("/conversations", playgroundHandler.List)
+					playgroundRouter.Get("/conversations/{conversationID}", playgroundHandler.Get)
+					playgroundRouter.With(httpx.LimitRequestBody(64*1024*1024)).Post("/conversations/{conversationID}/turns", playgroundHandler.StartTurn)
+					playgroundRouter.Get("/conversations/{conversationID}/events", playgroundHandler.Events)
+					playgroundRouter.Delete("/conversations/{conversationID}", playgroundHandler.Delete)
+					playgroundRouter.Post("/runs/{runID}/cancel", playgroundHandler.Cancel)
+					playgroundRouter.Get("/assets/{assetID}", playgroundHandler.Asset)
+				})
 
 				protected.Get("/profile", adminHandler.GetProfile)
 				protected.Put("/profile/account", adminHandler.UpdateProfileAccount)
@@ -172,6 +191,7 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Post("/api-keys", adminHandler.CreateAPIKey)
 				protected.Get("/api-keys/{apiKeyID}", adminHandler.GetAPIKey)
 				protected.Get("/api-keys/{apiKeyID}/reveal", adminHandler.RevealAPIKey)
+				protected.Post("/api-keys/{apiKeyID}/rotate", adminHandler.RotateAPIKey)
 				protected.Put("/api-keys/{apiKeyID}", adminHandler.UpdateAPIKey)
 				protected.Post("/api-keys/{apiKeyID}/quota/increase", adminHandler.IncreaseAPIKeyQuota)
 				protected.Post("/api-keys/{apiKeyID}/quota/reset", adminHandler.ResetAPIKeyQuota)
@@ -295,6 +315,9 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Get("/settings/backup/automatic/files", settingsHandler.ListAutomaticBackupFiles)
 				protected.Post("/settings/backup/automatic/run", settingsHandler.RunAutomaticBackup)
 				protected.Post("/settings/backup/automatic/files/restore", settingsHandler.RestoreAutomaticBackupFile)
+				protected.Get("/settings/backup/automatic/files/restore/active", settingsHandler.GetActiveAutomaticBackupRestoreTask)
+				protected.Get("/settings/backup/automatic/files/restore/{taskID}", settingsHandler.GetAutomaticBackupRestoreTask)
+				protected.Delete("/settings/backup/automatic/files/restore/{taskID}", settingsHandler.CancelAutomaticBackupRestoreTask)
 				protected.Delete("/settings/backup/automatic/files", settingsHandler.DeleteAutomaticBackupFile)
 			})
 		})
@@ -407,6 +430,10 @@ func routeAwareTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 				return
 			}
 			if r.Method == http.MethodGet && r.URL.Path == "/api/v1/traffic-flow/stream" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/playground/conversations/") && strings.HasSuffix(r.URL.Path, "/events") {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -12,13 +12,13 @@ import (
 func TestServiceExportImportRequireReadyDatabase(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(nil, nil, "master-key")
+	service := NewService(nil, nil, "master-key", "")
 	if path, filename, err := service.Export(context.Background(), "secret"); path != "" || filename != "" {
 		t.Fatalf("Export error = %v, path=%q filename=%q; want ready database validation", err, path, filename)
 	} else {
 		assertBackupErrorContains(t, "Export", err, "database is not available")
 	}
-	if summary, err := service.Import(context.Background(), "secret", []byte("encrypted")); err == nil {
+	if summary, err := service.Import(context.Background(), "secret", []byte("encrypted"), ImportOptions{}); err == nil {
 		t.Fatalf("Import error = %v, summary=%#v; want ready database validation", err, summary)
 	} else {
 		assertBackupErrorContains(t, "Import", err, "database is not available")
@@ -124,8 +124,8 @@ func TestRestoreAndDeleteValidateObjectKeysBeforeRemoteCall(t *testing.T) {
 	cfg.Storage.UseSSL = true
 	service := NewAutomaticService(Service{confFile: automaticConfigFile(t, cfg)}, "master-key")
 
-	if _, err := service.Restore(context.Background(), "other/xlyra-backup-20260621-030000.zip.xlyra"); err == nil || !strings.Contains(err.Error(), "outside configured prefix") {
-		t.Fatalf("Restore error = %v, want prefix validation", err)
+	if _, err := service.StartRestore("other/xlyra-backup-20260621-030000.zip.xlyra", ImportOptions{}); err == nil || !strings.Contains(err.Error(), "outside configured prefix") {
+		t.Fatalf("StartRestore error = %v, want prefix validation", err)
 	}
 	if err := service.Delete(context.Background(), "prod/notes.txt"); err == nil || !strings.Contains(err.Error(), "format") {
 		t.Fatalf("Delete error = %v, want object format validation", err)

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -204,7 +205,7 @@ func TestImportDatabaseAdjustsProgressTotalForFilteredRows(t *testing.T) {
 		dump.Tables[table.Name] = nil
 	}
 	var last ProgressEvent
-	rows, totalRows, err := importDatabase(context.Background(), db, "master-key", dump, func(event ProgressEvent) {
+	rows, totalRows, err := importDatabase(context.Background(), db, "master-key", dump, uuid.Nil, func(event ProgressEvent) {
 		last = event
 	})
 	if err != nil {
@@ -215,12 +216,48 @@ func TestImportDatabaseAdjustsProgressTotalForFilteredRows(t *testing.T) {
 	}
 }
 
-func TestForEachArchiveTableChunkMissingEntryErrors(t *testing.T) {
+func TestImportDatabaseRunsCommitGuardInsideTransaction(t *testing.T) {
+	db, state := backupTransactionGormWithState(t, nil)
+	originalDeleteOrder := importDeleteOrder
+	importDeleteOrder = nil
+	t.Cleanup(func() {
+		importDeleteOrder = originalDeleteOrder
+	})
+	called := false
+	dump := databaseDump{
+		Tables: make(map[string][]map[string]any, len(backupTables)),
+		beforeCommit: func() error {
+			called = true
+			return context.Canceled
+		},
+	}
+	for _, table := range backupTables {
+		dump.Tables[table.Name] = nil
+	}
+
+	_, _, err := importDatabase(context.Background(), db, "master-key", dump, uuid.Nil)
+	if !called || !errors.Is(err, context.Canceled) {
+		t.Fatalf("commit guard called=%v error=%v", called, err)
+	}
+	commits, rollbacks := state.counts()
+	if commits != 0 || rollbacks != 1 {
+		t.Fatalf("transaction commits=%d rollbacks=%d, want 0/1", commits, rollbacks)
+	}
+}
+
+func TestForEachArchiveTableChunkMissingEntryYieldsNoRows(t *testing.T) {
 	t.Parallel()
 
 	archivePath := writeStreamTestArchive(t, 1)
-	err := forEachArchiveTableChunk(archivePath, "usage_records", 2, func([]map[string]any) error { return nil })
-	if err == nil {
-		t.Fatal("expected error for missing table entry")
+	calls := 0
+	err := forEachArchiveTableChunk(archivePath, "usage_records", 2, func([]map[string]any) error {
+		calls++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("expected missing table entry to be tolerated, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected no chunks for missing table entry, got %d", calls)
 	}
 }

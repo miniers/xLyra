@@ -154,6 +154,7 @@ export function SiteAPIKeysDraw({
       )
       setAddingAPIKey(false)
       setNewAPIKeyDraft(DEFAULT_API_KEY_FORM_DRAFT)
+      onOpenChange(false)
       if (site) {
         await queryClient.invalidateQueries({
           queryKey: sitesQueryKeys.models(site.id),
@@ -167,7 +168,7 @@ export function SiteAPIKeysDraw({
       })
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
       await invalidatePricingViews()
-      toast.success(t('apiKeys.toast.created'))
+      toast.success(t('apiKeys.toast.syncQueued'))
     },
     onError: (error) =>
       toast.error(t('apiKeys.toast.createFailed'), {
@@ -233,6 +234,7 @@ export function SiteAPIKeysDraw({
         current?.id === result.api_key.id ? result.api_key : current,
       )
       setConfiguringAPIKey(null)
+      onOpenChange(false)
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
       await invalidatePricingViews()
       toast.success(t('apiKeys.toast.updated'))
@@ -264,6 +266,7 @@ export function SiteAPIKeysDraw({
       )
       setEditingAPIKey(null)
       setSecretInput('')
+      onOpenChange(false)
       await queryClient.invalidateQueries({
         queryKey: [...sitesQueryKeys.all, 'canonical-models'],
       })
@@ -272,7 +275,7 @@ export function SiteAPIKeysDraw({
       })
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
       await invalidatePricingViews()
-      toast.success(t('apiKeys.toast.updated'))
+      toast.success(t('apiKeys.toast.syncQueued'))
     },
     onError: (error) =>
       toast.error(t('apiKeys.toast.updateFailed'), {
@@ -1077,6 +1080,16 @@ function apiKeySyncBadge(status?: string | null): {
       return {
         className: 'border-red-500/40 text-red-400',
         label: (t) => t('apiKeys.sync.stale'),
+      }
+    case 'pending':
+      return {
+        className: 'border-sky-500/40 text-sky-400',
+        label: (t) => t('apiKeys.sync.pending'),
+      }
+    case 'syncing':
+      return {
+        className: 'border-sky-500/40 text-sky-400',
+        label: (t) => t('apiKeys.sync.syncing'),
       }
     default:
       return {

@@ -76,6 +76,7 @@ type gatewayAttemptResult struct {
 	cacheDomain                string
 	credentialName             string
 	credentialMasked           string
+	credentialMeta             store.JSON
 	credentialPriority         float64
 	credentialCostMultiplier   float64
 	credentialAttempt          int
@@ -245,6 +246,7 @@ func (h Handler) forwardGatewayRequest(
 			cacheDomain:              store.SiteCredentialCacheDomain(selectedCredential.Credential),
 			credentialName:           store.SiteCredentialDisplayName(selectedCredential.Credential, selectedCredential.State),
 			credentialMasked:         selectedCredential.Credential.MaskedSecret,
+			credentialMeta:           selectedCredential.Credential.Meta,
 			credentialPriority:       store.SiteCredentialRoutingPriority(selectedCredential.Credential),
 			credentialCostMultiplier: store.SiteCredentialUpstreamCostMultiplier(selectedCredential.Credential),
 			credentialAttempt:        credentialIndex + 1,

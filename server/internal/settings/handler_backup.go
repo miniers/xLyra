@@ -3,18 +3,26 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/google/uuid"
+
+	"xlyra/server/internal/auth"
 	"xlyra/server/internal/backup"
 	"xlyra/server/internal/downloads"
 	"xlyra/server/internal/httpx"
 )
 
-const maxBackupUploadBytes = backup.MaxImportBytes
+const (
+	maxBackupUploadBytes     = backup.MaxImportBytes
+	maxBackupUploadBodyBytes = maxBackupUploadBytes + 1<<20
+	maxBackupUploadMemory    = 32 << 20
+)
 
 type backupPassphraseRequest struct {
 	Passphrase string `json:"passphrase"`
@@ -53,32 +61,33 @@ func (h Handler) ExportBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) ImportBackup(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBackupUploadBytes)
-	if err := r.ParseMultipartForm(maxBackupUploadBytes); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBackupUploadBodyBytes)
+	if err := r.ParseMultipartForm(maxBackupUploadMemory); err != nil {
 		httpx.Error(w, r, http.StatusBadRequest, "invalid_backup_upload", err.Error())
 		return
 	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
 
 	passphrase := strings.TrimSpace(r.FormValue("passphrase"))
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		httpx.Error(w, r, http.StatusBadRequest, "backup_file_required", "backup file is required")
 		return
 	}
 	defer file.Close()
-
-	data, err := io.ReadAll(file)
-	if err != nil {
-		httpx.Error(w, r, http.StatusBadRequest, "backup_file_read_failed", err.Error())
+	if header.Size > maxBackupUploadBytes {
+		httpx.Error(w, r, http.StatusBadRequest, "invalid_backup_upload", fmt.Sprintf("backup file size %d exceeds maximum %d", header.Size, maxBackupUploadBytes))
 		return
 	}
 
 	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-		h.importBackupSSE(w, r, passphrase, data)
+		h.importBackupSSE(w, r, passphrase, file)
 		return
 	}
 
-	summary, err := h.backups.Import(r.Context(), passphrase, data)
+	summary, err := h.backups.ImportReader(r.Context(), passphrase, io.LimitReader(file, maxBackupUploadBytes+1), backup.ImportOptions{AdminID: adminIDFromRequest(r)})
 	if err != nil {
 		h.writeBackupError(w, r, err)
 		return
@@ -86,10 +95,15 @@ func (h Handler) ImportBackup(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"backup": summary})
 }
 
-func (h Handler) importBackupSSE(w http.ResponseWriter, r *http.Request, passphrase string, data []byte) {
+func (h Handler) importBackupSSE(w http.ResponseWriter, r *http.Request, passphrase string, file io.Reader) {
 	streamBackupRestore(w, r, "decrypt", func(ctx context.Context, progress backup.ProgressFunc) (backup.ImportSummary, error) {
-		return h.backups.Import(ctx, passphrase, data, progress)
+		return h.backups.ImportReader(ctx, passphrase, io.LimitReader(file, maxBackupUploadBytes+1), backup.ImportOptions{AdminID: adminIDFromRequest(r)}, progress)
 	})
+}
+
+func adminIDFromRequest(r *http.Request) uuid.UUID {
+	adminID, _ := auth.AdminIDFromContext(r.Context())
+	return adminID
 }
 
 func streamBackupRestore(w http.ResponseWriter, r *http.Request, initialStep string, run func(context.Context, backup.ProgressFunc) (backup.ImportSummary, error)) {
@@ -145,6 +159,9 @@ func (h Handler) writeBackupError(w http.ResponseWriter, r *http.Request, err er
 	status := http.StatusBadRequest
 	code := "backup_failed"
 	switch {
+	case errors.Is(err, backup.ErrOperationInProgress):
+		status = http.StatusConflict
+		code = "backup_restore_in_progress"
 	case strings.Contains(message, "not available"):
 		status = http.StatusServiceUnavailable
 		code = "backup_unavailable"
