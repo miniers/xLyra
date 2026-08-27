@@ -188,7 +188,8 @@
     "missing_model_pricing": "模型价格缺失",
     "high_failure_rate": "站点请求失败率偏高",
     "rate_limit_exceeded": "请求触发限流",
-    "high_latency": "请求延迟偏高"
+    "high_latency": "请求延迟偏高",
+    "automatic_anomaly": "路由自动异常降权"
   },
   "attention": {
     "title": {
@@ -202,7 +203,10 @@
       "high_failure_rate": "{{site}} 最近 7 天失败率偏高",
       "rate_limit_exceeded": "最近 7 天有请求被限流",
       "high_latency_site_model": "{{site}} / {{model}} 请求延迟偏高",
-      "high_latency_model": "{{model}} 请求延迟偏高"
+      "high_latency_model": "{{model}} 请求延迟偏高",
+      "automatic_anomaly": "{{site}} / {{model}} 正在自动异常降权，扣 {{penalty}} 分，预计持续 {{remaining}}",
+      "automatic_anomaly_first_byte": "首字延迟近期 {{recent}} / 基线 {{baseline}}",
+      "automatic_anomaly_cache": "缓存命中率近期 {{recent}} / 基线 {{baseline}}"
     },
     "detail": {
       "no_route_candidates_active": "最近 24 小时下游请求过该模型，但当前没有可用上游，继续请求会直接失败。",
@@ -214,7 +218,10 @@
       "missing_model_pricing": "缺少价格会导致成本统计和后续路由策略不准确，请为非 NewAPI 来源补齐模型价格。",
       "high_failure_rate": "该站点近期请求成功率为 {{rate}}，建议查看失败请求并确认是否需要禁用、降权或调整路由。",
       "rate_limit_exceeded": "下游调用方收到了 429，请检查全局或下游密钥的 RPM/TPM 配置是否过紧。",
-      "high_latency": "P95 延迟为 {{latency}}，请检查上游响应速度或考虑降低路由优先级。"
+      "high_latency": "P95 延迟为 {{latency}}，请检查上游响应速度或考虑降低路由优先级。",
+      "automatic_anomaly": "正在自动异常降权，扣 {{penalty}} 分，预计持续 {{remaining}}。",
+      "automatic_anomaly_first_byte": "首字延迟近期 {{recent}} / 基线 {{baseline}}",
+      "automatic_anomaly_cache": "缓存命中率近期 {{recent}} / 基线 {{baseline}}"
     },
     "actions": {
       "no_route_candidates": "查看路由",
@@ -225,12 +232,16 @@
       "high_failure_rate": "查看失败请求",
       "rate_limit_exceeded": "查看限流请求",
       "high_latency": "查看慢请求",
+      "automatic_anomaly": "查看路由",
       "open_routes": "查看路由",
       "open_sites": "查看站点",
       "open_site_api_keys": "查看 API Keys",
       "open_model_prices": "补齐价格",
       "open_requests": "查看请求"
     }
+  },
+  "value": {
+    "automatic_anomaly": "-{{penalty}} 分"
   },
   "severityLabels": {
     "critical": "严重",

@@ -582,6 +582,39 @@ func TestRouteCandidateAttentionReportsNoRouteWithRecentRequests(t *testing.T) {
 	}
 }
 
+func TestAutomaticAnomalyAttentionItemsExposeMetricsAndRouteAction(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 23, 13, 0, 0, 0, time.UTC)
+	canonicalID := uuid.New()
+	siteModelID := uuid.New()
+	siteID := uuid.New()
+	activeUntil := now.Add(10 * time.Minute)
+	metrics, _ := json.Marshal([]store.RouteAnomalyMetric{
+		{Metric: "first_byte_latency", Penalty: -20, RecentValue: 2200, BaselineValue: 900, RecentSamples: 6, BaselineSamples: 20},
+	})
+	items := automaticAnomalyAttentionItems(
+		[]store.RouteAnomalyState{{
+			ID: canonicalID, CanonicalModelID: canonicalID, SiteModelID: siteModelID,
+			Active: true, Penalty: -20, Metrics: store.JSON(metrics), ActiveUntil: &activeUntil,
+		}},
+		map[uuid.UUID]store.Site{siteID: {ID: siteID, Name: "Primary", Slug: "primary", Status: "active", Enabled: true}},
+		map[uuid.UUID]store.SiteModel{siteModelID: {ID: siteModelID, SiteID: siteID, Status: "active", UpstreamName: "gpt-test"}},
+		map[uuid.UUID]store.CanonicalModel{canonicalID: {ID: canonicalID, ModelKey: "gpt-test", Status: "active"}},
+		"2026-06-23T13:00:00Z", now, config.LoadTimeZone("UTC"),
+	)
+	if len(items) != 1 {
+		t.Fatalf("automatic anomaly attention items = %#v, want one item", items)
+	}
+	item := items[0]
+	if item.Type != "automatic_anomaly" || item.Severity != "critical" || item.Action.Type != "open_routes" || item.Action.Params["model_key"] != "gpt-test" {
+		t.Fatalf("unexpected automatic anomaly attention item: %#v", item)
+	}
+	if item.Subject["site_name"] != "Primary" || item.Metrics["penalty"] != -20.0 {
+		t.Fatalf("unexpected anomaly subject/metrics: %#v / %#v", item.Subject, item.Metrics)
+	}
+}
+
 func TestDashboardScalarHelpersConvertNullableValues(t *testing.T) {
 	t.Parallel()
 

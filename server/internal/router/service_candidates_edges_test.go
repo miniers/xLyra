@@ -111,6 +111,55 @@ func TestCandidatesFilterSortAndLimit(t *testing.T) {
 	}
 }
 
+func TestCandidatesUsesOAuthConnectionSubscriptionExpiry(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	siteID := uuid.New()
+	siteModelID := uuid.New()
+	credentialID := uuid.New()
+	expiresAt := time.Now().Add(48 * time.Hour).UTC()
+	service := routerServiceWithRepositoryRows(t, routerRepositoryRows{
+		canonicalModels:     []store.CanonicalModel{{ID: canonicalID, ModelKey: "openai/gpt-5-mini", Status: "active"}},
+		canonicalModelsByID: []store.CanonicalModel{{ID: canonicalID, ModelKey: "openai/gpt-5-mini", Status: "active"}},
+		siteModels: []store.SiteModel{{
+			ID:              siteModelID,
+			SiteID:          siteID,
+			CanonicalID:     uuid.NullUUID{UUID: canonicalID, Valid: true},
+			UpstreamName:    "gpt-5-mini",
+			DisplayName:     "GPT-5 mini",
+			Status:          "active",
+			MatchSource:     "canonical",
+			MatchConfidence: 100,
+			Capabilities:    store.JSON(`{"supported_endpoint_types":["openai"]}`),
+		}},
+		sites: []store.Site{{
+			ID: siteID, Name: "Codex OAuth", Slug: "codex-oauth", SiteType: "codex", BaseURL: "https://codex.example", Status: "active", Enabled: true,
+		}},
+		credentials: []store.SiteCredential{{ID: credentialID, SiteID: siteID, CredentialType: "api_key"}},
+		oauthConnections: []store.OAuthConnection{{
+			ID:       uuid.New(),
+			SiteID:   &siteID,
+			Metadata: store.JSON(`{"chatgpt_subscription_active_until":"` + expiresAt.Format(time.RFC3339Nano) + `"}`),
+		}},
+	})
+
+	result, err := service.Candidates(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", EndpointType: "openai", Debug: true})
+	if err != nil {
+		t.Fatalf("Candidates error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("candidate count = %d, want 1", len(result.Items))
+	}
+	item := result.Items[0]
+	if item.Availability.SubscriptionRemainingSeconds == nil || *item.Availability.SubscriptionRemainingSeconds <= 0 {
+		t.Fatalf("subscription remaining seconds = %#v, want positive OAuth expiry input", item.Availability.SubscriptionRemainingSeconds)
+	}
+	if item.ScoreBreakdown["api_key_subscription_expiry_urgency"] <= 0 {
+		t.Fatalf("subscription urgency score = %#v, want positive OAuth expiry score", item.ScoreBreakdown)
+	}
+}
+
 func TestCandidatesRankHigherPriorityAboveHealthierLowerPriority(t *testing.T) {
 	t.Parallel()
 
@@ -383,6 +432,7 @@ type routerRepositoryRows struct {
 	credentials         []store.SiteCredential
 	keyStates           []store.SiteAPIKeyState
 	pricings            []store.SiteModelPricing
+	oauthConnections    []store.OAuthConnection
 	cooldowns           []store.RouteCooldown
 }
 
@@ -474,6 +524,8 @@ func routerAssignRepositoryRows(tx *gorm.DB, rows routerRepositoryRows) {
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.keyStates)
 	case "SiteModelPricing":
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.pricings)
+	case "OAuthConnection":
+		routerAssignRowsToDestination(tx.Statement.Dest, rows.oauthConnections)
 	case "UsageRecord":
 		// Route candidate cache metrics use an aggregate Scan over UsageRecord.
 		// Keep the offline repository fixture deterministic without a live database.

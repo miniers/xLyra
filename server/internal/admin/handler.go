@@ -155,6 +155,17 @@ type routeCooldownClearRequest struct {
 	Source           string     `json:"source"`
 }
 
+type routeAnomalyClearRequest struct {
+	CanonicalModelID uuid.UUID `json:"canonical_model_id"`
+	SiteModelID      uuid.UUID `json:"site_model_id"`
+}
+
+type routeScoreAdjustmentRequest struct {
+	CanonicalModelID uuid.UUID `json:"canonical_model_id"`
+	SiteModelID      uuid.UUID `json:"site_model_id"`
+	Direction        string    `json:"direction"`
+}
+
 type siteUpsertRequest struct {
 	Name            string               `json:"name"`
 	Slug            string               `json:"slug"`

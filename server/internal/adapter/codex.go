@@ -87,18 +87,24 @@ func (a Codex) ListModels(ctx context.Context, site SiteConfig, apiKey string) (
 }
 
 func (a Codex) ListAPIKeys(ctx context.Context, site SiteConfig, auth SystemAuth) ([]APIKey, error) {
+	raw := map[string]any{
+		"provider":   "codex",
+		"account_id": auth.AccountID,
+		"email":      auth.Email,
+		"plan_type":  stringFromMap(auth.Metadata, "plan_type"),
+	}
+	for _, key := range []string{"chatgpt_subscription_active_start", "chatgpt_subscription_active_until"} {
+		if value := auth.Metadata[key]; value != nil {
+			raw[key] = value
+		}
+	}
 	return []APIKey{{
 		ID:        1,
 		Name:      defaultCodexAPIKeyName(auth.Email),
 		Status:    "connected",
 		Key:       auth.AccessToken,
 		MaskedKey: "",
-		Raw: map[string]any{
-			"provider":   "codex",
-			"account_id": auth.AccountID,
-			"email":      auth.Email,
-			"plan_type":  stringFromMap(auth.Metadata, "plan_type"),
-		},
+		Raw:       raw,
 	}}, nil
 }
 

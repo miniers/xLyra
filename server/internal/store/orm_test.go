@@ -146,6 +146,48 @@ func TestSiteCredentialSubscriptionExpiresAtReadsQuotaProbeMetadata(t *testing.T
 			t.Fatalf("siteCredentialSubscriptionExpiresAt(%s) should not return an expiry", meta)
 		}
 	}
+
+	chatGPTExpiry := time.Date(2026, 10, 2, 3, 4, 5, 0, time.UTC)
+	got, ok = siteCredentialSubscriptionExpiresAt(SiteCredential{
+		Meta: JSON(fmt.Sprintf(`{"chatgpt_subscription_active_until":%q}`, chatGPTExpiry.Format(time.RFC3339Nano))),
+	})
+	if !ok || !got.Equal(chatGPTExpiry) {
+		t.Fatalf("siteCredentialSubscriptionExpiresAt() OAuth metadata = %v, %v; want %v, true", got, ok, chatGPTExpiry)
+	}
+
+	numericExpiry := chatGPTExpiry.Add(time.Hour)
+	got, ok = siteCredentialSubscriptionExpiresAt(SiteCredential{
+		Meta: JSON(fmt.Sprintf(`{"oauth_subscription_active_until":%d}`, numericExpiry.UnixMilli())),
+	})
+	if !ok || !got.Equal(numericExpiry) {
+		t.Fatalf("siteCredentialSubscriptionExpiresAt() numeric OAuth metadata = %v, %v; want %v, true", got, ok, numericExpiry)
+	}
+}
+
+func TestSetRouteSubscriptionExpiryUsesOAuthMetadataFallbacks(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	expiresAt := now.Add(48 * time.Hour)
+	connectionExpiry, ok := oauthConnectionSubscriptionExpiresAt(JSON(fmt.Sprintf(`{"chatgpt_subscription_active_until":%d}`, expiresAt.Unix())))
+	if !ok || !connectionExpiry.Equal(expiresAt) {
+		t.Fatalf("oauthConnectionSubscriptionExpiresAt() = %v, %v; want %v, true", connectionExpiry, ok, expiresAt)
+	}
+	row := RouteCandidateRow{
+		SiteMeta: JSON(fmt.Sprintf(`{"oauth_subscription_active_until":%q}`, expiresAt.Format(time.RFC3339Nano))),
+	}
+	setRouteSubscriptionExpiry(&row, nil, now)
+	if row.SubscriptionKeyCount != 1 || !row.SubscriptionExpiresAt.Valid || !row.SubscriptionExpiresAt.Time.Equal(expiresAt) {
+		t.Fatalf("site metadata expiry = count:%d expires:%#v, want one key at %s", row.SubscriptionKeyCount, row.SubscriptionExpiresAt, expiresAt)
+	}
+
+	row = RouteCandidateRow{
+		OAuthSubscriptionExpiresAt: sql.NullTime{Time: expiresAt, Valid: true},
+	}
+	setRouteSubscriptionExpiry(&row, nil, now)
+	if row.SubscriptionKeyCount != 1 || !row.SubscriptionExpiresAt.Valid || !row.SubscriptionExpiresAt.Time.Equal(expiresAt) {
+		t.Fatalf("OAuth connection expiry = count:%d expires:%#v, want one key at %s", row.SubscriptionKeyCount, row.SubscriptionExpiresAt, expiresAt)
+	}
 }
 
 func TestFillRouteSiteCredentialCountUsesQuotaProbeSubscriptionExpiry(t *testing.T) {

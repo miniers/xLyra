@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { routeChannelRowsFromMatrix } from '@/features/routes/lib/route-channels'
+import { routeChannelRowsFromMatrix, routeModelCooldown } from '@/features/routes/lib/route-channels'
+import type { RouteCooldown } from '@/features/routes/api/routes'
 import type { CanonicalModelMatrixRow, Site, SiteAPIKey } from '@/features/sites/api/sites'
 
 describe('routeChannelRowsFromMatrix', () => {
@@ -85,5 +86,44 @@ describe('routeChannelRowsFromMatrix', () => {
       per_request_value: 0.2,
       upstream_cost_multiplier: 1,
     })
+  })
+})
+
+describe('routeModelCooldown', () => {
+  const cooldowns: RouteCooldown[] = [
+    {
+      id: 'site-model-cooldown',
+      site_id: 'site-1',
+      site_model_id: 'model-1',
+      site_credential_id: null,
+      scope: 'model',
+      source: 'gateway',
+      reason: 'upstream timeout',
+      active_until: '2026-01-01T01:00:00Z',
+      remaining_seconds: 1800,
+      metadata: null,
+      created_at: '2026-01-01T00:30:00Z',
+      updated_at: '2026-01-01T00:30:00Z',
+    },
+    {
+      id: 'credential-cooldown',
+      site_id: 'site-1',
+      site_model_id: null,
+      site_credential_id: 'credential-1',
+      scope: 'credential',
+      source: 'gateway',
+      reason: 'upstream 429',
+      active_until: '2026-01-01T01:00:00Z',
+      remaining_seconds: 1800,
+      metadata: null,
+      created_at: '2026-01-01T00:30:00Z',
+      updated_at: '2026-01-01T00:30:00Z',
+    },
+  ]
+
+  it('returns site and site-model cooldowns but ignores credential-only cooldowns', () => {
+    expect(routeModelCooldown(cooldowns, 'site-1', 'model-1')?.id).toBe('site-model-cooldown')
+    expect(routeModelCooldown(cooldowns, 'site-1', 'model-2')).toBeUndefined()
+    expect(routeModelCooldown(cooldowns, 'site-2', 'model-1')?.id).toBe('site-model-cooldown')
   })
 })

@@ -44,19 +44,21 @@ type CandidateList struct {
 }
 
 type Candidate struct {
-	Rank           int
-	Score          float64
-	Cooling        bool
-	CoolingReason  string
-	Site           CandidateSite
-	Model          CandidateModel
-	Health         CandidateHealth
-	Availability   CandidateAvailability
-	Credential     CandidateCredential
-	Pricing        CandidatePricing
-	ScoreBreakdown map[string]float64
-	ScoreProfiles  map[string]CandidateScoreProfile
-	Exploration    CandidateExploration
+	Rank                  int
+	Score                 float64
+	Cooling               bool
+	CoolingReason         string
+	Site                  CandidateSite
+	Model                 CandidateModel
+	Health                CandidateHealth
+	Availability          CandidateAvailability
+	Credential            CandidateCredential
+	Pricing               CandidatePricing
+	AutomaticAnomaly      store.RouteAnomaly
+	ManualScoreAdjustment float64
+	ScoreBreakdown        map[string]float64
+	ScoreProfiles         map[string]CandidateScoreProfile
+	Exploration           CandidateExploration
 }
 
 type CandidateExploration struct {
@@ -342,7 +344,9 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 				QuotaType:              nullableInt64(row.PricingQuotaType),
 				UpstreamCostMultiplier: costMultiplier,
 			},
-			Exploration: exploration,
+			AutomaticAnomaly:      row.AutomaticAnomaly,
+			ManualScoreAdjustment: row.ManualScoreAdjustment,
+			Exploration:           exploration,
 		})
 	}
 
@@ -806,6 +810,37 @@ func (s *Service) ClearCooldown(ctx context.Context, siteID uuid.UUID, siteModel
 	return store.NewRouteCooldownRepository(s.db.DB()).ClearActive(ctx, siteID, modelValue, credentialValue, source)
 }
 
+func (s *Service) ClearRouteAnomaly(ctx context.Context, canonicalModelID, siteModelID uuid.UUID) error {
+	if canonicalModelID == uuid.Nil {
+		return fmt.Errorf("canonical_model_id is required")
+	}
+	if siteModelID == uuid.Nil {
+		return fmt.Errorf("site_model_id is required")
+	}
+	return store.NewRouteAnomalyRepository(s.db.DB()).ClearActive(ctx, canonicalModelID, siteModelID)
+}
+
+func (s *Service) AdjustRouteScore(ctx context.Context, canonicalModelID, siteModelID uuid.UUID, direction string) (store.RouteScoreAdjustment, error) {
+	if canonicalModelID == uuid.Nil {
+		return store.RouteScoreAdjustment{}, fmt.Errorf("canonical_model_id is required")
+	}
+	if siteModelID == uuid.Nil {
+		return store.RouteScoreAdjustment{}, fmt.Errorf("site_model_id is required")
+	}
+
+	var delta float64
+	switch strings.ToLower(strings.TrimSpace(direction)) {
+	case "increase":
+		delta = store.RouteScoreAdjustmentStep
+	case "decrease":
+		delta = -store.RouteScoreAdjustmentStep
+	default:
+		return store.RouteScoreAdjustment{}, fmt.Errorf("direction must be increase or decrease")
+	}
+
+	return store.NewRouteScoreAdjustmentRepository(s.db.DB()).Apply(ctx, canonicalModelID, siteModelID, delta, time.Now())
+}
+
 func (s *Service) resolveCanonicalModel(ctx context.Context, modelKey string) (store.CanonicalModel, error) {
 	repo := store.NewCanonicalModelRepository(s.db.DB())
 	normalized := catalog.CanonicalModelKeyFromUpstream(modelKey)
@@ -888,6 +923,12 @@ func scoreCandidateWithPreferenceConfig(item Candidate, minPrice float64, maxPri
 		"actual_price":                             priceScore(item, minPrice, maxPrice) * weights["actual_price"] / 10,
 		"api_key_subscription_expiry_urgency":      subscriptionExpiryUrgencyScore(item.Availability.SubscriptionRemainingSeconds, weights["api_key_subscription_expiry_urgency"]),
 		"api_key_subscription_expiry_rescue_bonus": subscriptionExpiryRescueBonus(item.Availability.SubscriptionRemainingSeconds, preference, rescueEnabled),
+	}
+	if item.AutomaticAnomaly.Active && item.AutomaticAnomaly.Penalty < 0 {
+		breakdown["automatic_anomaly_penalty"] = item.AutomaticAnomaly.Penalty
+	}
+	if item.ManualScoreAdjustment != 0 {
+		breakdown["manual_score_adjustment"] = item.ManualScoreAdjustment
 	}
 
 	total := 0.0
@@ -1026,37 +1067,24 @@ func successRateScore(rate *float64, maxScore float64) float64 {
 }
 
 func latencyScore(latency *int64, maxScore float64) float64 {
-	if latency == nil {
-		return 0
-	}
-	switch {
-	case *latency <= 500:
-		return maxScore
-	case *latency <= 1500:
-		return maxScore * 0.6
-	case *latency <= 3000:
-		return maxScore * 0.25
-	default:
-		return 0
-	}
+	return linearLatencyScore(latency, maxScore, 500, 3000)
 }
 
 func firstByteLatencyScore(latency *int64, maxScore float64) float64 {
+	return linearLatencyScore(latency, maxScore, 5000, 20000)
+}
+
+func linearLatencyScore(latency *int64, maxScore float64, fullScoreUntilMS, zeroScoreAtMS int64) float64 {
 	if latency == nil {
 		return 0
 	}
-	switch {
-	case *latency <= 5000:
+	if *latency <= fullScoreUntilMS {
 		return maxScore
-	case *latency <= 8000:
-		return maxScore * 0.8
-	case *latency <= 12000:
-		return maxScore * 0.5
-	case *latency <= 20000:
-		return maxScore * 0.2
-	default:
+	}
+	if *latency >= zeroScoreAtMS {
 		return 0
 	}
+	return maxScore * float64(zeroScoreAtMS-*latency) / float64(zeroScoreAtMS-fullScoreUntilMS)
 }
 
 func modelFirstByteLatency(item Candidate) *int64 {

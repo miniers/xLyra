@@ -275,6 +275,8 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Get("/routes/cooldowns", adminHandler.ListRouteCooldowns)
 				protected.Post("/routes/cooldowns", adminHandler.CreateRouteCooldown)
 				protected.Post("/routes/cooldowns/clear", adminHandler.ClearRouteCooldown)
+				protected.Post("/routes/anomalies/clear", adminHandler.ClearRouteAnomaly)
+				protected.Post("/routes/score-adjustments", adminHandler.AdjustRouteScore)
 				protected.Get("/routes/candidates", adminHandler.ListRouteCandidates)
 				protected.Get("/settings/system-proxy", settingsHandler.GetSystemProxy)
 				protected.Put("/settings/system-proxy", settingsHandler.UpdateSystemProxy)

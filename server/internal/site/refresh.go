@@ -662,12 +662,28 @@ func oauthMetadataFromUserSummary(summary adapter.UserSummary) map[string]any {
 		return nil
 	}
 	result := map[string]any{}
-	for _, key := range []string{"project_id", "subscription_tier", "plan_type"} {
-		if value := user[key]; value != nil && strings.TrimSpace(anyString(value)) != "" {
+	for _, key := range []string{
+		"project_id",
+		"subscription_tier",
+		"plan_type",
+		"chatgpt_subscription_active_start",
+		"chatgpt_subscription_active_until",
+	} {
+		if value := user[key]; oauthMetadataValuePresent(key, value) {
 			result[key] = value
 		}
 	}
 	return result
+}
+
+func oauthMetadataValuePresent(key string, value any) bool {
+	if value == nil {
+		return false
+	}
+	if key == "chatgpt_subscription_active_start" || key == "chatgpt_subscription_active_until" {
+		return true
+	}
+	return strings.TrimSpace(anyString(value)) != ""
 }
 
 func modelSnapshots(models []store.SiteModel) []map[string]any {
@@ -1474,6 +1490,11 @@ func apiKeyCredentialMeta(apiKey adapter.APIKey) map[string]any {
 		"model_limits_enabled",
 		"model_limits",
 		"expired_time",
+		"oauth_subscription_active_start",
+		"subscription_expires_at",
+		"chatgpt_subscription_active_start",
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
 		"group",
 	} {
 		if value, ok := apiKey.Raw[key]; ok {

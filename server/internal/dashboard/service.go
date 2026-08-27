@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	overviewDays      = 90
-	failureReasonTopN = 10
+	overviewDays       = 90
+	failureReasonTopN  = 10
 	highLatencyTopN    = 10
 	uptimeBucketCount  = 24
 	insufficientRouteN = 10
@@ -58,12 +58,12 @@ type InsightsOverview struct {
 }
 
 type OverviewMeta struct {
-	Days          int    `json:"days"`
+	Days        int    `json:"days"`
 	Timezone    string `json:"timezone"`
-	GeneratedAt   string `json:"generated_at"`
-	TodayStart    string `json:"today_start"`
-	RangeStart    string `json:"range_start"`
-	RangeEnd      string `json:"range_end"`
+	GeneratedAt string `json:"generated_at"`
+	TodayStart  string `json:"today_start"`
+	RangeStart  string `json:"range_start"`
+	RangeEnd    string `json:"range_end"`
 }
 
 type OverviewKPIs struct {
@@ -344,7 +344,11 @@ func (s *Service) Insights(ctx context.Context, now time.Time) (InsightsOverview
 	if err != nil {
 		return InsightsOverview{}, err
 	}
-	attention, err := s.attentionItems(ctx, window, cooldowns, insufficient, windows, latency)
+	anomalyItems, err := s.automaticAnomalyAttention(ctx, window)
+	if err != nil {
+		return InsightsOverview{}, err
+	}
+	attention, err := s.attentionItems(ctx, window, cooldowns, insufficient, windows, latency, anomalyItems)
 	if err != nil {
 		return InsightsOverview{}, err
 	}
@@ -534,7 +538,6 @@ func requestsKPIFromSummaries(window timeWindow, rows []store.RequestUsageDailyS
 	}
 	return result
 }
-
 
 func (s *Service) siteCostSummaryFromSummaries(ctx context.Context, window timeWindow, rows []store.RequestUsageDailySummary) ([]SiteCostSummaryItem, error) {
 	sites, err := s.sitesByID(ctx)
@@ -1131,7 +1134,7 @@ func (s *Service) highLatency(ctx context.Context, window timeWindow) ([]HighLat
 	return items, nil
 }
 
-func (s *Service) attentionItems(ctx context.Context, window timeWindow, cooldowns []CooldownItem, insufficient []InsufficientCandidateItem, windows map[string]OverviewWindow, latency []HighLatencyItem) ([]AttentionItem, error) {
+func (s *Service) attentionItems(ctx context.Context, window timeWindow, cooldowns []CooldownItem, insufficient []InsufficientCandidateItem, windows map[string]OverviewWindow, latency []HighLatencyItem, anomalyItems []AttentionItem) ([]AttentionItem, error) {
 	items := make([]AttentionItem, 0)
 	updatedAt := window.format(window.Now, time.RFC3339)
 	activeSites, err := s.activeSitesByID(ctx)
@@ -1140,6 +1143,7 @@ func (s *Service) attentionItems(ctx context.Context, window timeWindow, cooldow
 	}
 
 	items = append(items, routeCandidateAttentionItems(insufficient, updatedAt)...)
+	items = append(items, anomalyItems...)
 
 	for _, cooldown := range cooldowns {
 		scope := cooldown.Scope
@@ -1209,6 +1213,96 @@ func (s *Service) attentionItems(ctx context.Context, window timeWindow, cooldow
 
 	sortAttentionItems(items)
 	return selectAttentionItems(items), nil
+}
+
+func (s *Service) automaticAnomalyAttention(ctx context.Context, window timeWindow) ([]AttentionItem, error) {
+	states, err := store.NewRouteAnomalyRepository(s.db.DB()).ListActive(ctx, window.Now)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard automatic anomaly attention: %w", err)
+	}
+	if len(states) == 0 {
+		return nil, nil
+	}
+	sites, err := s.sitesByID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard automatic anomaly attention: %w", err)
+	}
+	siteModels, err := s.siteModelsByID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard automatic anomaly attention: %w", err)
+	}
+	canonicalModels, err := s.canonicalModelsByID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard automatic anomaly attention: %w", err)
+	}
+	return automaticAnomalyAttentionItems(states, sites, siteModels, canonicalModels, window.format(window.Now, time.RFC3339), window.Now, s.timeZone), nil
+}
+
+func automaticAnomalyAttentionItems(states []store.RouteAnomalyState, sites map[uuid.UUID]store.Site, siteModels map[uuid.UUID]store.SiteModel, canonicalModels map[uuid.UUID]store.CanonicalModel, updatedAt string, now time.Time, timeZone config.TimeZone) []AttentionItem {
+	items := make([]AttentionItem, 0, len(states))
+	for _, state := range states {
+		if !state.Active || state.Penalty >= 0 || (state.ActiveUntil != nil && !state.ActiveUntil.After(now)) {
+			continue
+		}
+		canonical := canonicalModels[state.CanonicalModelID]
+		if canonical.ID == uuid.Nil || canonical.Status != "active" || canonical.ModelKey == "" {
+			continue
+		}
+		siteModel := siteModels[state.SiteModelID]
+		if siteModel.ID == uuid.Nil || siteModel.Status != "active" || siteModel.SiteID == uuid.Nil {
+			continue
+		}
+		site := sites[siteModel.SiteID]
+		if site.ID == uuid.Nil || store.SiteDeleted(site) || !site.Enabled || site.Status != "active" {
+			continue
+		}
+
+		var metrics []store.RouteAnomalyMetric
+		if len(state.Metrics) > 0 {
+			if err := json.Unmarshal(state.Metrics, &metrics); err != nil {
+				metrics = nil
+			}
+		}
+		remainingSeconds := int64(0)
+		var activeUntil *string
+		if state.ActiveUntil != nil {
+			remainingSeconds = int64(state.ActiveUntil.Sub(now).Seconds())
+			if remainingSeconds < 0 {
+				remainingSeconds = 0
+			}
+			activeUntil = nullTimeString(sql.NullTime{Time: *state.ActiveUntil, Valid: true}, timeZone)
+		}
+		severity := "warning"
+		if state.Penalty <= -20 {
+			severity = "critical"
+		}
+		items = append(items, AttentionItem{
+			ID:       "anomaly:" + canonical.ID.String() + ":" + siteModel.ID.String(),
+			Severity: severity,
+			Type:     "automatic_anomaly",
+			Subject: map[string]any{
+				"canonical_model_id":  canonical.ID.String(),
+				"model_key":           canonical.ModelKey,
+				"site_id":             site.ID.String(),
+				"site_name":           site.Name,
+				"site_slug":           site.Slug,
+				"site_model_id":       siteModel.ID.String(),
+				"upstream_model_name": siteModel.UpstreamName,
+			},
+			UpdatedAt: updatedAt,
+			Metrics: map[string]any{
+				"penalty":           state.Penalty,
+				"remaining_seconds": remainingSeconds,
+				"active_until":      activeUntil,
+				"metrics":           metrics,
+			},
+			Action: AttentionAction{
+				Type:   "open_routes",
+				Params: map[string]string{"model_key": canonical.ModelKey},
+			},
+		})
+	}
+	return items
 }
 
 func routeCandidateAttentionItems(insufficient []InsufficientCandidateItem, updatedAt string) []AttentionItem {
@@ -1554,18 +1648,20 @@ func attentionTypeRank(itemType string) int {
 		return 0
 	case "active_cooldown":
 		return 1
-	case "site_unhealthy":
+	case "automatic_anomaly":
 		return 2
-	case "high_failure_rate":
+	case "site_unhealthy":
 		return 3
-	case "rate_limit_exceeded":
+	case "high_failure_rate":
 		return 4
-	case "low_route_candidates":
+	case "rate_limit_exceeded":
 		return 5
-	case "missing_model_pricing":
+	case "low_route_candidates":
 		return 6
-	case "high_latency":
+	case "missing_model_pricing":
 		return 7
+	case "high_latency":
+		return 8
 	default:
 		return 99
 	}

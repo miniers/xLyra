@@ -34,4 +34,12 @@ describe('route score helpers', () => {
       },
     })).toBe(38)
   })
+
+  it('includes temporary score adjustments in the model score', () => {
+    expect(routeModelScore({
+      score_breakdown: {
+        manual_score_adjustment: 5,
+      },
+    })).toBe(5)
+  })
 })

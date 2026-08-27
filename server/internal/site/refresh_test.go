@@ -409,10 +409,12 @@ func TestQuotaAndOAuthMetadataFromUserSummary(t *testing.T) {
 
 	summary := adapter.UserSummary{
 		User: map[string]any{
-			"quota":             map[string]any{"available": true},
-			"project_id":        "proj_123",
-			"subscription_tier": " plus ",
-			"plan_type":         " ",
+			"quota":                             map[string]any{"available": true},
+			"project_id":                        "proj_123",
+			"subscription_tier":                 " plus ",
+			"plan_type":                         " ",
+			"chatgpt_subscription_active_start": "2026-06-01T00:00:00Z",
+			"chatgpt_subscription_active_until": "2026-07-01T00:00:00Z",
 		},
 	}
 
@@ -422,8 +424,15 @@ func TestQuotaAndOAuthMetadataFromUserSummary(t *testing.T) {
 	}
 
 	meta := oauthMetadataFromUserSummary(summary)
-	if meta["project_id"] != "proj_123" || meta["subscription_tier"] != " plus " {
+	if meta["project_id"] != "proj_123" || meta["subscription_tier"] != " plus " ||
+		meta["chatgpt_subscription_active_until"] != "2026-07-01T00:00:00Z" {
 		t.Fatalf("unexpected oauth metadata: %#v", meta)
+	}
+	credentialMeta := apiKeyCredentialMeta(adapter.APIKey{Raw: map[string]any{
+		"chatgpt_subscription_active_until": "2026-07-01T00:00:00Z",
+	}})
+	if credentialMeta["chatgpt_subscription_active_until"] != "2026-07-01T00:00:00Z" {
+		t.Fatalf("api key credential metadata lost subscription expiry: %#v", credentialMeta)
 	}
 	if _, ok := meta["plan_type"]; ok {
 		t.Fatalf("blank plan_type should be omitted: %#v", meta)

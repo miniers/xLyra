@@ -48,6 +48,7 @@ func TestAttentionTypeRankOrdersAllKnownDashboardTypes(t *testing.T) {
 	orderedTypes := []string{
 		"no_route_candidates",
 		"active_cooldown",
+		"automatic_anomaly",
 		"site_unhealthy",
 		"high_failure_rate",
 		"rate_limit_exceeded",

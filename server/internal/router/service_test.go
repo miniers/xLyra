@@ -363,7 +363,7 @@ func TestScoreCandidateIncludesHealthCapacityAndPrice(t *testing.T) {
 	wantBreakdown := map[string]float64{
 		"site_health":        40,
 		"site_success_rate":  10,
-		"site_latency":       3,
+		"site_latency":       3.6,
 		"model_success_rate": 15,
 		"model_latency":      15,
 		"api_key_capacity":   15,
@@ -378,12 +378,12 @@ func TestScoreCandidateIncludesHealthCapacityAndPrice(t *testing.T) {
 		t.Fatalf("breakdown should not include routing_priority, got %#v", breakdown)
 	}
 
-	if score != 108 {
-		t.Fatalf("scoreCandidate = %v, want 108", score)
+	if score != 108.6 {
+		t.Fatalf("scoreCandidate = %v, want 108.6", score)
 	}
 }
 
-func TestHealthAndLatencyScoreBuckets(t *testing.T) {
+func TestHealthAndLatencyScores(t *testing.T) {
 	t.Parallel()
 
 	if healthScore("healthy") != 40 || healthScore("degraded") != 22 || healthScore("unknown") != 12 || healthScore("down") != 0 {
@@ -403,7 +403,7 @@ func TestHealthAndLatencyScoreBuckets(t *testing.T) {
 	}{
 		{latency: 500, want: 10},
 		{latency: 1500, want: 6},
-		{latency: 3000, want: 2.5},
+		{latency: 3000, want: 0},
 		{latency: 3001, want: 0},
 	} {
 		if got := latencyScore(&tc.latency, 10); got != tc.want {

@@ -134,7 +134,10 @@ func TestUpdateImportedSiteMetaMergesPlanAndProxyOffline(t *testing.T) {
 	service := NewImportService(oauthStoreWithGorm(t, db), "master-key", nil)
 	service.proxyID = " proxy-main "
 
-	service.updateImportedSiteMeta(context.Background(), store.NewSiteRepository(db), siteID, codexProvider, connectionID, "acct-123", "user@example.com", map[string]any{"plan_type": " plus "})
+	service.updateImportedSiteMeta(context.Background(), store.NewSiteRepository(db), siteID, codexProvider, connectionID, "acct-123", "user@example.com", map[string]any{
+		"plan_type":                         " plus ",
+		"chatgpt_subscription_active_until": "2026-07-01T00:00:00Z",
+	})
 
 	var meta map[string]any
 	if err := json.Unmarshal(saved.Meta, &meta); err != nil {
@@ -142,6 +145,9 @@ func TestUpdateImportedSiteMetaMergesPlanAndProxyOffline(t *testing.T) {
 	}
 	if meta["kept"] != "yes" || meta["oauth_provider"] != codexProvider || meta["oauth_connection_id"] != connectionID.String() || meta["oauth_plan_type"] != "plus" || meta["proxy_id"] != "proxy-main" {
 		t.Fatalf("saved meta = %#v, want merged oauth metadata", meta)
+	}
+	if meta["oauth_subscription_active_until"] != "2026-07-01T00:00:00Z" {
+		t.Fatalf("saved oauth subscription expiry = %#v, want copied metadata", meta["oauth_subscription_active_until"])
 	}
 }
 

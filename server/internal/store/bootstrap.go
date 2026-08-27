@@ -244,6 +244,33 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 	if err := ensureSchemaIndex(migrator, &RouteExplorationState{}, "route_exploration_states_last_attempt_idx"); err != nil {
 		return err
 	}
+	if !migrator.HasTable(&RouteAnomalyState{}) {
+		if err := migrator.CreateTable(&RouteAnomalyState{}); err != nil {
+			return fmt.Errorf("ensure route_anomaly_states table: %w", err)
+		}
+	}
+	for _, index := range []string{
+		"route_anomaly_states_model_idx",
+		"route_anomaly_states_bad_since_idx",
+		"route_anomaly_states_active_idx",
+	} {
+		if err := ensureSchemaIndex(migrator, &RouteAnomalyState{}, index); err != nil {
+			return err
+		}
+	}
+	if !migrator.HasTable(&RouteScoreAdjustment{}) {
+		if err := migrator.CreateTable(&RouteScoreAdjustment{}); err != nil {
+			return fmt.Errorf("ensure route_score_adjustments table: %w", err)
+		}
+	}
+	for _, index := range []string{
+		"route_score_adjustments_model_idx",
+		"route_score_adjustments_active_idx",
+	} {
+		if err := ensureSchemaIndex(migrator, &RouteScoreAdjustment{}, index); err != nil {
+			return err
+		}
+	}
 	if !migrator.HasColumn(&HealthSnapshot{}, "FirstByteLatencyMS") {
 		if err := migrator.AddColumn(&HealthSnapshot{}, "FirstByteLatencyMS"); err != nil {
 			return fmt.Errorf("ensure health_snapshots.first_byte_latency_ms column: %w", err)
@@ -667,6 +694,8 @@ func bootstrapModels() []any {
 		&SiteModelPricing{},
 		&RouteCooldown{},
 		&RouteExplorationState{},
+		&RouteAnomalyState{},
+		&RouteScoreAdjustment{},
 		&RequestLog{},
 		&UsageRecord{},
 		&RequestUsageDailySummary{},

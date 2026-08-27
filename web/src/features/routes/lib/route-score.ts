@@ -14,6 +14,8 @@ const MODEL_SCORE_KEYS: ReadonlyArray<keyof RouteScoreBreakdown> = [
   'actual_price',
   'api_key_subscription_expiry_urgency',
   'api_key_subscription_expiry_rescue_bonus',
+  'automatic_anomaly_penalty',
+  'manual_score_adjustment',
 ]
 
 export function routeSiteScore(candidate?: Pick<RouteCandidateItem, 'score_breakdown'>) {

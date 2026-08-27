@@ -32,6 +32,38 @@ xLyra supports:
 - Real-time traffic observability
 - Self-hosted deployment with Docker Compose
 
+## Personal Enhancement Branch (`enhancement`)
+
+This repository contains a personal enhancement branch that intentionally follows different product priorities from the original project. The `main` branch is the original baseline; the current `enhancement` branch is an additional, self-use variant and its features are not part of the original `main` behavior by default.
+
+Compared with `main`, this branch adds:
+
+### Routing score and quota exploration
+
+- A more detailed route score: success rate, latency, cache hit rate, API key capacity, actual price, and subscription expiry urgency are scored independently.
+- Actual price combines the upstream credential/key multiplier with observed model cache behavior. Score details show the corresponding raw values, such as percentages, milliseconds, cache hit rate, and price multipliers, alongside each score.
+- Subscription expiry urgency applies only to subscription-based upstream keys and uses the remaining time until expiry. An optional expiry-rescue bonus can be enabled below the model scoring preference to prioritize subscription quota that is about to expire.
+- Quota exploration can be configured per canonical model. A site runs its configured trial count consecutively before exploration moves to the next site; progress can be reset globally or restarted for one site. The first request in each exploration cycle is treated as a warm-up request and excluded from cache hit-rate statistics.
+
+### Site, credential, and gateway controls
+
+- Site and API key views expose whether quota is balance-based or subscription-based, along with subscription quota and expiry information where available.
+- Same-site credential retries and upstream first-byte timeouts can be configured globally, per site, per downstream API key, and per model override, with inheritance between levels.
+- In-flight requests expose their phase, route, token estimates or actual usage, and first-byte latency. Active requests can be cancelled from the traffic-flow view or request list.
+
+### Requests and analytics
+
+- Real-time request logs use stable live ordering and status animations, while preserving the original start time for historical request records.
+- Cache hit rate is available in request filters and analytics trend views.
+- Route details include compact score breakdowns, raw input values, model score profiles, and multi-column quota-exploration progress.
+
+### System maintenance and optional tooling
+
+- Global settings include a manual Service Worker update action for cases where the normal “new version available” reload does not successfully activate the latest frontend.
+- `scripts/codex-session-hud.user.js` is an optional browser userscript that displays Codex session token usage, request counts, estimated cost, and xLyra-backed daily statistics.
+
+To use the original behavior, stay on `main`; to use these personal enhancements, use `enhancement`. The two branches may evolve independently.
+
 ## Why xLyra
 
 | Common problem | How xLyra handles it |

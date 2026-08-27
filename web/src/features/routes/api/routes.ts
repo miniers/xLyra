@@ -115,6 +115,27 @@ export type RouteScoreBreakdown = {
   actual_price?: number
   api_key_subscription_expiry_urgency?: number
   api_key_subscription_expiry_rescue_bonus?: number
+  automatic_anomaly_penalty?: number
+  manual_score_adjustment?: number
+}
+
+export type RouteScoreAdjustmentDirection = 'increase' | 'decrease'
+
+export type RouteAutomaticAnomalyMetric = {
+  metric: 'first_byte_latency' | 'cache_hit_rate' | string
+  penalty: number
+  recent_value: number
+  baseline_value: number
+  recent_samples: number
+  baseline_samples: number
+  reason: string
+}
+
+export type RouteAutomaticAnomaly = {
+  active: boolean
+  penalty: number
+  metrics: RouteAutomaticAnomalyMetric[]
+  active_until?: string | null
 }
 
 export type RouteScoreProfile = {
@@ -138,6 +159,8 @@ export type RouteCandidateItem = {
     upstream_cost_multiplier: number
   }
   pricing: RouteCandidatePricing
+  automatic_anomaly?: RouteAutomaticAnomaly
+  manual_score_adjustment?: number
   exploration?: {
     enabled: boolean
     mode?: string
@@ -327,6 +350,40 @@ export async function clearRouteCooldown(input: {
       site_model_id: input.siteModelId || undefined,
       site_credential_id: input.siteCredentialId || undefined,
       source: input.source || undefined,
+    }),
+  })
+}
+
+export async function clearRouteAnomaly(input: {
+  canonicalModelId: string
+  siteModelId: string
+}) {
+  return apiFetch<{ ok: boolean }>('/api/v1/routes/anomalies/clear', {
+    method: 'POST',
+    body: JSON.stringify({
+      canonical_model_id: input.canonicalModelId,
+      site_model_id: input.siteModelId,
+    }),
+  })
+}
+
+export async function adjustRouteScore(input: {
+  canonicalModelId: string
+  siteModelId: string
+  direction: RouteScoreAdjustmentDirection
+}) {
+  return apiFetch<{
+    ok: boolean
+    adjustment?: {
+      delta: number
+      active_until: string
+    }
+  }>('/api/v1/routes/score-adjustments', {
+    method: 'POST',
+    body: JSON.stringify({
+      canonical_model_id: input.canonicalModelId,
+      site_model_id: input.siteModelId,
+      direction: input.direction,
     }),
   })
 }

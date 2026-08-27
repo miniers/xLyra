@@ -61,6 +61,20 @@ func TestRouteHandlersRequireRouterService(t *testing.T) {
 			call:   handler.CreateRouteCooldown,
 		},
 		{
+			name:   "clear route anomaly",
+			method: http.MethodPost,
+			target: "/api/v1/routes/anomalies/clear",
+			body:   `{"canonical_model_id":"` + uuid.NewString() + `","site_model_id":"` + uuid.NewString() + `"}`,
+			call:   handler.ClearRouteAnomaly,
+		},
+		{
+			name:   "adjust route score",
+			method: http.MethodPost,
+			target: "/api/v1/routes/score-adjustments",
+			body:   `{"canonical_model_id":"` + uuid.NewString() + `","site_model_id":"` + uuid.NewString() + `","direction":"increase"}`,
+			call:   handler.AdjustRouteScore,
+		},
+		{
 			name:   "select route",
 			method: http.MethodPost,
 			target: "/api/v1/routes/select",

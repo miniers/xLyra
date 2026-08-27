@@ -146,6 +146,69 @@ func (h Handler) ClearRouteCooldown(w http.ResponseWriter, r *http.Request) {
 	h.writePayload(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (h Handler) ClearRouteAnomaly(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+
+	var payload routeAnomalyClearRequest
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+	if payload.CanonicalModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_canonical_model_id", "canonical_model_id is required")
+		return
+	}
+	if payload.SiteModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_site_model_id", "site_model_id is required")
+		return
+	}
+
+	if err := h.router.ClearRouteAnomaly(r.Context(), payload.CanonicalModelID, payload.SiteModelID); err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "route_anomaly_clear_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writePayload(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h Handler) AdjustRouteScore(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+
+	var payload routeScoreAdjustmentRequest
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+	if payload.CanonicalModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_canonical_model_id", "canonical_model_id is required")
+		return
+	}
+	if payload.SiteModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_site_model_id", "site_model_id is required")
+		return
+	}
+
+	item, err := h.router.AdjustRouteScore(r.Context(), payload.CanonicalModelID, payload.SiteModelID, payload.Direction)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "route_score_adjustment_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writePayload(w, http.StatusOK, map[string]any{
+		"ok": true,
+		"adjustment": map[string]any{
+			"delta":        item.Delta,
+			"active_until": timeString(item.ActiveUntil),
+		},
+	})
+}
+
 func (h Handler) ListRouteCandidates(w http.ResponseWriter, r *http.Request) {
 	if h.router == nil {
 		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
@@ -528,12 +591,35 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 			"billing_type":             pointerStringValue(item.Pricing.BillingType),
 			"quota_type":               pointerInt64Value(item.Pricing.QuotaType),
 		},
+		"automatic_anomaly":       routeCandidateAnomalyPayload(item.AutomaticAnomaly),
+		"manual_score_adjustment": item.ManualScoreAdjustment,
 	}
 	if debug {
 		payload["score_breakdown"] = item.ScoreBreakdown
 		payload["score_profiles"] = routeCandidateScoreProfilesPayload(item.ScoreProfiles)
 	}
 	return payload
+}
+
+func routeCandidateAnomalyPayload(anomaly store.RouteAnomaly) map[string]any {
+	metrics := make([]map[string]any, 0, len(anomaly.Metrics))
+	for _, metric := range anomaly.Metrics {
+		metrics = append(metrics, map[string]any{
+			"metric":           metric.Metric,
+			"penalty":          metric.Penalty,
+			"recent_value":     metric.RecentValue,
+			"baseline_value":   metric.BaselineValue,
+			"recent_samples":   metric.RecentSamples,
+			"baseline_samples": metric.BaselineSamples,
+			"reason":           metric.Reason,
+		})
+	}
+	return map[string]any{
+		"active":       anomaly.Active,
+		"penalty":      anomaly.Penalty,
+		"metrics":      metrics,
+		"active_until": timePtrValue(anomaly.ActiveUntil),
+	}
 }
 
 func routeCandidateScoreProfilesPayload(profiles map[string]routeengine.CandidateScoreProfile) map[string]any {

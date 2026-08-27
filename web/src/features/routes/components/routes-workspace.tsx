@@ -30,6 +30,8 @@ import {
 } from '@/features/sites/api/sites'
 import { sortSitesByName } from '@/features/sites/lib/site-utils'
 import {
+  adjustRouteScore,
+  clearRouteAnomaly,
   clearRouteCooldown,
   listRouteCandidates,
   listRouteCooldowns,
@@ -39,6 +41,7 @@ import {
   selectRoute,
   type RouteCooldown,
   type RouteOverviewItem,
+  type RouteScoreAdjustmentDirection,
 } from '@/features/routes/api/routes'
 import { FilterColumn, SortColumn } from '@/features/routes/components/route-filter-sidebar'
 import { MobileRoutesFilterBar } from '@/features/routes/components/mobile-routes-filter-bar'
@@ -253,6 +256,32 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     },
   })
 
+  const clearAnomalyMutation = useMutation({
+    mutationFn: clearRouteAnomaly,
+    onSuccess: async () => {
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.automaticAnomalyCleared'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.automaticAnomalyClearFailed'), {
+        description: error.message,
+      })
+    },
+  })
+
+  const adjustScoreMutation = useMutation({
+    mutationFn: adjustRouteScore,
+    onSuccess: async () => {
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.temporaryScoreAdjusted'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.temporaryScoreAdjustFailed'), {
+        description: error.message,
+      })
+    },
+  })
+
   const routingPreferenceMutation = useMutation({
     mutationFn: ({ modelId, preference }: { modelId: string; preference: RoutingPreference }) =>
       updateCanonicalModelRoutingPreference(modelId, preference),
@@ -359,7 +388,10 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
         modelsMap={modelsMap}
         apiKeysMap={apiKeysMap}
         cooldownsLoading={cooldownsQuery.isLoading}
-        clearingId={clearCooldownMutation.variables?.siteId}
+        clearingId={clearCooldownMutation.isPending ? clearCooldownMutation.variables?.siteId : undefined}
+        anomalyClearingSiteModelId={clearAnomalyMutation.isPending ? clearAnomalyMutation.variables?.siteModelId : undefined}
+        scoreAdjustingSiteModelId={adjustScoreMutation.isPending ? adjustScoreMutation.variables?.siteModelId : undefined}
+        scoreAdjustingDirection={adjustScoreMutation.isPending ? adjustScoreMutation.variables?.direction : undefined}
         routingPreferencePending={routingPreferenceMutation.isPending}
         routingExpiryRescuePending={routingExpiryRescueMutation.isPending}
         routingExplorationPending={routingExplorationMutation.isPending || routingExplorationResetMutation.isPending}
@@ -372,6 +404,23 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
           siteCredentialId: cooldown.site_credential_id,
           source: cooldown.source,
         })}
+        onClearAutomaticAnomaly={(candidate) => {
+          if (canonicalId) {
+            clearAnomalyMutation.mutate({
+              canonicalModelId: canonicalId,
+              siteModelId: candidate.model.site_model_id,
+            })
+          }
+        }}
+        onAdjustScore={(candidate, direction: RouteScoreAdjustmentDirection) => {
+          if (canonicalId) {
+            adjustScoreMutation.mutate({
+              canonicalModelId: canonicalId,
+              siteModelId: candidate.model.site_model_id,
+              direction,
+            })
+          }
+        }}
         onRoutingPreferenceChange={(preference) => {
           const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
           if (modelId) routingPreferenceMutation.mutate({ modelId, preference })

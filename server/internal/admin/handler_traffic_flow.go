@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -92,7 +93,12 @@ func (h Handler) TrafficFlowStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h Handler) CancelTrafficFlowRequest(w http.ResponseWriter, r *http.Request) {
-	requestID := strings.TrimSpace(chi.URLParam(r, "requestID"))
+	requestID, err := url.PathUnescape(strings.TrimSpace(chi.URLParam(r, "requestID")))
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_request_id", "request id must be a valid URL path value")
+		return
+	}
+	requestID = strings.TrimSpace(requestID)
 	if requestID == "" {
 		h.writeError(w, r, http.StatusBadRequest, "invalid_request_id", "request id is required")
 		return

@@ -1138,6 +1138,11 @@ func oauthSiteMeta(connection store.OAuthConnection) map[string]any {
 	if projectID, _ := connectionMeta["project_id"].(string); strings.TrimSpace(projectID) != "" {
 		meta["oauth_project_id"] = strings.TrimSpace(projectID)
 	}
+	for _, key := range []string{"chatgpt_subscription_active_start", "chatgpt_subscription_active_until"} {
+		if value := connectionMeta[key]; value != nil {
+			meta["oauth_"+strings.TrimPrefix(key, "chatgpt_")] = value
+		}
+	}
 	return meta
 }
 

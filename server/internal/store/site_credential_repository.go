@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -62,27 +63,91 @@ func siteCredentialSubscriptionExpiresAt(credential SiteCredential) (time.Time, 
 	if err := json.Unmarshal(credential.Meta, &metadata); err != nil {
 		return time.Time{}, false
 	}
-	quotaProbe, ok := metadata["quota_probe"]
-	if !ok {
+	if quotaProbe, ok := metadata["quota_probe"]; ok {
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(quotaProbe, &payload); err == nil {
+			if parsed, ok := subscriptionExpiryFromMetadata(payload, "expires_at"); ok {
+				return parsed, true
+			}
+		}
+	}
+
+	return subscriptionExpiryFromMetadata(metadata,
+		"subscription_expires_at",
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
+	)
+}
+
+func oauthConnectionSubscriptionExpiresAt(metadata JSON) (time.Time, bool) {
+	if len(metadata) == 0 {
+		return time.Time{}, false
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &values); err != nil {
+		return time.Time{}, false
+	}
+	return subscriptionExpiryFromMetadata(values,
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
+	)
+}
+
+func siteMetaSubscriptionExpiresAt(metadata JSON) (time.Time, bool) {
+	if len(metadata) == 0 {
+		return time.Time{}, false
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &values); err != nil {
+		return time.Time{}, false
+	}
+	return subscriptionExpiryFromMetadata(values,
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
+	)
+}
+
+func subscriptionExpiryFromMetadata(metadata map[string]json.RawMessage, keys ...string) (time.Time, bool) {
+	for _, key := range keys {
+		raw, ok := metadata[key]
+		if !ok {
+			continue
+		}
+		if parsed, ok := parseSubscriptionExpiry(raw); ok {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func parseSubscriptionExpiry(raw json.RawMessage) (time.Time, bool) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return time.Time{}, false
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return parsed, true
+		}
+		if numeric, err := strconv.ParseFloat(text, 64); err == nil && numeric > 0 {
+			return unixSubscriptionExpiry(numeric), true
+		}
 		return time.Time{}, false
 	}
 
-	var payload struct {
-		ExpiresAt string `json:"expires_at"`
-	}
-	if err := json.Unmarshal(quotaProbe, &payload); err != nil {
+	var numeric float64
+	if err := json.Unmarshal(raw, &numeric); err != nil || numeric <= 0 {
 		return time.Time{}, false
 	}
-	expiresAt := strings.TrimSpace(payload.ExpiresAt)
-	if expiresAt == "" {
-		return time.Time{}, false
-	}
+	return unixSubscriptionExpiry(numeric), true
+}
 
-	parsed, err := time.Parse(time.RFC3339Nano, expiresAt)
-	if err != nil {
-		return time.Time{}, false
+func unixSubscriptionExpiry(value float64) time.Time {
+	if value > 1e12 {
+		return time.UnixMilli(int64(value))
 	}
-	return parsed, true
+	return time.Unix(int64(value), 0)
 }
 
 func NewSiteCredentialRepository(db *gorm.DB) SiteCredentialRepository {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,27 @@ func TestCancelTrafficFlowRequestPublishesTerminalStateImmediately(t *testing.T)
 	request, ok := inflight.CurrentRequest(requestID)
 	if !ok || request.Phase != inflight.PhaseCancelled || request.CanCancel {
 		t.Fatalf("request after cancel = %#v, ok=%v", request, ok)
+	}
+}
+
+func TestCancelTrafficFlowRequestUnescapesEncodedRequestID(t *testing.T) {
+	requestID := "62f93d23fdf8/KpI5WAzAHx-000235"
+	inflight.Start(inflight.Request{RequestID: requestID, APIKeyName: "Client", ModelKey: "gpt-test"})
+	inflight.AttachControl(requestID, func() bool { return true })
+
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("requestID", url.PathEscape(requestID))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/traffic-flow/requests/"+url.PathEscape(requestID)+"/cancel", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeContext))
+	rec := httptest.NewRecorder()
+	Handler{}.CancelTrafficFlowRequest(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel encoded request id status = %d, body=%q", rec.Code, rec.Body.String())
+	}
+	request, ok := inflight.CurrentRequest(requestID)
+	if !ok || request.Phase != inflight.PhaseCancelled || request.CanCancel {
+		t.Fatalf("request after encoded cancel = %#v, ok=%v", request, ok)
 	}
 }
 

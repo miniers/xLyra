@@ -200,6 +200,8 @@ func TestProtectedAdminFeatureRoutesAreRegistered(t *testing.T) {
 		{name: "model prices", method: http.MethodGet, path: "/api/v1/model-prices"},
 		{name: "routes", method: http.MethodGet, path: "/api/v1/routes"},
 		{name: "route cooldowns", method: http.MethodGet, path: "/api/v1/routes/cooldowns"},
+		{name: "clear route anomaly", method: http.MethodPost, path: "/api/v1/routes/anomalies/clear"},
+		{name: "adjust route score", method: http.MethodPost, path: "/api/v1/routes/score-adjustments"},
 		{name: "settings general", method: http.MethodGet, path: "/api/v1/settings/general"},
 		{name: "automatic backup files", method: http.MethodGet, path: "/api/v1/settings/backup/automatic/files"},
 		{name: "dashboard health", method: http.MethodGet, path: "/api/v1/dashboard/health"},

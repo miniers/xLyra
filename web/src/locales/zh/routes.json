@@ -42,6 +42,10 @@
       "modelToggleFailed": "模型开关更新失败",
       "cooldownCleared": "冷却已清理",
       "cooldownClearFailed": "冷却清理失败",
+      "automaticAnomalyCleared": "自动异常降权已解除",
+      "automaticAnomalyClearFailed": "自动异常降权解除失败",
+      "temporaryScoreAdjusted": "临时评分已调整",
+      "temporaryScoreAdjustFailed": "临时评分调整失败",
       "preferenceUpdated": "评分偏好已更新",
       "preferenceUpdateFailed": "评分偏好更新失败",
       "expiryRescueUpdated": "订阅到期抢救加分已更新",
@@ -78,6 +82,19 @@
       "site": "站点评分 {{score}}",
       "model": "模型评分 {{score}}",
       "unavailable": "评分明细不可用",
+      "table": {
+        "rank": "排名",
+        "target": "站点",
+        "total": "总分",
+        "site": "站点评分",
+        "model": "模型评分",
+        "actions": "操作"
+      },
+      "cooldown": "冷却中",
+      "cooldownHint": "冷却中，剩余 {{duration}}：{{reason}}",
+      "clearAutomaticAnomaly": "解除降权",
+      "increaseScore": "临时加分 5 分",
+      "decreaseScore": "临时减分 5 分",
       "components": {
         "siteHealth": "站点健康",
         "siteSuccessRate": "站点成功率",
@@ -89,11 +106,15 @@
         "apiKeyCapacity": "Key 容量",
         "actualPrice": "实际价格",
         "subscriptionExpiryUrgency": "订阅到期紧迫度",
-        "subscriptionExpiryRescueBonus": "订阅到期抢救加分"
+        "subscriptionExpiryRescueBonus": "订阅到期抢救加分",
+        "automaticAnomalyPenalty": "自动异常降权",
+        "manualScoreAdjustment": "临时评分调整"
       },
       "raw": {
         "actualPriceCacheHitRate": "缓存{{value}}",
-        "actualPriceCacheReadRatio": "读取{{value}}"
+        "actualPriceCacheReadRatio": "读取{{value}}",
+        "automaticAnomalyFirstByte": "近期{{recent}}/基线{{baseline}}",
+        "automaticAnomalyCache": "近期{{recent}}/基线{{baseline}}"
       }
     },
     "preference": {

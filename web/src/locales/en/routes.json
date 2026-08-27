@@ -42,6 +42,10 @@
       "modelToggleFailed": "Failed to update model toggle",
       "cooldownCleared": "Cooldown cleared",
       "cooldownClearFailed": "Failed to clear cooldown",
+      "automaticAnomalyCleared": "Automatic anomaly down-rank cleared",
+      "automaticAnomalyClearFailed": "Failed to clear automatic anomaly down-rank",
+      "temporaryScoreAdjusted": "Temporary score adjusted",
+      "temporaryScoreAdjustFailed": "Failed to adjust temporary score",
       "preferenceUpdated": "Scoring preference updated",
       "preferenceUpdateFailed": "Failed to update scoring preference",
       "expiryRescueUpdated": "Expiry rescue bonus updated",
@@ -78,6 +82,19 @@
       "site": "Site {{score}}",
       "model": "Model {{score}}",
       "unavailable": "Score breakdown unavailable",
+      "table": {
+        "rank": "Rank",
+        "target": "Site",
+        "total": "Total",
+        "site": "Site score",
+        "model": "Model score",
+        "actions": "Actions"
+      },
+      "cooldown": "Cooling down",
+      "cooldownHint": "Cooling down, {{duration}} remaining: {{reason}}",
+      "clearAutomaticAnomaly": "Clear down-rank",
+      "increaseScore": "Temporarily add 5 points",
+      "decreaseScore": "Temporarily remove 5 points",
       "components": {
         "siteHealth": "Site health",
         "siteSuccessRate": "Site success",
@@ -89,11 +106,15 @@
         "apiKeyCapacity": "Key capacity",
         "actualPrice": "Actual price",
         "subscriptionExpiryUrgency": "Subscription expiry urgency",
-        "subscriptionExpiryRescueBonus": "Expiry rescue bonus"
+        "subscriptionExpiryRescueBonus": "Expiry rescue bonus",
+        "automaticAnomalyPenalty": "Automatic anomaly penalty",
+        "manualScoreAdjustment": "Temporary score adjustment"
       },
       "raw": {
         "actualPriceCacheHitRate": "cache{{value}}",
-        "actualPriceCacheReadRatio": "read{{value}}"
+        "actualPriceCacheReadRatio": "read{{value}}",
+        "automaticAnomalyFirstByte": "recent{{recent}}/baseline{{baseline}}",
+        "automaticAnomalyCache": "recent{{recent}}/baseline{{baseline}}"
       }
     },
     "preference": {

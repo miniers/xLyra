@@ -496,6 +496,40 @@ CREATE TABLE route_exploration_states (
 CREATE INDEX route_exploration_states_model_idx ON route_exploration_states (canonical_model_id);
 CREATE INDEX route_exploration_states_last_attempt_idx ON route_exploration_states (last_attempt_at DESC);
 
+CREATE TABLE route_anomaly_states (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  canonical_model_id UUID NOT NULL REFERENCES canonical_models(id) ON DELETE CASCADE,
+  site_model_id UUID NOT NULL REFERENCES site_models(id) ON DELETE CASCADE,
+  active BOOLEAN NOT NULL DEFAULT FALSE,
+  penalty NUMERIC(6,2) NOT NULL DEFAULT 0,
+  metrics JSONB NOT NULL DEFAULT '[]'::jsonb,
+  bad_since TIMESTAMPTZ,
+  good_since TIMESTAMPTZ,
+  active_until TIMESTAMPTZ,
+  last_evaluated_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(canonical_model_id, site_model_id)
+);
+
+CREATE INDEX route_anomaly_states_model_idx ON route_anomaly_states (canonical_model_id);
+CREATE INDEX route_anomaly_states_bad_since_idx ON route_anomaly_states (bad_since);
+CREATE INDEX route_anomaly_states_active_idx ON route_anomaly_states (active_until DESC);
+
+CREATE TABLE route_score_adjustments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  canonical_model_id UUID NOT NULL REFERENCES canonical_models(id) ON DELETE CASCADE,
+  site_model_id UUID NOT NULL REFERENCES site_models(id) ON DELETE CASCADE,
+  delta NUMERIC(8,2) NOT NULL DEFAULT 0,
+  active_until TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(canonical_model_id, site_model_id)
+);
+
+CREATE INDEX route_score_adjustments_model_idx ON route_score_adjustments (canonical_model_id);
+CREATE INDEX route_score_adjustments_active_idx ON route_score_adjustments (active_until DESC);
+
 CREATE TABLE request_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   request_id TEXT NOT NULL UNIQUE,
@@ -781,6 +815,14 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER route_exploration_states_set_updated_at
 BEFORE UPDATE ON route_exploration_states
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER route_anomaly_states_set_updated_at
+BEFORE UPDATE ON route_anomaly_states
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER route_score_adjustments_set_updated_at
+BEFORE UPDATE ON route_score_adjustments
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER gateway_rate_limits_set_updated_at

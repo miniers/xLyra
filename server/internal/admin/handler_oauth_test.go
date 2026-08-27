@@ -369,7 +369,8 @@ func TestApplyOAuthCallbackProxyOverrideAndSiteMeta(t *testing.T) {
 		Metadata: store.JSON(`{
 			"plan_type":" plus ",
 			"subscription_tier":" team ",
-			"project_id":" proj_123 "
+			"project_id":" proj_123 ",
+			"chatgpt_subscription_active_until":"2026-07-01T00:00:00Z"
 		}`),
 	})
 	if meta["oauth_account_id"] != "acct_123" || meta["oauth_email"] != "alice@example.com" {
@@ -377,6 +378,9 @@ func TestApplyOAuthCallbackProxyOverrideAndSiteMeta(t *testing.T) {
 	}
 	if meta["oauth_plan_type"] != "team" || meta["oauth_subscription_tier"] != "team" || meta["oauth_project_id"] != "proj_123" {
 		t.Fatalf("oauth metadata should be trimmed with subscription tier overriding plan type, got %#v", meta)
+	}
+	if meta["oauth_subscription_active_until"] != "2026-07-01T00:00:00Z" {
+		t.Fatalf("oauth subscription expiry missing: %#v", meta)
 	}
 }
 

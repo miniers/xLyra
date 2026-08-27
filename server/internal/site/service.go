@@ -830,7 +830,17 @@ func (s *Service) AttachOAuthConnection(ctx context.Context, siteID uuid.UUID, p
 	if len(item.Meta) > 0 {
 		_ = json.Unmarshal(item.Meta, &meta)
 	}
-	for _, key := range []string{"oauth_provider", "oauth_connection_id", "oauth_account_id", "oauth_email", "oauth_plan_type", "oauth_subscription_tier", "oauth_project_id"} {
+	for _, key := range []string{
+		"oauth_provider",
+		"oauth_connection_id",
+		"oauth_account_id",
+		"oauth_email",
+		"oauth_plan_type",
+		"oauth_subscription_tier",
+		"oauth_project_id",
+		"oauth_subscription_active_start",
+		"oauth_subscription_active_until",
+	} {
 		delete(meta, key)
 	}
 	meta["oauth_provider"] = strings.TrimSpace(provider)

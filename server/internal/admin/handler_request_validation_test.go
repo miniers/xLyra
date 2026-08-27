@@ -203,3 +203,50 @@ func TestClearRouteCooldownRejectsInvalidPayloadBeforeClearingRouterCooldown(t *
 		})
 	}
 }
+
+func TestClearRouteAnomalyRejectsInvalidPayloadBeforeClearingRouterAnomaly(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{router: routeengine.NewService(nil)}
+	for _, tc := range []struct {
+		name string
+		body string
+		code string
+	}{
+		{name: "invalid json", body: `{`, code: "invalid_json"},
+		{name: "missing canonical model id", body: `{"site_model_id":"` + uuid.NewString() + `"}`, code: "invalid_canonical_model_id"},
+		{name: "missing site model id", body: `{"canonical_model_id":"` + uuid.NewString() + `"}`, code: "invalid_site_model_id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := adminPerform(handler.ClearRouteAnomaly, adminTestRequest(http.MethodPost, "/api/v1/routes/anomalies/clear", tc.body))
+
+			assertAdminErrorCode(t, rec, http.StatusBadRequest, tc.code)
+		})
+	}
+}
+
+func TestAdjustRouteScoreRejectsInvalidPayloadBeforeAdjustingRouterScore(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{router: routeengine.NewService(nil)}
+	for _, tc := range []struct {
+		name string
+		body string
+		code string
+	}{
+		{name: "invalid json", body: `{`, code: "invalid_json"},
+		{name: "missing canonical model id", body: `{"site_model_id":"` + uuid.NewString() + `","direction":"increase"}`, code: "invalid_canonical_model_id"},
+		{name: "missing site model id", body: `{"canonical_model_id":"` + uuid.NewString() + `","direction":"increase"}`, code: "invalid_site_model_id"},
+		{name: "invalid direction", body: `{"canonical_model_id":"` + uuid.NewString() + `","site_model_id":"` + uuid.NewString() + `","direction":"sideways"}`, code: "route_score_adjustment_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := adminPerform(handler.AdjustRouteScore, adminTestRequest(http.MethodPost, "/api/v1/routes/score-adjustments", tc.body))
+
+			assertAdminErrorCode(t, rec, http.StatusBadRequest, tc.code)
+		})
+	}
+}

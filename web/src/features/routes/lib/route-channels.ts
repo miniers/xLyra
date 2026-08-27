@@ -319,11 +319,15 @@ export function routeChannelSwitchDisabledReason(row: RouteChannelRow, pending?:
   return undefined
 }
 
-function routeModelCooling(cooldowns: RouteCooldown[], siteId: string, siteModelId: string) {
-  return cooldowns.some((cooldown) => {
+export function routeModelCooldown(cooldowns: RouteCooldown[], siteId: string, siteModelId: string) {
+  return cooldowns.find((cooldown) => {
     if (cooldown.site_model_id) {
       return cooldown.site_model_id === siteModelId
     }
     return cooldown.site_id === siteId && !cooldown.site_credential_id
   })
+}
+
+function routeModelCooling(cooldowns: RouteCooldown[], siteId: string, siteModelId: string) {
+  return Boolean(routeModelCooldown(cooldowns, siteId, siteModelId))
 }

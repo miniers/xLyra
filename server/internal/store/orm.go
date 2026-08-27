@@ -135,6 +135,8 @@ func (HealthSnapshot) TableName() string        { return "health_snapshots" }
 func (SiteHealthState) TableName() string       { return "site_health_states" }
 func (RouteCooldown) TableName() string         { return "route_cooldowns" }
 func (RouteExplorationState) TableName() string { return "route_exploration_states" }
+func (RouteAnomalyState) TableName() string     { return "route_anomaly_states" }
+func (RouteScoreAdjustment) TableName() string  { return "route_score_adjustments" }
 func (RequestLog) TableName() string            { return "request_logs" }
 func (UsageRecord) TableName() string           { return "usage_records" }
 func (RequestUsageDailySummary) TableName() string {

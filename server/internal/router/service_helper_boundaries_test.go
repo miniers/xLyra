@@ -10,20 +10,20 @@ import (
 	"xlyra/server/internal/store"
 )
 
-func TestScoreCandidateAppliesBoundaryBucketBreakdown(t *testing.T) {
+func TestScoreCandidateAppliesContinuousLatencyBreakdown(t *testing.T) {
 	t.Parallel()
 
 	zeroRate := 0.0
 	fullRate := 1.0
-	fastButNotBestLatency := int64(501)
-	mediumLatency := int64(1501)
+	fastLatency := int64(1000)
+	mediumLatency := int64(2000)
 	price := 5.0
 
 	score, breakdown := scoreCandidate(Candidate{
 		Health: CandidateHealth{
 			Status:             "degraded",
 			RecentSuccessRate:  &zeroRate,
-			RecentAvgLatencyMS: &fastButNotBestLatency,
+			RecentAvgLatencyMS: &fastLatency,
 			ModelSuccessRate:   &fullRate,
 			ModelAvgLatencyMS:  &mediumLatency,
 		},
@@ -38,9 +38,9 @@ func TestScoreCandidateAppliesBoundaryBucketBreakdown(t *testing.T) {
 	wantBreakdown := map[string]float64{
 		"site_health":        22,
 		"site_success_rate":  0,
-		"site_latency":       3,
+		"site_latency":       4,
 		"model_success_rate": 30,
-		"model_latency":      3.75,
+		"model_latency":      6,
 		"api_key_capacity":   15,
 		"actual_price":       10,
 	}
@@ -49,12 +49,12 @@ func TestScoreCandidateAppliesBoundaryBucketBreakdown(t *testing.T) {
 			t.Fatalf("breakdown[%q] = %v, want %v", key, breakdown[key], want)
 		}
 	}
-	if score != 83.75 {
-		t.Fatalf("scoreCandidate = %v, want 83.75", score)
+	if score != 87 {
+		t.Fatalf("scoreCandidate = %v, want 87", score)
 	}
 }
 
-func TestHealthSuccessAndLatencyScoresAtBucketEdges(t *testing.T) {
+func TestHealthSuccessAndLatencyScoresLinearlyBetweenBounds(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -84,17 +84,17 @@ func TestHealthSuccessAndLatencyScoresAtBucketEdges(t *testing.T) {
 		t.Fatalf("successRateScore(full) = %v, want 7", got)
 	}
 
-	zeroLatency := int64(0)
-	justPastBestBucket := int64(501)
-	justPastMiddleBucket := int64(1501)
-	if got := latencyScore(&zeroLatency, 8); got != 8 {
-		t.Fatalf("latencyScore(0) = %v, want 8", got)
+	fullLatency := int64(500)
+	midpointLatency := int64(1750)
+	zeroLatency := int64(3000)
+	if got := latencyScore(&fullLatency, 8); got != 8 {
+		t.Fatalf("latencyScore(500) = %v, want 8", got)
 	}
-	if got := latencyScore(&justPastBestBucket, 8); got != 4.8 {
-		t.Fatalf("latencyScore(501) = %v, want 4.8", got)
+	if got := latencyScore(&midpointLatency, 8); got != 4 {
+		t.Fatalf("latencyScore(1750) = %v, want 4", got)
 	}
-	if got := latencyScore(&justPastMiddleBucket, 8); got != 2 {
-		t.Fatalf("latencyScore(1501) = %v, want 2", got)
+	if got := latencyScore(&zeroLatency, 8); got != 0 {
+		t.Fatalf("latencyScore(3000) = %v, want 0", got)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestPriceScoreInterpolatesBetweenKnownExtremes(t *testing.T) {
 	}
 }
 
-func TestFirstByteLatencyScoreUsesFiveSecondExcellentBucket(t *testing.T) {
+func TestFirstByteLatencyScoreInterpolatesLinearlyBetweenBounds(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -124,11 +124,8 @@ func TestFirstByteLatencyScoreUsesFiveSecondExcellentBucket(t *testing.T) {
 		want    float64
 	}{
 		{latency: 5000, want: 10},
-		{latency: 5001, want: 8},
-		{latency: 8000, want: 8},
-		{latency: 12000, want: 5},
-		{latency: 20000, want: 2},
-		{latency: 20001, want: 0},
+		{latency: 12500, want: 5},
+		{latency: 20000, want: 0},
 	} {
 		value := tc.latency
 		if got := firstByteLatencyScore(&value, 10); got != tc.want {
@@ -258,6 +255,37 @@ func TestSubscriptionExpiryScoringFavorsShorterRemainingTimeAndValue(t *testing.
 	)
 	if shortScore <= longScore {
 		t.Fatalf("short expiry score = %v, longer expiry score = %v; want short expiry higher", shortScore, longScore)
+	}
+}
+
+func TestAutomaticAnomalyPenaltyIsIncludedInScoreBreakdown(t *testing.T) {
+	t.Parallel()
+
+	score, breakdown := scoreCandidate(Candidate{
+		AutomaticAnomaly: store.RouteAnomaly{
+			Active:  true,
+			Penalty: -20,
+		},
+	}, 0, 1)
+	if breakdown["automatic_anomaly_penalty"] != -20 {
+		t.Fatalf("automatic anomaly breakdown = %#v, want -20", breakdown)
+	}
+	baseScore, _ := scoreCandidate(Candidate{}, 0, 1)
+	if score != baseScore-20 {
+		t.Fatalf("score with anomaly penalty = %v, want base score %v minus 20", score, baseScore)
+	}
+}
+
+func TestManualScoreAdjustmentIsIncludedInScoreBreakdown(t *testing.T) {
+	t.Parallel()
+
+	score, breakdown := scoreCandidate(Candidate{ManualScoreAdjustment: 5}, 0, 1)
+	if breakdown["manual_score_adjustment"] != 5 {
+		t.Fatalf("manual score adjustment breakdown = %#v, want 5", breakdown)
+	}
+	baseScore, _ := scoreCandidate(Candidate{}, 0, 1)
+	if score != baseScore+5 {
+		t.Fatalf("score with manual adjustment = %v, want base score %v plus 5", score, baseScore)
 	}
 }
 

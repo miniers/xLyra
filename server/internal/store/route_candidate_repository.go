@@ -58,6 +58,7 @@ type RouteCandidateRow struct {
 	PreferredCredentialCostMultiplier  float64
 	PreferredCredentialGroupName       sql.NullString
 	PreferredCredentialCacheDomain     string
+	OAuthSubscriptionExpiresAt         sql.NullTime
 	PricingGroupName                   sql.NullString
 	PricingCurrency                    sql.NullString
 	PricingInputValue                  sql.NullFloat64
@@ -68,6 +69,8 @@ type RouteCandidateRow struct {
 	PricingBillingType                 sql.NullString
 	PricingQuotaType                   sql.NullInt64
 	SupportedEndpointTypes             []string
+	AutomaticAnomaly                   RouteAnomaly
+	ManualScoreAdjustment              float64
 }
 
 type RouteCandidateRepository struct {
@@ -97,6 +100,7 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	var credentials []SiteCredential
 	var keyStates []SiteAPIKeyState
 	var pricings []SiteModelPricing
+	var oauthConnections []OAuthConnection
 	if err := r.db.WithContext(ctx).Find(&sites).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
@@ -118,7 +122,18 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	if err := r.db.WithContext(ctx).Where(&SiteModelPricing{Available: true}).Find(&pricings).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
+	if err := r.db.WithContext(ctx).Find(&oauthConnections).Error; err != nil {
+		return nil, fmt.Errorf("list route candidates: %w", err)
+	}
 	cacheStats, err := r.listModelCacheStats(ctx, siteModels)
+	if err != nil {
+		return nil, fmt.Errorf("list route candidates: %w", err)
+	}
+	anomalyStates, err := NewRouteAnomalyRepository(r.db).ListByCanonicalModel(ctx, canonicalModelID)
+	if err != nil {
+		return nil, fmt.Errorf("list route candidates: %w", err)
+	}
+	scoreAdjustments, err := NewRouteScoreAdjustmentRepository(r.db).ListActiveByCanonicalModel(ctx, canonicalModelID, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
@@ -142,6 +157,30 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	for _, state := range keyStates {
 		keyStatesByCredentialID[state.SiteCredentialID] = state
 	}
+	oauthSubscriptionExpiryBySiteID := make(map[uuid.UUID]sql.NullTime)
+	for _, connection := range oauthConnections {
+		if connection.SiteID == nil || *connection.SiteID == uuid.Nil {
+			continue
+		}
+		expiresAt, ok := oauthConnectionSubscriptionExpiresAt(connection.Metadata)
+		if !ok {
+			continue
+		}
+		current := oauthSubscriptionExpiryBySiteID[*connection.SiteID]
+		if !current.Valid || expiresAt.Before(current.Time) {
+			oauthSubscriptionExpiryBySiteID[*connection.SiteID] = sql.NullTime{Time: expiresAt, Valid: true}
+		}
+	}
+	anomalyStatesBySiteModelID := make(map[uuid.UUID]RouteAnomalyState, len(anomalyStates))
+	for _, state := range anomalyStates {
+		anomalyStatesBySiteModelID[state.SiteModelID] = state
+	}
+	manualScoreAdjustmentsBySiteModelID := make(map[uuid.UUID]float64, len(scoreAdjustments))
+	for _, adjustment := range scoreAdjustments {
+		manualScoreAdjustmentsBySiteModelID[adjustment.SiteModelID] = adjustment.Delta
+	}
+	now := time.Now()
+	anomalyRepository := NewRouteAnomalyRepository(r.db)
 
 	items := make([]RouteCandidateRow, 0, len(siteModels))
 	for _, model := range siteModels {
@@ -151,32 +190,45 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 		}
 		state := healthBySiteID[site.ID]
 		row := RouteCandidateRow{
-			CanonicalModelID:       canonical.ID,
-			CanonicalModelKey:      canonical.ModelKey,
-			CanonicalDisplayName:   canonical.DisplayName,
-			SiteID:                 site.ID,
-			SiteName:               site.Name,
-			SiteSlug:               site.Slug,
-			SiteType:               site.SiteType,
-			SiteBaseURL:            site.BaseURL,
-			SiteStatus:             site.Status,
-			SiteEnabled:            site.Enabled,
-			SiteRoutingPriority:    site.RoutingPriority,
-			SiteMeta:               site.Meta,
-			SiteModelID:            model.ID,
-			UpstreamModelName:      model.UpstreamName,
-			SiteModelDisplayName:   model.DisplayName,
-			SiteModelStatus:        model.Status,
-			MatchSource:            model.MatchSource,
-			MatchConfidence:        model.MatchConfidence,
-			SiteHealthStatus:       defaultHealthStatus(state.Status),
-			SiteHealthSuccessRate:  state.RecentSuccessRate,
-			SiteHealthAvgLatencyMS: state.RecentAvgLatencyMS,
-			SiteHealthFailures:     state.ConsecutiveFailures,
-			SiteHealthCheckedAt:    state.CheckedAt,
+			CanonicalModelID:           canonical.ID,
+			CanonicalModelKey:          canonical.ModelKey,
+			CanonicalDisplayName:       canonical.DisplayName,
+			SiteID:                     site.ID,
+			SiteName:                   site.Name,
+			SiteSlug:                   site.Slug,
+			SiteType:                   site.SiteType,
+			SiteBaseURL:                site.BaseURL,
+			SiteStatus:                 site.Status,
+			SiteEnabled:                site.Enabled,
+			SiteRoutingPriority:        site.RoutingPriority,
+			SiteMeta:                   site.Meta,
+			SiteModelID:                model.ID,
+			UpstreamModelName:          model.UpstreamName,
+			SiteModelDisplayName:       model.DisplayName,
+			SiteModelStatus:            model.Status,
+			OAuthSubscriptionExpiresAt: oauthSubscriptionExpiryBySiteID[site.ID],
+			MatchSource:                model.MatchSource,
+			MatchConfidence:            model.MatchConfidence,
+			SiteHealthStatus:           defaultHealthStatus(state.Status),
+			SiteHealthSuccessRate:      state.RecentSuccessRate,
+			SiteHealthAvgLatencyMS:     state.RecentAvgLatencyMS,
+			SiteHealthFailures:         state.ConsecutiveFailures,
+			SiteHealthCheckedAt:        state.CheckedAt,
 		}
 		fillModelHealth(&row, healthSnapshots)
 		fillModelCacheStats(&row, cacheStats[model.ID])
+		anomalyState := anomalyStatesBySiteModelID[model.ID]
+		observation := buildRouteAnomalyObservation(healthSnapshots, cacheStats[model.ID], model.ID, now)
+		if routeAnomalyStateNeedsEvaluation(anomalyState, now) && (anomalyState.ID != uuid.Nil || observationHasData(observation)) {
+			anomalyState.CanonicalModelID = canonical.ID
+			anomalyState.SiteModelID = model.ID
+			anomalyState = evaluateRouteAnomalyState(anomalyState, observation, now)
+			// Anomaly scoring is best-effort. A transient write failure must not
+			// make an otherwise routable candidate unavailable.
+			_ = anomalyRepository.SaveEvaluation(ctx, anomalyState)
+		}
+		row.AutomaticAnomaly = routeAnomalyFromState(anomalyState, now)
+		row.ManualScoreAdjustment = manualScoreAdjustmentsBySiteModelID[model.ID]
 		fillRouteKeyCounts(&row, apiKeyModels, credentialsByID, keyStatesByCredentialID, cooldowns)
 		fillRouteSiteCredentialCount(&row, credentials, keyStatesByCredentialID, cooldowns)
 		fillRoutePricing(&row, pricings)
@@ -193,10 +245,16 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 }
 
 type RouteModelCacheStats struct {
-	SiteModelID  uuid.UUID `gorm:"column:site_model_id"`
-	RequestCount int64     `gorm:"column:request_count"`
-	PromptTokens int64     `gorm:"column:prompt_tokens"`
-	CachedTokens int64     `gorm:"column:cached_tokens"`
+	SiteModelID          uuid.UUID `gorm:"column:site_model_id"`
+	RequestCount         int64     `gorm:"column:request_count"`
+	PromptTokens         int64     `gorm:"column:prompt_tokens"`
+	CachedTokens         int64     `gorm:"column:cached_tokens"`
+	RecentRequestCount   int64     `gorm:"column:recent_request_count"`
+	RecentPromptTokens   int64     `gorm:"column:recent_prompt_tokens"`
+	RecentCachedTokens   int64     `gorm:"column:recent_cached_tokens"`
+	BaselineRequestCount int64     `gorm:"column:baseline_request_count"`
+	BaselinePromptTokens int64     `gorm:"column:baseline_prompt_tokens"`
+	BaselineCachedTokens int64     `gorm:"column:baseline_cached_tokens"`
 }
 
 func (r RouteCandidateRepository) listModelCacheStats(ctx context.Context, siteModels []SiteModel) (map[uuid.UUID]RouteModelCacheStats, error) {
@@ -215,6 +273,9 @@ func (r RouteCandidateRepository) listModelCacheStats(ctx context.Context, siteM
 		return result, nil
 	}
 
+	now := time.Now()
+	recentSince := now.Add(-routeAnomalyRecentWindow)
+	baselineSince := now.Add(-routeAnomalyBaselineWindow)
 	var rows []RouteModelCacheStats
 	query := r.db.WithContext(ctx).
 		Table("usage_records").
@@ -225,9 +286,35 @@ func (r RouteCandidateRepository) listModelCacheStats(ctx context.Context, siteM
 				WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' THEN 0
 				WHEN usage_records.cached_tokens IS NULL OR usage_records.cached_tokens < 0 THEN 0
 				ELSE usage_records.cached_tokens
-			END), 0) AS cached_tokens`).
+			END), 0) AS cached_tokens,
+			COUNT(*) FILTER (WHERE request_logs.metadata #>> '{routing_exploration,warmup}' IS DISTINCT FROM 'true' AND request_logs.created_at >= ? AND request_logs.created_at <= ?) AS recent_request_count,
+			COALESCE(SUM(CASE
+				WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' OR request_logs.created_at < ? OR request_logs.created_at > ? THEN 0
+				ELSE usage_records.prompt_tokens
+			END), 0) AS recent_prompt_tokens,
+			COALESCE(SUM(CASE
+				WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' OR request_logs.created_at < ? OR request_logs.created_at > ? THEN 0
+				WHEN usage_records.cached_tokens IS NULL OR usage_records.cached_tokens < 0 THEN 0
+				ELSE usage_records.cached_tokens
+			END), 0) AS recent_cached_tokens,
+			COUNT(*) FILTER (WHERE request_logs.metadata #>> '{routing_exploration,warmup}' IS DISTINCT FROM 'true' AND request_logs.created_at >= ? AND request_logs.created_at < ?) AS baseline_request_count,
+			COALESCE(SUM(CASE
+				WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' OR request_logs.created_at < ? OR request_logs.created_at >= ? THEN 0
+				ELSE usage_records.prompt_tokens
+			END), 0) AS baseline_prompt_tokens,
+			COALESCE(SUM(CASE
+				WHEN request_logs.metadata #>> '{routing_exploration,warmup}' = 'true' OR request_logs.created_at < ? OR request_logs.created_at >= ? THEN 0
+				WHEN usage_records.cached_tokens IS NULL OR usage_records.cached_tokens < 0 THEN 0
+				ELSE usage_records.cached_tokens
+			END), 0) AS baseline_cached_tokens`,
+			recentSince, now,
+			recentSince, now,
+			recentSince, now,
+			baselineSince, recentSince,
+			baselineSince, recentSince,
+			baselineSince, recentSince).
 		Joins("JOIN request_logs ON request_logs.id = usage_records.request_log_id").
-		Where("request_logs.site_model_id IN ? AND request_logs.internal = ? AND request_logs.created_at >= ?", siteModelIDs, false, time.Now().Add(-24*time.Hour)).
+		Where("request_logs.site_model_id IN ? AND request_logs.internal = ? AND request_logs.created_at >= ?", siteModelIDs, false, baselineSince).
 		Group("request_logs.site_model_id").
 		Find(&rows)
 	if query.Error != nil {
@@ -237,6 +324,69 @@ func (r RouteCandidateRepository) listModelCacheStats(ctx context.Context, siteM
 		result[row.SiteModelID] = row
 	}
 	return result, nil
+}
+
+func routeAnomalyStateNeedsEvaluation(state RouteAnomalyState, now time.Time) bool {
+	return state.LastEvaluatedAt == nil || now.Sub(*state.LastEvaluatedAt) >= routeAnomalyEvaluationInterval
+}
+
+func buildRouteAnomalyObservation(snapshots []HealthSnapshot, cacheStats RouteModelCacheStats, siteModelID uuid.UUID, now time.Time) routeAnomalyObservation {
+	observation := routeAnomalyObservation{}
+	recentSince := now.Add(-routeAnomalyRecentWindow)
+	baselineSince := now.Add(-routeAnomalyBaselineWindow)
+	var recentFirstByteSum, baselineFirstByteSum int64
+	var recentFirstByteCount, baselineFirstByteCount int
+	for _, snapshot := range snapshots {
+		if !snapshot.SiteModelID.Valid || snapshot.SiteModelID.UUID != siteModelID || snapshot.Scope != "model" || snapshot.Source != "gateway" || !snapshot.FirstByteLatencyMS.Valid || snapshot.FirstByteLatencyMS.Int64 <= 0 {
+			continue
+		}
+		if snapshot.CheckedAt.Before(baselineSince) || snapshot.CheckedAt.After(now) {
+			continue
+		}
+		if snapshot.CheckedAt.After(recentSince) {
+			recentFirstByteSum += snapshot.FirstByteLatencyMS.Int64
+			recentFirstByteCount++
+			continue
+		}
+		baselineFirstByteSum += snapshot.FirstByteLatencyMS.Int64
+		baselineFirstByteCount++
+	}
+	if recentFirstByteCount >= routeAnomalyMinSamples && baselineFirstByteCount >= routeAnomalyMinSamples {
+		observation.FirstByteLatency = routeAnomalyWindowMetric{
+			RecentValue:     float64(recentFirstByteSum) / float64(recentFirstByteCount),
+			BaselineValue:   float64(baselineFirstByteSum) / float64(baselineFirstByteCount),
+			RecentSamples:   recentFirstByteCount,
+			BaselineSamples: baselineFirstByteCount,
+			Ready:           baselineFirstByteSum > 0,
+		}
+	}
+
+	recentCacheRate, recentCacheReady := cacheHitRate(cacheStats.RecentPromptTokens, cacheStats.RecentCachedTokens)
+	baselineCacheRate, baselineCacheReady := cacheHitRate(cacheStats.BaselinePromptTokens, cacheStats.BaselineCachedTokens)
+	if cacheStats.RecentRequestCount >= routeAnomalyMinSamples && cacheStats.BaselineRequestCount >= routeAnomalyMinSamples && recentCacheReady && baselineCacheReady && baselineCacheRate >= 0.1 {
+		observation.CacheHitRate = routeAnomalyWindowMetric{
+			RecentValue:     recentCacheRate,
+			BaselineValue:   baselineCacheRate,
+			RecentSamples:   int(cacheStats.RecentRequestCount),
+			BaselineSamples: int(cacheStats.BaselineRequestCount),
+			Ready:           true,
+		}
+	}
+	return observation
+}
+
+func cacheHitRate(promptTokens, cachedTokens int64) (float64, bool) {
+	if promptTokens <= 0 {
+		return 0, false
+	}
+	if cachedTokens < 0 {
+		cachedTokens = 0
+	}
+	rate := float64(cachedTokens) / float64(promptTokens)
+	if rate > 1 {
+		rate = 1
+	}
+	return rate, true
 }
 
 func fillModelCacheStats(row *RouteCandidateRow, stats RouteModelCacheStats) {
@@ -381,6 +531,22 @@ func setRouteSubscriptionExpiry(row *RouteCandidateRow, items []GatewayCredentia
 		row.SubscriptionKeyCount++
 		if earliest.IsZero() || expiresAt.Before(earliest) {
 			earliest = expiresAt
+		}
+	}
+	if siteExpiry, ok := siteMetaSubscriptionExpiresAt(row.SiteMeta); ok && siteExpiry.After(now) {
+		if earliest.IsZero() || siteExpiry.Before(earliest) {
+			earliest = siteExpiry
+		}
+		if row.SubscriptionKeyCount == 0 {
+			row.SubscriptionKeyCount = 1
+		}
+	}
+	if row.OAuthSubscriptionExpiresAt.Valid && row.OAuthSubscriptionExpiresAt.Time.After(now) {
+		if earliest.IsZero() || row.OAuthSubscriptionExpiresAt.Time.Before(earliest) {
+			earliest = row.OAuthSubscriptionExpiresAt.Time
+		}
+		if row.SubscriptionKeyCount == 0 {
+			row.SubscriptionKeyCount = 1
 		}
 	}
 	if earliest.IsZero() {

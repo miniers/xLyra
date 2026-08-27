@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, RotateCcw, Save, XCircle } from 'lucide-react'
+import { LoaderCircle, Minus, Plus, RotateCcw, Save, Timer, XCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,11 +18,12 @@ import {
   type RouteCandidateItem,
   type RouteCooldown,
   type RouteOverviewItem,
+  type RouteScoreAdjustmentDirection,
   type RouteScoreProfile,
   type RouteTrace,
 } from '@/features/routes/api/routes'
 import { getCanonicalModelMatrix, sitesQueryKeys, type CanonicalModelItem, type RoutingExplorationConfig, type RoutingPreference, type Site, type SiteAPIKey, type SiteModel } from '@/features/sites/api/sites'
-import { findCurrentRouteChannel, routeChannelRowsFromMatrix, routeChannelStatus, routeChannelSwitchDisabledReason } from '@/features/routes/lib/route-channels'
+import { findCurrentRouteChannel, routeChannelRowsFromMatrix, routeChannelStatus, routeChannelSwitchDisabledReason, routeModelCooldown } from '@/features/routes/lib/route-channels'
 import {
   formatCooldownScope,
   formatDateTime,
@@ -57,9 +58,14 @@ export function RouteModelDetails({
   apiKeysMap,
   cooldownsLoading,
   clearingId,
+  anomalyClearingSiteModelId,
+  scoreAdjustingSiteModelId,
+  scoreAdjustingDirection,
   pendingChannelState,
   onToggleChannel,
   onClearCooldown,
+  onClearAutomaticAnomaly,
+  onAdjustScore,
   onRoutingPreferenceChange,
   routingPreferencePending = false,
   onRoutingExpiryRescueChange,
@@ -81,9 +87,14 @@ export function RouteModelDetails({
   apiKeysMap: Record<string, SiteAPIKey[]>
   cooldownsLoading: boolean
   clearingId?: string
+  anomalyClearingSiteModelId?: string
+  scoreAdjustingSiteModelId?: string
+  scoreAdjustingDirection?: RouteScoreAdjustmentDirection
   pendingChannelState?: PendingChannelState
   onToggleChannel: (row: RouteChannelRow, enabled: boolean) => void
   onClearCooldown: (item: RouteCooldown) => void
+  onClearAutomaticAnomaly: (candidate: RouteCandidateItem) => void
+  onAdjustScore: (candidate: RouteCandidateItem, direction: RouteScoreAdjustmentDirection) => void
   onRoutingPreferenceChange?: (preference: RoutingPreference) => void
   routingPreferencePending?: boolean
   onRoutingExpiryRescueChange?: (enabled: boolean) => void
@@ -156,7 +167,18 @@ export function RouteModelDetails({
               onResetSite={onRoutingExplorationResetSite}
               t={t}
             />
-            <CandidateScoresSection key={currentPreference} query={candidatesQuery} currentPreference={currentPreference} t={t} />
+            <CandidateScoresSection
+              key={currentPreference}
+              query={candidatesQuery}
+              currentPreference={currentPreference}
+              cooldowns={cooldowns}
+              anomalyClearingSiteModelId={anomalyClearingSiteModelId}
+              scoreAdjustingSiteModelId={scoreAdjustingSiteModelId}
+              scoreAdjustingDirection={scoreAdjustingDirection}
+              onClearAutomaticAnomaly={onClearAutomaticAnomaly}
+              onAdjustScore={onAdjustScore}
+              t={t}
+            />
             <UpstreamCoverageSection
               rows={channelRows}
               loading={matrixQuery.isLoading || candidatesQuery.isLoading}
@@ -188,13 +210,53 @@ export function RouteModelDetails({
 
 const ROUTING_PREFERENCES: RoutingPreference[] = ['default', 'value', 'speed']
 
+const SCORE_TABLE_COLUMN_WIDTHS = {
+  rank: '3.5rem',
+  site: '11rem',
+  total: '5rem',
+  siteScore: '6rem',
+  modelScore: '6rem',
+  actions: '11rem',
+} as const
+
+const SCORE_BREAKDOWN_COLUMN_WIDTHS: Record<string, string> = {
+  site_health: '6rem',
+  site_success_rate: '7rem',
+  site_latency: '6rem',
+  model_success_rate: '7rem',
+  model_latency: '6rem',
+  model_first_byte_latency: '8rem',
+  api_key_capacity: '5rem',
+  actual_price: '7rem',
+  api_key_subscription_expiry_urgency: '9rem',
+  api_key_subscription_expiry_rescue_bonus: '9rem',
+  automatic_anomaly_penalty: '8rem',
+  manual_score_adjustment: '8rem',
+}
+
+function scoreBreakdownColumnWidth(key: string) {
+  return SCORE_BREAKDOWN_COLUMN_WIDTHS[key] ?? '8rem'
+}
+
 function CandidateScoresSection({
   query,
   currentPreference,
+  cooldowns,
+  anomalyClearingSiteModelId,
+  scoreAdjustingSiteModelId,
+  scoreAdjustingDirection,
+  onClearAutomaticAnomaly,
+  onAdjustScore,
   t,
 }: {
   query: CandidatesQuery
   currentPreference: RoutingPreference
+  cooldowns: RouteCooldown[]
+  anomalyClearingSiteModelId?: string
+  scoreAdjustingSiteModelId?: string
+  scoreAdjustingDirection?: RouteScoreAdjustmentDirection
+  onClearAutomaticAnomaly: (candidate: RouteCandidateItem) => void
+  onAdjustScore: (candidate: RouteCandidateItem, direction: RouteScoreAdjustmentDirection) => void
   t: TFunction
 }) {
   const [selectedPreference, setSelectedPreference] = useState<RoutingPreference>(currentPreference)
@@ -231,16 +293,17 @@ function CandidateScoresSection({
           </TabsList>
           {ROUTING_PREFERENCES.map((preference) => (
             <TabsContent key={preference} value={preference}>
-              <div className="space-y-2">
-                {sortCandidatesForPreference(items, preference).map((candidate) => (
-                  <CandidateScoreLine
-                    key={`${preference}-${candidate.model.site_model_id}`}
-                    candidate={candidate}
-                    profile={candidateScoreProfile(candidate, preference)}
-                    t={t}
-                  />
-                ))}
-              </div>
+              <CandidateScoreTable
+                items={sortCandidatesForPreference(items, preference)}
+                preference={preference}
+                cooldowns={cooldowns}
+                anomalyClearingSiteModelId={anomalyClearingSiteModelId}
+                scoreAdjustingSiteModelId={scoreAdjustingSiteModelId}
+                scoreAdjustingDirection={scoreAdjustingDirection}
+                onClearAutomaticAnomaly={onClearAutomaticAnomaly}
+                onAdjustScore={onAdjustScore}
+                t={t}
+              />
             </TabsContent>
           ))}
         </Tabs>
@@ -251,59 +314,223 @@ function CandidateScoresSection({
   )
 }
 
-function CandidateScoreLine({
-  candidate,
-  profile,
-  t,
-}: {
+type ScoreBreakdownItem = {
+  key: string
+  label: string
+  value?: number
+  raw?: string
+  visible?: boolean
+}
+
+type CandidateScoreRow = {
   candidate: RouteCandidateItem
   profile?: RouteScoreProfile
+  breakdown: ScoreBreakdownItem[]
+}
+
+function CandidateScoreTable({
+  items,
+  preference,
+  cooldowns,
+  anomalyClearingSiteModelId,
+  scoreAdjustingSiteModelId,
+  scoreAdjustingDirection,
+  onClearAutomaticAnomaly,
+  onAdjustScore,
+  t,
+}: {
+  items: RouteCandidateItem[]
+  preference: RoutingPreference
+  cooldowns: RouteCooldown[]
+  anomalyClearingSiteModelId?: string
+  scoreAdjustingSiteModelId?: string
+  scoreAdjustingDirection?: RouteScoreAdjustmentDirection
+  onClearAutomaticAnomaly: (candidate: RouteCandidateItem) => void
+  onAdjustScore: (candidate: RouteCandidateItem, direction: RouteScoreAdjustmentDirection) => void
   t: TFunction
 }) {
-  const scoreBreakdown = profile?.breakdown
-  const subscriptionExpiryRaw = formatRemainingDuration(candidate.availability.subscription_remaining_seconds, t)
-  const breakdownItems = ([
-    { label: t('details.scores.components.siteHealth'), value: scoreBreakdown?.site_health, raw: candidate.health.status },
-    { label: t('details.scores.components.siteSuccessRate'), value: scoreBreakdown?.site_success_rate, raw: formatScoreRate(candidate.health.recent_success_rate) },
-    { label: t('details.scores.components.siteLatency'), value: scoreBreakdown?.site_latency, raw: formatScoreLatency(candidate.health.recent_avg_latency_ms) },
-    { label: t('details.scores.components.modelSuccessRate'), value: scoreBreakdown?.model_success_rate, raw: formatScoreRate(candidate.health.model_success_rate) },
-    { label: t('details.scores.components.modelLatency'), value: scoreBreakdown?.model_latency, raw: formatScoreLatency(candidate.health.model_avg_latency_ms) },
-    { label: t('details.scores.components.modelFirstByteLatency'), value: scoreBreakdown?.model_first_byte_latency, raw: formatScoreLatency(modelFirstByteLatencyInput(candidate)) },
-    { label: t('details.scores.components.apiKeyCapacity'), value: scoreBreakdown?.api_key_capacity, raw: `${candidate.availability.available_api_key_count}/${candidate.availability.total_api_key_count}` },
-    { label: t('details.scores.components.actualPrice'), value: scoreBreakdown?.actual_price, raw: formatActualPriceRaw(candidate, t) },
-    { label: t('details.scores.components.subscriptionExpiryUrgency'), value: scoreBreakdown?.api_key_subscription_expiry_urgency, raw: subscriptionExpiryRaw, visible: subscriptionExpiryRaw !== undefined },
-    { label: t('details.scores.components.subscriptionExpiryRescueBonus'), value: scoreBreakdown?.api_key_subscription_expiry_rescue_bonus, raw: subscriptionExpiryRaw, visible: subscriptionExpiryRaw !== undefined },
-  ] as Array<{ label: string; value: number | undefined; raw?: string; visible?: boolean }>).filter(({ value, visible = true }) => typeof value === 'number' && visible)
+  const rows = items.map((candidate): CandidateScoreRow => {
+    const profile = candidateScoreProfile(candidate, preference)
+    return {
+      candidate,
+      profile,
+      breakdown: buildScoreBreakdownItems(candidate, profile, t),
+    }
+  })
+  const columns = scoreBreakdownColumns(rows)
 
   return (
-    <div className="rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="neutral">{t('details.scores.rank', { rank: profile?.rank ?? candidate.rank })}</Badge>
-            <Badge variant="accent">{t('details.scores.total', { score: formatRouteScore(profile?.score) })}</Badge>
-            <Badge variant="neutral">P{candidate.site.routing_priority}</Badge>
-            <span className="min-w-0 break-all text-sm font-medium text-foreground">
-              {candidate.site.name} → {candidate.model.upstream_model_name}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-soft">
-            <span>{t('details.scores.site', { score: formatRouteScore(routeSiteScore({ score_breakdown: scoreBreakdown })) })}</span>
-            <span>{t('details.scores.model', { score: formatRouteScore(routeModelScore({ score_breakdown: scoreBreakdown })) })}</span>
-          </div>
-        </div>
-      </div>
-      {breakdownItems.length ? (
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-soft">
-          {breakdownItems.map(({ label, value, raw }) => (
-            <span key={label}>{label}{raw ? `(${raw})` : ''}: {formatRouteScore(value)}</span>
+    <div className="overflow-x-auto rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))]">
+      <table className="w-max min-w-full table-fixed border-collapse text-xs">
+        <colgroup>
+          <col style={{ width: SCORE_TABLE_COLUMN_WIDTHS.rank }} />
+          <col style={{ width: SCORE_TABLE_COLUMN_WIDTHS.site }} />
+          <col style={{ width: SCORE_TABLE_COLUMN_WIDTHS.total }} />
+          <col style={{ width: SCORE_TABLE_COLUMN_WIDTHS.siteScore }} />
+          <col style={{ width: SCORE_TABLE_COLUMN_WIDTHS.modelScore }} />
+          {columns.map((column) => (
+            <col key={column.key} style={{ width: scoreBreakdownColumnWidth(column.key) }} />
           ))}
-        </div>
-      ) : (
-        <div className="mt-2 text-xs text-muted-soft">{t('details.scores.unavailable')}</div>
-      )}
+          <col style={{ width: SCORE_TABLE_COLUMN_WIDTHS.actions }} />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-[hsl(var(--glass-divider))] text-left text-muted-soft">
+            <th className="sticky left-0 z-20 whitespace-nowrap bg-[hsl(var(--surface-panel))] px-3 py-2 font-medium">
+              {t('details.scores.table.rank')}
+            </th>
+            <th className="sticky left-14 z-20 whitespace-nowrap bg-[hsl(var(--surface-panel))] px-3 py-2 font-medium">
+              {t('details.scores.table.target')}
+            </th>
+            <th className="sticky left-[14.5rem] z-20 whitespace-nowrap bg-[hsl(var(--surface-panel))] px-3 py-2 font-medium shadow-[4px_0_8px_-8px_rgba(0,0,0,0.45)]">
+              {t('details.scores.table.total')}
+            </th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">{t('details.scores.table.site')}</th>
+            <th className="whitespace-nowrap px-3 py-2 font-medium">{t('details.scores.table.model')}</th>
+            {columns.map((column) => (
+              <th key={column.key} className="px-3 py-2 font-medium leading-tight">
+                {column.label}
+              </th>
+            ))}
+            <th className="whitespace-nowrap px-3 py-2 font-medium">{t('details.scores.table.actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ candidate, profile, breakdown }) => {
+            const scoreAdjusting = scoreAdjustingSiteModelId === candidate.model.site_model_id
+            const anomalyClearing = anomalyClearingSiteModelId === candidate.model.site_model_id
+            const cooldown = routeModelCooldown(cooldowns, candidate.site.id, candidate.model.site_model_id)
+            const cooling = Boolean(cooldown)
+            const stickyBackground = cooling
+              ? 'bg-[hsl(var(--warning)/0.08)]'
+              : 'bg-[hsl(var(--surface-panel))]'
+            const cooldownHint = cooldown
+              ? t('details.scores.cooldownHint', {
+                duration: formatDuration(cooldown.remaining_seconds),
+                reason: routeCooldownReasonLabel(cooldown, t),
+              })
+              : undefined
+            return (
+            <tr
+              key={`${preference}-${candidate.model.site_model_id}`}
+              className={cn(
+                'border-b border-[hsl(var(--glass-divider))] last:border-b-0',
+                cooling && 'bg-[hsl(var(--warning)/0.08)]',
+              )}
+            >
+              <td className={cn('sticky left-0 z-[1] whitespace-nowrap px-3 py-2 align-top', stickyBackground)}>
+                <Badge variant="neutral">#{profile?.rank ?? candidate.rank}</Badge>
+              </td>
+              <td className={cn('sticky left-14 z-[1] px-3 py-2 align-top', stickyBackground)}>
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <Badge variant="neutral" className="px-2 py-0.5 text-[11px]">P{candidate.site.routing_priority}</Badge>
+                  <span className="min-w-0 truncate font-medium text-foreground" title={candidate.site.name}>
+                    {candidate.site.name}
+                  </span>
+                  {cooldown ? (
+                    <Badge variant="warning" className="gap-1 px-2 py-0.5 text-[11px]" title={cooldownHint}>
+                      <Timer className="h-3 w-3" aria-hidden="true" />
+                      {t('details.scores.cooldown')}
+                    </Badge>
+                  ) : null}
+                </div>
+              </td>
+              <td className={cn('sticky left-[14.5rem] z-[1] whitespace-nowrap px-3 py-2 align-top font-semibold tabular-nums text-foreground shadow-[4px_0_8px_-8px_rgba(0,0,0,0.45)]', stickyBackground)}>
+                {formatRouteScore(profile?.score)}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-muted-soft">
+                {formatRouteScore(routeSiteScore({ score_breakdown: profile?.breakdown }))}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-muted-soft">
+                {formatRouteScore(routeModelScore({ score_breakdown: profile?.breakdown }))}
+              </td>
+              {columns.map((column) => {
+                const item = breakdown.find((entry) => entry.key === column.key)
+                return (
+                  <td key={column.key} className="px-3 py-2 align-top tabular-nums text-muted-soft">
+                    {item ? (
+                      <div
+                        className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap"
+                        title={item.raw ? `${item.raw}: ${formatRouteScore(item.value)}` : formatRouteScore(item.value)}
+                      >
+                        {item.raw ? `(${item.raw})` : ''}: {formatRouteScore(item.value)}
+                      </div>
+                    ) : (
+                      <span>—</span>
+                    )}
+                  </td>
+                )
+              })}
+              <td className="whitespace-nowrap px-3 py-2 align-top">
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    onClick={() => onAdjustScore(candidate, 'increase')}
+                    disabled={scoreAdjusting}
+                    aria-label={t('details.scores.increaseScore')}
+                    title={t('details.scores.increaseScore')}
+                  >
+                    {scoreAdjusting && scoreAdjustingDirection === 'increase' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    onClick={() => onAdjustScore(candidate, 'decrease')}
+                    disabled={scoreAdjusting}
+                    aria-label={t('details.scores.decreaseScore')}
+                    title={t('details.scores.decreaseScore')}
+                  >
+                    {scoreAdjusting && scoreAdjustingDirection === 'decrease' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Minus className="h-4 w-4" />}
+                  </Button>
+                  {candidate.automatic_anomaly?.active ? (
+                    <Button size="sm" variant="outline" onClick={() => onClearAutomaticAnomaly(candidate)} disabled={anomalyClearing}>
+                      {anomalyClearing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                      {t('details.scores.clearAutomaticAnomaly')}
+                    </Button>
+                  ) : null}
+                </div>
+              </td>
+            </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
+}
+
+function buildScoreBreakdownItems(candidate: RouteCandidateItem, profile: RouteScoreProfile | undefined, t: TFunction): ScoreBreakdownItem[] {
+  const scoreBreakdown = profile?.breakdown
+  const subscriptionExpiryRaw = formatRemainingDuration(candidate.availability.subscription_remaining_seconds, t)
+  return ([
+    { key: 'site_health', label: t('details.scores.components.siteHealth'), value: scoreBreakdown?.site_health, raw: candidate.health.status },
+    { key: 'site_success_rate', label: t('details.scores.components.siteSuccessRate'), value: scoreBreakdown?.site_success_rate, raw: formatScoreRate(candidate.health.recent_success_rate) },
+    { key: 'site_latency', label: t('details.scores.components.siteLatency'), value: scoreBreakdown?.site_latency, raw: formatScoreLatency(candidate.health.recent_avg_latency_ms) },
+    { key: 'model_success_rate', label: t('details.scores.components.modelSuccessRate'), value: scoreBreakdown?.model_success_rate, raw: formatScoreRate(candidate.health.model_success_rate) },
+    { key: 'model_latency', label: t('details.scores.components.modelLatency'), value: scoreBreakdown?.model_latency, raw: formatScoreLatency(candidate.health.model_avg_latency_ms) },
+    { key: 'model_first_byte_latency', label: t('details.scores.components.modelFirstByteLatency'), value: scoreBreakdown?.model_first_byte_latency, raw: formatScoreLatency(modelFirstByteLatencyInput(candidate)) },
+    { key: 'api_key_capacity', label: t('details.scores.components.apiKeyCapacity'), value: scoreBreakdown?.api_key_capacity, raw: `${candidate.availability.available_api_key_count}/${candidate.availability.total_api_key_count}` },
+    { key: 'actual_price', label: t('details.scores.components.actualPrice'), value: scoreBreakdown?.actual_price, raw: formatActualPriceRaw(candidate, t) },
+    { key: 'api_key_subscription_expiry_urgency', label: t('details.scores.components.subscriptionExpiryUrgency'), value: scoreBreakdown?.api_key_subscription_expiry_urgency, raw: subscriptionExpiryRaw, visible: subscriptionExpiryRaw !== undefined },
+    { key: 'api_key_subscription_expiry_rescue_bonus', label: t('details.scores.components.subscriptionExpiryRescueBonus'), value: scoreBreakdown?.api_key_subscription_expiry_rescue_bonus, raw: subscriptionExpiryRaw, visible: subscriptionExpiryRaw !== undefined },
+    { key: 'automatic_anomaly_penalty', label: t('details.scores.components.automaticAnomalyPenalty'), value: scoreBreakdown?.automatic_anomaly_penalty, raw: formatAutomaticAnomalyRaw(candidate, t), visible: candidate.automatic_anomaly?.active === true },
+    { key: 'manual_score_adjustment', label: t('details.scores.components.manualScoreAdjustment'), value: scoreBreakdown?.manual_score_adjustment },
+  ] as ScoreBreakdownItem[]).filter(({ value, visible = true }) => typeof value === 'number' && visible)
+}
+
+function scoreBreakdownColumns(rows: CandidateScoreRow[]) {
+  const columns: ScoreBreakdownItem[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    for (const item of row.breakdown) {
+      if (seen.has(item.key)) continue
+      seen.add(item.key)
+      columns.push(item)
+    }
+  }
+  return columns
 }
 
 function formatScoreRate(value?: number | null) {
@@ -331,6 +558,25 @@ function formatActualPriceRaw(candidate: RouteCandidateItem, t: TFunction) {
     parts.push(t('details.scores.raw.actualPriceCacheReadRatio', { value: `${candidate.pricing.cache_read_ratio}x` }))
   }
   return parts.join(',')
+}
+
+function formatAutomaticAnomalyRaw(candidate: RouteCandidateItem, t: TFunction) {
+  const metrics = candidate.automatic_anomaly?.metrics ?? []
+  return metrics.map((metric) => {
+    if (metric.metric === 'first_byte_latency') {
+      return t('details.scores.raw.automaticAnomalyFirstByte', {
+        recent: formatScoreLatency(metric.recent_value),
+        baseline: formatScoreLatency(metric.baseline_value),
+      })
+    }
+    if (metric.metric === 'cache_hit_rate') {
+      return t('details.scores.raw.automaticAnomalyCache', {
+        recent: formatScoreRate(metric.recent_value),
+        baseline: formatScoreRate(metric.baseline_value),
+      })
+    }
+    return metric.metric
+  }).join(',')
 }
 
 function modelFirstByteLatencyInput(candidate: RouteCandidateItem) {
