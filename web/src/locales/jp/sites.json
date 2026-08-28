@@ -127,6 +127,9 @@
       "xlyraApiKeyHint": "/v1/models からこのキーで利用可能なモデルを取得します。",
       "routingPriority": "ルーティング重み",
       "routingPriorityHint": "デフォルト 1.0、範囲 1.0 - 5.0。重みが高いほど優先的にルーティングされます。",
+      "maxConcurrency": "最大同時リクエスト数",
+      "maxConcurrencyHint": "空欄で無制限。このサイトの同時リクエスト数を超えると、ルーティング優先度に従って次の経路を試します。",
+      "maxConcurrencyPlaceholder": "無制限",
       "maxSameSiteCredentialRetries": "同一サイト Credential 再試行回数",
       "maxSameSiteCredentialRetriesHint": "空欄で全体設定を継承し、0 を入力するとこのサイトでは同一サイト再試行を無効にします。",
       "firstByteTimeout": "サイトの最初のバイトのタイムアウト（ms）",
@@ -197,7 +200,8 @@
       "headerNameRequired": "ヘッダー名を入力してください",
       "urlContainsV1": "/v1 を含める必要はありません。自動的に追加されます",
       "gatewayRetriesInvalid": "同一サイト Credential 再試行回数は 0〜20 の整数にしてください",
-      "gatewayTimeoutInvalid": "サイトの最初のバイトのタイムアウトは 0〜600000 の整数にしてください"
+      "gatewayTimeoutInvalid": "サイトの最初のバイトのタイムアウトは 0〜600000 の整数にしてください",
+      "maxConcurrencyInvalid": "最大同時リクエスト数は正の整数にしてください"
     },
     "actions": {
       "save": "変更を保存",

@@ -96,6 +96,12 @@ func sameSiteCredentialRetryable(result gatewayAttemptResult) bool {
 	if result.success || result.responseStarted {
 		return false
 	}
+	// Local concurrency limits are a routing signal: retrying another
+	// credential on the same site would not increase the available capacity.
+	switch result.errorType {
+	case "site_concurrency_limited", "model_concurrency_limited", "upstream_concurrency_wait_timeout":
+		return false
+	}
 	if result.errorType == "upstream_http_error" {
 		return result.upstreamStatusCode >= http.StatusInternalServerError || result.statusCode >= http.StatusInternalServerError
 	}

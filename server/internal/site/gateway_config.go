@@ -26,6 +26,7 @@ type GatewayConfig struct {
 	FirstByteTimeoutMS                *int     `json:"first_byte_timeout_ms,omitempty"`
 	ClearMaxSameSiteCredentialRetries bool     `json:"-"`
 	ClearFirstByteTimeoutMS           bool     `json:"-"`
+	ClearMaxConcurrency               bool     `json:"-"`
 	MaxConcurrency                    *int     `json:"max_concurrency,omitempty"`
 	MaxModelConcurrency               *int     `json:"max_model_concurrency,omitempty"`
 	MaxCredentialConcurrency          *int     `json:"max_credential_concurrency,omitempty"`
@@ -289,6 +290,9 @@ func mergeGatewayConfig(existing *GatewayConfig, patch *GatewayConfig) *GatewayC
 		if patch.ClearFirstByteTimeoutMS {
 			merged.FirstByteTimeoutMS = nil
 		}
+		if patch.ClearMaxConcurrency {
+			merged.MaxConcurrency = nil
+		}
 		return &merged
 	}
 	merged := *existing
@@ -315,6 +319,9 @@ func mergeGatewayConfig(existing *GatewayConfig, patch *GatewayConfig) *GatewayC
 	}
 	if patch.MaxConcurrency != nil {
 		merged.MaxConcurrency = patch.MaxConcurrency
+	}
+	if patch.ClearMaxConcurrency {
+		merged.MaxConcurrency = nil
 	}
 	if patch.MaxModelConcurrency != nil {
 		merged.MaxModelConcurrency = patch.MaxModelConcurrency

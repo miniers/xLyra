@@ -79,6 +79,7 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
       xlyraAuthMode: z.enum(['access_token', 'api_key']),
       xlyraAccessToken: z.string().trim(),
       routingPriority: z.string().trim(),
+      maxConcurrency: z.string().trim(),
       maxSameSiteCredentialRetries: z.string().trim(),
       firstByteTimeoutMS: z.string().trim(),
       enabled: z.boolean(),
@@ -190,6 +191,14 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
           message: t('form.validation.priorityRange'),
         })
       }
+
+      if (value.maxConcurrency && (!/^\d+$/.test(value.maxConcurrency) || !Number.isSafeInteger(Number(value.maxConcurrency)) || Number(value.maxConcurrency) <= 0)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['maxConcurrency'],
+          message: t('form.validation.maxConcurrencyInvalid'),
+        })
+      }
     })
 }
 
@@ -221,6 +230,7 @@ const defaultValues: CreateSiteFormValues = {
   xlyraAuthMode: 'api_key',
   xlyraAccessToken: '',
   routingPriority: '1.0',
+  maxConcurrency: '',
   maxSameSiteCredentialRetries: '',
   firstByteTimeoutMS: '',
   enabled: true,
@@ -286,6 +296,7 @@ function formValuesFromSite(site?: Site | null): CreateSiteFormValues {
     xlyraAuthMode: site.auth_config?.xlyra?.auth_mode ?? 'api_key',
     xlyraAccessToken: site.auth_config?.xlyra?.access_token ?? '',
     routingPriority: formatRoutingPriorityInput(site.routing_priority),
+    maxConcurrency: site.gateway_config?.max_concurrency == null ? '' : String(site.gateway_config.max_concurrency),
     maxSameSiteCredentialRetries: site.gateway_config?.max_same_site_credential_retries == null ? '' : String(site.gateway_config.max_same_site_credential_retries),
     firstByteTimeoutMS: site.gateway_config?.first_byte_timeout_ms == null ? '' : String(site.gateway_config.first_byte_timeout_ms),
     enabled: site.enabled,
@@ -552,6 +563,7 @@ export function SiteCreateSheet({
   const newapiUserIdField = register('newapiUserId')
   const xlyraAccessTokenField = register('xlyraAccessToken')
   const routingPriorityField = register('routingPriority')
+  const maxConcurrencyField = register('maxConcurrency')
   const showV1Hint = (baseUrl ?? '').trim().length > 0 && /\/v1\/?$/.test((baseUrl ?? '').trim())
 
   const currentCredType = credentialTypeOf(siteType, siteTypes)
@@ -695,6 +707,9 @@ export function SiteCreateSheet({
     const slug = initialSite?.slug ?? (toSlug(values.name) || toSlug(values.baseUrl) || 'site')
     const credType = credentialTypeOf(values.siteType, siteTypes)
     const selectedProxyID = values.proxyId
+    const maxConcurrencyValue = values.maxConcurrency.trim()
+    const maxConcurrency = maxConcurrencyValue ? Number(maxConcurrencyValue) : undefined
+    const shouldSendGatewayConfig = values.siteType !== 'grok' || Boolean(maxConcurrencyValue) || initialSite?.gateway_config?.max_concurrency != null
     const sameSiteRetriesValue = values.maxSameSiteCredentialRetries.trim()
     const firstByteTimeoutValue = values.firstByteTimeoutMS.trim()
     const sameSiteRetries = sameSiteRetriesValue ? Number(sameSiteRetriesValue) : undefined
@@ -705,6 +720,10 @@ export function SiteCreateSheet({
     }
     if (firstByteTimeoutValue && (firstByteTimeoutMS == null || !/^\d+$/.test(firstByteTimeoutValue) || !Number.isInteger(firstByteTimeoutMS) || firstByteTimeoutMS < 0 || firstByteTimeoutMS > 600000)) {
       toast.error(t('form.validation.gatewayTimeoutInvalid'))
+      return
+    }
+    if (maxConcurrencyValue && (maxConcurrency == null || !/^\d+$/.test(maxConcurrencyValue) || !Number.isSafeInteger(maxConcurrency) || maxConcurrency <= 0)) {
+      toast.error(t('form.validation.maxConcurrencyInvalid'))
       return
     }
 
@@ -736,12 +755,14 @@ export function SiteCreateSheet({
             }
           : undefined,
       requestHeaders: values.requestHeaders.filter((h) => h.key.trim()),
-      gateway: values.siteType === 'grok'
+      gateway: !shouldSendGatewayConfig
         ? undefined
         : {
+            maxConcurrency,
             responsesToolPolicy: values.responsesToolPolicy,
             maxSameSiteCredentialRetries: sameSiteRetries,
             firstByteTimeoutMs: firstByteTimeoutMS,
+            clearMaxConcurrency: !maxConcurrencyValue,
             clearMaxSameSiteCredentialRetries: !sameSiteRetriesValue,
             clearFirstByteTimeoutMs: !firstByteTimeoutValue,
             disabledResponsesTools:
@@ -1059,6 +1080,19 @@ export function SiteCreateSheet({
                     step="0.1"
                     placeholder="1.0"
                     {...routingPriorityField}
+                  />
+                </FormField>
+
+                <FormField
+                  label={t('form.fields.maxConcurrency')}
+                  hint={t('form.fields.maxConcurrencyHint')}
+                  error={errors.maxConcurrency?.message}
+                >
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder={t('form.fields.maxConcurrencyPlaceholder')}
+                    {...maxConcurrencyField}
                   />
                 </FormField>
 

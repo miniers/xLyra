@@ -136,6 +136,24 @@ func TestCooldownInputForFailureSkipsLocalConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestSiteConcurrencyLimitIsEligibleForNextRouteButNotRateLimitWait(t *testing.T) {
+	t.Parallel()
+
+	result := gatewayAttemptResult{
+		statusCode: http.StatusServiceUnavailable,
+		errorType:  "site_concurrency_limited",
+	}
+	if result.success || result.responseStarted == true {
+		t.Fatal("site concurrency failure should be unstarted")
+	}
+	if upstreamRateLimitWaitable(routeengine.Candidate{Site: routeengine.CandidateSite{SiteType: "openai"}}, result) {
+		t.Fatal("local site concurrency exhaustion must not enter upstream 429 wait")
+	}
+	if _, ok := cooldownInputForFailure(routeengine.Candidate{}, result); ok {
+		t.Fatal("local site concurrency exhaustion must not activate cooldown")
+	}
+}
+
 func TestCooldownInputForFailureSkipsModelAndCredentialConcurrencyLimit(t *testing.T) {
 	t.Parallel()
 

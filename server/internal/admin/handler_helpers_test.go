@@ -28,6 +28,7 @@ func TestSiteGatewayRequestToConfigPreservesFields(t *testing.T) {
 		ImpersonateCodexClient:            &impersonateCodex,
 		ClearMaxSameSiteCredentialRetries: true,
 		ClearFirstByteTimeoutMS:           true,
+		ClearMaxConcurrency:               true,
 	}
 	cfg := req.toSiteGatewayConfig()
 	if cfg == nil || cfg.RequestTimeoutMS == nil || *cfg.RequestTimeoutMS != timeout {
@@ -41,6 +42,9 @@ func TestSiteGatewayRequestToConfigPreservesFields(t *testing.T) {
 	}
 	if !cfg.ClearMaxSameSiteCredentialRetries || !cfg.ClearFirstByteTimeoutMS {
 		t.Fatalf("gateway clear flags were not preserved: %#v", cfg)
+	}
+	if !cfg.ClearMaxConcurrency {
+		t.Fatalf("max concurrency clear flag was not preserved: %#v", cfg)
 	}
 }
 

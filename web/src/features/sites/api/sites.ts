@@ -532,8 +532,10 @@ export type SiteUpsertInput = {
   }
   requestHeaders?: { key: string; value: string }[]
   gateway?: {
+    maxConcurrency?: number
     maxSameSiteCredentialRetries?: number
     firstByteTimeoutMs?: number
+    clearMaxConcurrency?: boolean
     clearMaxSameSiteCredentialRetries?: boolean
     clearFirstByteTimeoutMs?: boolean
     responsesToolPolicy?: ResponsesToolPolicy
@@ -696,9 +698,11 @@ function siteUpsertBody(input: SiteUpsertInput) {
     request_headers: input.requestHeaders?.map((h) => ({ key: h.key, value: h.value })),
     gateway: input.gateway
       ? {
+          max_concurrency: input.gateway.maxConcurrency,
           max_same_site_credential_retries:
             input.gateway.maxSameSiteCredentialRetries,
           first_byte_timeout_ms: input.gateway.firstByteTimeoutMs,
+          clear_max_concurrency: input.gateway.clearMaxConcurrency,
           clear_max_same_site_credential_retries:
             input.gateway.clearMaxSameSiteCredentialRetries,
           clear_first_byte_timeout_ms: input.gateway.clearFirstByteTimeoutMs,

@@ -88,6 +88,9 @@ func TestSameSiteCredentialRetryableOnlyRetriesPreOutputTransientFailures(t *tes
 		{name: "client error", result: gatewayAttemptResult{errorType: "upstream_http_error", upstreamStatusCode: 400}, want: false},
 		{name: "after output", result: gatewayAttemptResult{errorType: "upstream_transport_error", responseStarted: true}, want: false},
 		{name: "success", result: gatewayAttemptResult{success: true}, want: false},
+		{name: "site concurrency limit", result: gatewayAttemptResult{errorType: "site_concurrency_limited", statusCode: 503}, want: false},
+		{name: "model concurrency limit", result: gatewayAttemptResult{errorType: "model_concurrency_limited", statusCode: 503}, want: false},
+		{name: "concurrency wait timeout", result: gatewayAttemptResult{errorType: "upstream_concurrency_wait_timeout", statusCode: 504}, want: false},
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {

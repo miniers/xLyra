@@ -28,4 +28,33 @@ describe('updateSite', () => {
     const [, request] = fetchMock.mock.calls[0]
     expect(JSON.parse(request.body)).toMatchObject({ request_headers: [] })
   })
+
+  it('sends the site concurrency limit and clear flag in the gateway payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ site: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await updateSite('site-1', {
+      name: 'Example',
+      slug: 'example',
+      siteType: 'openai',
+      baseUrl: 'https://example.com',
+      enabled: true,
+      routingPriority: 1,
+      gateway: {
+        maxConcurrency: 4,
+        clearMaxConcurrency: false,
+      },
+    })
+
+    const [, request] = fetchMock.mock.calls[0]
+    expect(JSON.parse(request.body).gateway).toMatchObject({
+      max_concurrency: 4,
+      clear_max_concurrency: false,
+    })
+  })
 })
