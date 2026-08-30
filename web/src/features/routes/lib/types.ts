@@ -33,6 +33,7 @@ export type RouteChannelRow = {
   current?: boolean
   cooling?: boolean
   candidate?: RouteCandidateItem
+  locked?: boolean
   pricing?: CanonicalModelMatrixRow['pricing'][number] | RouteCandidateItem['pricing']
   enabled: boolean
   routable: boolean

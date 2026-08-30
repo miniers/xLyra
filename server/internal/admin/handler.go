@@ -138,6 +138,13 @@ type routeSelectionRequest struct {
 	FailoverLimit       int         `json:"failover_limit"`
 }
 
+type routeLockRequest struct {
+	SiteModelID uuid.UUID  `json:"site_model_id"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	Policy      string     `json:"policy"`
+	Reason      string     `json:"reason"`
+}
+
 type routeCooldownRequest struct {
 	SiteID           uuid.UUID  `json:"site_id"`
 	SiteModelID      *uuid.UUID `json:"site_model_id"`

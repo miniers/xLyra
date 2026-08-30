@@ -17,7 +17,9 @@
     },
     "gateway": {
       "title": "网关 Failover",
-      "description": "配置同站点 credential 重试和首字超时。0 表示不启用该项。",
+      "description": "配置会话粘性、同站点 credential 重试和首字超时。0 表示不启用该项。",
+      "sessionAffinity": "会话粘性",
+      "sessionAffinityDesc": "同一会话优先复用最近成功的路由，以提高上游缓存命中率。关闭后恢复普通路由顺序。",
       "sameSiteRetries": "同站 credential 重试次数",
       "sameSiteRetriesDesc": "仅对尚未向下游输出的传输、超时和 5xx 失败生效，范围 0 到 20。",
       "firstByteTimeout": "全局首字超时（毫秒）",

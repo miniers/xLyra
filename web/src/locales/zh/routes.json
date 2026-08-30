@@ -48,6 +48,10 @@
       "temporaryScoreAdjustFailed": "临时评分调整失败",
       "preferenceUpdated": "评分偏好已更新",
       "preferenceUpdateFailed": "评分偏好更新失败",
+      "routingLockUpdated": "上游渠道锁定已更新",
+      "routingLockUpdateFailed": "上游渠道锁定更新失败",
+      "routingLockRemoved": "上游渠道锁定已解除",
+      "routingLockRemoveFailed": "上游渠道锁定解除失败",
       "expiryRescueUpdated": "订阅到期抢救加分已更新",
       "expiryRescueUpdateFailed": "订阅到期抢救加分更新失败",
       "explorationUpdated": "试运行配置已更新",
@@ -125,6 +129,27 @@
       "speed": "速度",
       "expiryRescue": "开启订阅到期抢救加分",
       "expiryRescueDescription": "剩余 3 天内提高候选分数，优先消耗即将过期的订阅额度。"
+    },
+    "lock": {
+      "title": "上游渠道锁定",
+      "description": "将该模型固定到一个站点模型，优先消耗限时额度。严格模式不可跨渠道；回退模式仅在请求尚未返回数据时允许切换。",
+      "target": "锁定站点模型",
+      "targetUnavailable": "目标当前不可用",
+      "expiresAt": "截止时间（留空为长期）",
+      "reason": "备注（可选）",
+      "save": "保存锁定",
+      "remove": "解除锁定",
+      "pinChannel": "临时置顶此渠道",
+      "lockChannel": "锁定此渠道",
+      "pinned": "已置顶",
+      "locked": "已锁定",
+      "remaining": "剩余 {{duration}}",
+      "unlimited": "长期有效",
+      "policy": {
+        "title": "策略",
+        "strict": "严格锁定",
+        "fallback": "允许回退"
+      }
     },
     "exploration": {
       "title": "配额试运行",

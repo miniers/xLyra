@@ -154,6 +154,7 @@ func TestApplyRowToModelRestoresTypedFields(t *testing.T) {
 func TestBackupTablesIncludeRequestUsageSummaries(t *testing.T) {
 	dailySummary := "request_usage_daily_summaries"
 	summaryDays := "request_usage_summary_days"
+	routeLocks := "route_locks"
 
 	if !stringSliceContains(exportTables, dailySummary) || !stringSliceContains(exportTables, summaryDays) {
 		t.Fatalf("expected summary tables in export list: %#v", exportTables)
@@ -163,6 +164,12 @@ func TestBackupTablesIncludeRequestUsageSummaries(t *testing.T) {
 	}
 	if _, ok := backupTableByName(summaryDays); !ok {
 		t.Fatalf("expected backup table %s to be registered", summaryDays)
+	}
+	if !stringSliceContains(exportTables, routeLocks) {
+		t.Fatalf("expected route lock table in export list: %#v", exportTables)
+	}
+	if _, ok := backupTableByName(routeLocks); !ok {
+		t.Fatalf("expected backup table %s to be registered", routeLocks)
 	}
 	playgroundFirst := []string{"playground_assets", "playground_turn_indexes", "playground_runs", "playground_conversations"}
 	if len(importDeleteOrder) < len(playgroundFirst)+2 {

@@ -9,7 +9,27 @@ import (
 	"xlyra/server/internal/httpx"
 	"xlyra/server/internal/ratelimit"
 	routeengine "xlyra/server/internal/router"
+	"xlyra/server/internal/store"
 )
+
+func TestAttemptMetadataIncludesRouteLockContext(t *testing.T) {
+	t.Parallel()
+
+	lock := &store.RouteLock{
+		ID:          uuid.MustParse("66666666-6666-6666-6666-666666666666"),
+		SiteModelID: uuid.MustParse("77777777-7777-7777-7777-777777777777"),
+		Policy:      store.RouteLockPolicyFallback,
+	}
+	ctx := withRouteLockMetadata(context.Background(), lock, true)
+	metadata := attemptMetadata(ctx, "req-lock", "req-lock", uuid.Nil, uuid.Nil, routeengine.Candidate{}, gatewayAttemptResult{})
+	routingLock, ok := metadata["routing_lock"].(map[string]any)
+	if !ok {
+		t.Fatalf("routing_lock metadata = %#v, want object", metadata["routing_lock"])
+	}
+	if routingLock["id"] != lock.ID.String() || routingLock["target_site_model_id"] != lock.SiteModelID.String() || routingLock["policy"] != store.RouteLockPolicyFallback || routingLock["fallback_engaged"] != true {
+		t.Fatalf("routing_lock metadata = %#v", routingLock)
+	}
+}
 
 func TestAttemptMetadataIncludesNormalizedGatewayFields(t *testing.T) {
 	t.Parallel()

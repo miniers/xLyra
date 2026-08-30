@@ -33,13 +33,17 @@ import {
   adjustRouteScore,
   clearRouteAnomaly,
   clearRouteCooldown,
+  deleteModelRoutingLock,
+  updateModelRoutingLock,
   listRouteCandidates,
   listRouteCooldowns,
   listRoutes,
   listRouteTraces,
   routeQueryKeys,
   selectRoute,
+  temporaryRouteLockExpiresAt,
   type RouteCooldown,
+  type RouteLockPolicy,
   type RouteOverviewItem,
   type RouteScoreAdjustmentDirection,
 } from '@/features/routes/api/routes'
@@ -126,7 +130,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     queryFn: async () => {
       const entries = await Promise.all(
         sites.map(async (site) => {
-          if (!isNewAPISite(site.site_type)) return [site.id, []] as const
+          if (site.supports_multiple_api_keys !== true && !isNewAPISite(site.site_type)) return [site.id, []] as const
           const result = await listSiteAPIKeys(site.id)
           return [site.id, result.items] as const
         }),
@@ -175,6 +179,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
       failoverLimit: 3,
     }),
     enabled: Boolean(activeModelKey),
+    refetchInterval: 30_000,
   })
   const candidatesQuery = useQuery({
     queryKey: routeQueryKeys.candidates({
@@ -183,6 +188,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     }),
     queryFn: () => listRouteCandidates(activeModelKey, { debug: true }),
     enabled: Boolean(activeModelKey),
+    refetchInterval: 30_000,
   })
   const tracesQuery = useQuery({
     queryKey: routeQueryKeys.traces({
@@ -297,6 +303,42 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     },
   })
 
+  const routingLockMutation = useMutation({
+    mutationFn: ({
+      modelId,
+      siteModelId,
+      expiresAt,
+      policy,
+      reason,
+    }: {
+      modelId: string
+      siteModelId: string
+      expiresAt?: string | null
+      policy?: RouteLockPolicy
+      reason?: string
+    }) => updateModelRoutingLock({ modelId, siteModelId, expiresAt, policy, reason }),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.routingLock(variables.modelId) })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.routingLockUpdated'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.routingLockUpdateFailed'), { description: error.message })
+    },
+  })
+
+  const routingLockDeleteMutation = useMutation({
+    mutationFn: deleteModelRoutingLock,
+    onSuccess: async (_data, modelId) => {
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.routingLock(modelId) })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.routingLockRemoved'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.routingLockRemoveFailed'), { description: error.message })
+    },
+  })
+
   const routingExpiryRescueMutation = useMutation({
     mutationFn: ({ modelId, enabled }: { modelId: string; enabled: boolean }) =>
       updateCanonicalModelRoutingExpiryRescue(modelId, enabled),
@@ -393,6 +435,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
         scoreAdjustingSiteModelId={adjustScoreMutation.isPending ? adjustScoreMutation.variables?.siteModelId : undefined}
         scoreAdjustingDirection={adjustScoreMutation.isPending ? adjustScoreMutation.variables?.direction : undefined}
         routingPreferencePending={routingPreferenceMutation.isPending}
+        routingLockPending={routingLockMutation.isPending || routingLockDeleteMutation.isPending}
         routingExpiryRescuePending={routingExpiryRescueMutation.isPending}
         routingExplorationPending={routingExplorationMutation.isPending || routingExplorationResetMutation.isPending}
         pendingChannelState={pendingChannelState}
@@ -424,6 +467,25 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
         onRoutingPreferenceChange={(preference) => {
           const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
           if (modelId) routingPreferenceMutation.mutate({ modelId, preference })
+        }}
+        onRoutingLockChange={(input) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingLockMutation.mutate({ modelId, ...input })
+        }}
+        onRoutingLockChannel={(siteModelId) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) {
+            routingLockMutation.mutate({
+              modelId,
+              siteModelId,
+              expiresAt: temporaryRouteLockExpiresAt(),
+              policy: 'fallback',
+            })
+          }
+        }}
+        onRoutingLockDelete={() => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingLockDeleteMutation.mutate(modelId)
         }}
         onRoutingExpiryRescueChange={(enabled) => {
           const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id

@@ -278,6 +278,20 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("ensure route_exploration_states table: %w", err)
 		}
 	}
+	if !migrator.HasTable(&RouteLock{}) {
+		if err := migrator.CreateTable(&RouteLock{}); err != nil {
+			return fmt.Errorf("ensure route_locks table: %w", err)
+		}
+	}
+	for _, index := range []string{
+		"route_locks_canonical_model_idx",
+		"route_locks_site_model_idx",
+		"route_locks_expires_at_idx",
+	} {
+		if err := ensureSchemaIndex(migrator, &RouteLock{}, index); err != nil {
+			return err
+		}
+	}
 	if err := ensureSchemaIndex(migrator, &RouteExplorationState{}, "route_exploration_states_model_idx"); err != nil {
 		return err
 	}
@@ -733,6 +747,7 @@ func bootstrapModels() []any {
 		&SitePricingGroup{},
 		&SiteModelPricing{},
 		&RouteCooldown{},
+		&RouteLock{},
 		&RouteExplorationState{},
 		&RouteAnomalyState{},
 		&RouteScoreAdjustment{},

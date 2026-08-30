@@ -32,6 +32,9 @@ func TestDefaultGeneralConfigMatchesMapRoundTrip(t *testing.T) {
 	if cfg.Security.SessionLifetimeHours != 24 {
 		t.Fatalf("unexpected session lifetime: %d", cfg.Security.SessionLifetimeHours)
 	}
+	if !cfg.Gateway.SessionAffinityEnabled {
+		t.Fatal("session affinity should default to enabled")
+	}
 
 	roundTrip := GeneralConfigFromRaw(GeneralConfigToMap(cfg))
 	if !reflect.DeepEqual(roundTrip, cfg) {
@@ -89,6 +92,11 @@ func TestGeneralConfigFromRawParsesSupportedTypesAndNormalizes(t *testing.T) {
 		"security": map[string]any{
 			"session_lifetime_hours": 48,
 		},
+		"gateway": map[string]any{
+			"session_affinity_enabled":         false,
+			"max_same_site_credential_retries": 4,
+			"first_byte_timeout_ms":            1500,
+		},
 	})
 
 	if cfg.Tasks.SiteRefreshCron != "*/15  1-2  * 1,12 0-7" {
@@ -111,6 +119,9 @@ func TestGeneralConfigFromRawParsesSupportedTypesAndNormalizes(t *testing.T) {
 	}
 	if cfg.Security.SessionLifetimeHours != 48 {
 		t.Fatalf("unexpected security config: %#v", cfg.Security)
+	}
+	if cfg.Gateway.SessionAffinityEnabled || cfg.Gateway.MaxSameSiteCredentialRetries != 4 || cfg.Gateway.FirstByteTimeoutMS != 1500 {
+		t.Fatalf("unexpected gateway config: %#v", cfg.Gateway)
 	}
 }
 

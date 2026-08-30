@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, Minus, Plus, RotateCcw, Save, Timer, XCircle } from 'lucide-react'
+import { LoaderCircle, LockKeyhole, Minus, Plus, RotateCcw, Save, Timer, Unlock, XCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,9 +14,14 @@ import { cn } from '@/lib/utils'
 import {
   listRouteCandidates,
   listRouteTraces,
+  getModelRoutingLock,
+  routeQueryKeys,
   selectRoute,
+  temporaryRouteLockExpiresAt,
   type RouteCandidateItem,
   type RouteCooldown,
+  type RouteLock,
+  type RouteLockPolicy,
   type RouteOverviewItem,
   type RouteScoreAdjustmentDirection,
   type RouteScoreProfile,
@@ -68,6 +73,10 @@ export function RouteModelDetails({
   onAdjustScore,
   onRoutingPreferenceChange,
   routingPreferencePending = false,
+  onRoutingLockChange,
+  onRoutingLockChannel,
+  onRoutingLockDelete,
+  routingLockPending = false,
   onRoutingExpiryRescueChange,
   routingExpiryRescuePending = false,
   onRoutingExplorationChange,
@@ -97,6 +106,10 @@ export function RouteModelDetails({
   onAdjustScore: (candidate: RouteCandidateItem, direction: RouteScoreAdjustmentDirection) => void
   onRoutingPreferenceChange?: (preference: RoutingPreference) => void
   routingPreferencePending?: boolean
+  onRoutingLockChange?: (input: { siteModelId: string; expiresAt?: string | null; policy?: RouteLockPolicy; reason?: string }) => void
+  onRoutingLockChannel?: (siteModelId: string) => void
+  onRoutingLockDelete?: () => void
+  routingLockPending?: boolean
   onRoutingExpiryRescueChange?: (enabled: boolean) => void
   routingExpiryRescuePending?: boolean
   onRoutingExplorationChange?: (config: Omit<RoutingExplorationConfig, 'reset_at'>) => void
@@ -111,6 +124,12 @@ export function RouteModelDetails({
   const currentExpiryRescueEnabled = canonical?.routing_expiry_rescue_enabled
     ?? selectionQuery.data?.canonical_model.routing_expiry_rescue_enabled
     ?? false
+  const routingLockQuery = useQuery({
+    queryKey: routeQueryKeys.routingLock(modelId),
+    queryFn: () => getModelRoutingLock(modelId),
+    enabled: Boolean(modelId),
+    refetchInterval: 30_000,
+  })
   const matrixQuery = useQuery({
     queryKey: [...sitesQueryKeys.all, 'routes-matrix', modelId],
     queryFn: () => getCanonicalModelMatrix(modelId),
@@ -125,6 +144,11 @@ export function RouteModelDetails({
     cooldowns,
   )
   const currentChannel = findCurrentRouteChannel(channelRows, selectionQuery.data?.selected)
+  const routingLock = routingLockQuery.data
+    ? routingLockQuery.data.routing_lock
+    : selectionQuery.data?.canonical_model.routing_lock
+      ?? candidatesQuery.data?.canonical_model.routing_lock
+      ?? null
 
   return (
     <div className={cn('border-t border-[hsl(var(--glass-divider))] pb-4 pt-3', compact ? 'px-3' : 'px-4')}>
@@ -157,6 +181,15 @@ export function RouteModelDetails({
               onRescueChange={onRoutingExpiryRescueChange}
               t={t}
             />
+            <RoutingLockSection
+              key={`${modelId}:${routingLock?.id ?? 'none'}:${routingLock?.site_model_id ?? ''}:${routingLock?.expires_at ?? ''}:${routingLock?.policy ?? ''}`}
+              lock={routingLock}
+              rows={channelRows}
+              disabled={!onRoutingLockChange || routingLockPending}
+              onChange={onRoutingLockChange}
+              onDelete={onRoutingLockDelete}
+              t={t}
+            />
             <RoutingExplorationSection
               key={`${modelId}:${canonical?.routing_exploration?.reset_at ?? ''}:${canonical?.routing_exploration?.enabled ?? ''}`}
               config={canonical?.routing_exploration ?? selectionQuery.data?.canonical_model.routing_exploration}
@@ -185,6 +218,8 @@ export function RouteModelDetails({
               error={matrixQuery.isError ? matrixQuery.error.message : undefined}
               pendingChannelState={pendingChannelState}
               onToggleChannel={onToggleChannel}
+              lockedSiteModelId={routingLock?.site_model_id}
+              onLockChannel={onRoutingLockChannel}
               t={t}
             />
           </div>
@@ -426,6 +461,12 @@ function CandidateScoreTable({
                   <span className="min-w-0 truncate font-medium text-foreground" title={candidate.site.name}>
                     {candidate.site.name}
                   </span>
+                  {candidate.locked ? (
+                    <Badge variant="accent" className="gap-1 px-2 py-0.5 text-[11px]">
+                      <LockKeyhole className="h-3 w-3" aria-hidden="true" />
+                      {t('details.lock.pinned')}
+                    </Badge>
+                  ) : null}
                   {cooldown ? (
                     <Badge variant="warning" className="gap-1 px-2 py-0.5 text-[11px]" title={cooldownHint}>
                       <Timer className="h-3 w-3" aria-hidden="true" />
@@ -671,6 +712,141 @@ function RoutingPreferenceSection({
   )
 }
 
+function RoutingLockSection({
+  lock,
+  rows,
+  disabled,
+  onChange,
+  onDelete,
+  t,
+}: {
+  lock: RouteLock | null
+  rows: RouteChannelRow[]
+  disabled: boolean
+  onChange?: (input: { siteModelId: string; expiresAt?: string | null; policy?: RouteLockPolicy; reason?: string }) => void
+  onDelete?: () => void
+  t: TFunction
+}) {
+  const targetRows = rows.filter((row, index) => rows.findIndex((item) => item.siteModelId === row.siteModelId) === index)
+  const [siteModelId, setSiteModelId] = useState(lock?.site_model_id ?? '')
+  const [expiresAt, setExpiresAt] = useState(
+    lock ? toDateTimeLocal(lock.expires_at) : toDateTimeLocal(temporaryRouteLockExpiresAt()),
+  )
+  const [policy, setPolicy] = useState<RouteLockPolicy>(lock?.policy ?? 'fallback')
+  const [reason, setReason] = useState(lock?.reason ?? '')
+
+  function submit() {
+    if (!siteModelId || !onChange) return
+    onChange({
+      siteModelId,
+      expiresAt: dateTimeLocalToISO(expiresAt),
+      policy,
+      reason: reason.trim() || undefined,
+    })
+  }
+
+  const target = targetRows.find((row) => row.siteModelId === siteModelId)
+  const targetRoutable = rows.some((row) => row.siteModelId === siteModelId && row.routable)
+  const targetLabel = target
+    ? `${target.siteName} → ${target.upstreamName}`
+    : lock?.target
+      ? `${lock.target.site_name} → ${lock.target.display_name || lock.target.upstream_model_name}`
+      : lock?.site_model_id
+  const targetUnavailable = Boolean(lock && (!target || !targetRoutable))
+  const remaining = lock?.expires_at ? formatRemainingDuration(lock.remaining_seconds, t) : undefined
+
+  return (
+    <div className="space-y-3 rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <LockKeyhole className="h-4 w-4 text-[hsl(var(--accent))]" />
+            {t('details.lock.title')}
+            {lock ? <Badge variant="accent">{t(`details.lock.policy.${lock.policy}`)}</Badge> : null}
+          </div>
+          <div className="mt-1 text-xs text-muted-soft">{t('details.lock.description')}</div>
+        </div>
+        {lock ? (
+          <div className="flex items-center gap-2 text-xs text-muted-soft">
+            <span>{targetLabel}</span>
+            {targetUnavailable ? <Badge variant="warning">{t('details.lock.targetUnavailable')}</Badge> : null}
+            <span>{remaining ? t('details.lock.remaining', { duration: remaining }) : t('details.lock.unlimited')}</span>
+          </div>
+        ) : null}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <Select value={siteModelId} onValueChange={setSiteModelId} disabled={disabled || (!lock && targetRows.length === 0)}>
+          <SelectTrigger aria-label={t('details.lock.target')}>
+            <SelectValue placeholder={t('details.lock.target')} />
+          </SelectTrigger>
+          <SelectContent searchable={false} widthMode="content">
+            {lock && !target ? (
+              <SelectItem value={lock.site_model_id}>
+                {targetLabel}
+              </SelectItem>
+            ) : null}
+            {targetRows.map((row) => (
+              <SelectItem key={row.siteModelId} value={row.siteModelId}>
+                {row.siteName} → {row.upstreamName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={policy} onValueChange={(value) => setPolicy(value as RouteLockPolicy)} disabled={disabled}>
+          <SelectTrigger aria-label={t('details.lock.policy.title')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent searchable={false} widthMode="content">
+            <SelectItem value="strict">{t('details.lock.policy.strict')}</SelectItem>
+            <SelectItem value="fallback">{t('details.lock.policy.fallback')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="datetime-local"
+          value={expiresAt}
+          onChange={(event) => setExpiresAt(event.target.value)}
+          disabled={disabled}
+          aria-label={t('details.lock.expiresAt')}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder={t('details.lock.reason')}
+          disabled={disabled}
+          className="min-w-48 flex-1"
+          maxLength={500}
+        />
+        <Button type="button" size="sm" variant="outline" onClick={submit} disabled={disabled || !siteModelId || !onChange}>
+          {disabled ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {t('details.lock.save')}
+        </Button>
+        {lock ? (
+          <Button type="button" size="sm" variant="ghost" onClick={onDelete} disabled={disabled || !onDelete}>
+            <Unlock className="h-4 w-4" />
+            {t('details.lock.remove')}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function toDateTimeLocal(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (item: number) => String(item).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function dateTimeLocalToISO(value: string) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
 const DEFAULT_EXPLORATION_CONFIG: Omit<RoutingExplorationConfig, 'reset_at'> = {
   enabled: false,
   new_trials_per_site: 5,
@@ -851,6 +1027,8 @@ function UpstreamCoverageSection({
   error,
   pendingChannelState,
   onToggleChannel,
+  lockedSiteModelId,
+  onLockChannel,
   t,
 }: {
   rows: RouteChannelRow[]
@@ -858,6 +1036,8 @@ function UpstreamCoverageSection({
   error?: string
   pendingChannelState?: PendingChannelState
   onToggleChannel: (row: RouteChannelRow, enabled: boolean) => void
+  lockedSiteModelId?: string
+  onLockChannel?: (siteModelId: string) => void
   t: TFunction
 }) {
   return (
@@ -879,6 +1059,8 @@ function UpstreamCoverageSection({
                 row={row}
                 pending={pendingChannelState?.id === row.id ? pendingChannelState : undefined}
                 onToggle={(enabled) => onToggleChannel(row, enabled)}
+                locked={row.siteModelId === lockedSiteModelId || row.locked}
+                onLock={onLockChannel && row.siteModelId !== lockedSiteModelId ? () => onLockChannel(row.siteModelId) : undefined}
                 t={t}
               />
             )
@@ -895,12 +1077,16 @@ function RouteChannelLine({
   row,
   pending,
   current,
+  locked = false,
+  onLock,
   onToggle,
   t,
 }: {
   row: RouteChannelRow
   pending?: PendingChannelState
   current?: boolean
+  locked?: boolean
+  onLock?: () => void
   onToggle?: (enabled: boolean) => void
   t?: TFunction
 }) {
@@ -913,6 +1099,12 @@ function RouteChannelLine({
       badges={
         <>
           <Badge variant={current ? 'accent' : status.badgeVariant}>{current ? (t ? t('details.currentRoute.current') : '当前使用') : status.label}</Badge>
+          {locked ? (
+            <Badge variant="accent">
+              <LockKeyhole className="mr-1 h-3 w-3" />
+              {t ? t('details.lock.pinned') : '已置顶'}
+            </Badge>
+          ) : null}
           {row.candidate ? <ScoreBadge candidate={row.candidate} t={t} /> : null}
           {row.apiKeyName ? (
             <Badge variant="neutral" title={row.groupName ? `${row.apiKeyName} · ${row.groupName}` : row.apiKeyName}>
@@ -930,24 +1122,40 @@ function RouteChannelLine({
         formatRoutePricing(row.pricing, t),
       ].filter(Boolean)}
       action={
-        onToggle ? (
-          <span className={cn('inline-flex', disabledReason && 'cursor-not-allowed')} title={disabledReason}>
-            <Switch
-              checked={checked}
-              disabled={Boolean(disabledReason)}
-              className={cn(disabledReason && 'cursor-not-allowed opacity-50')}
-              aria-label={
-                t
-                  ? t('details.coverage.switchLabel', {
-                      site: row.siteName,
-                      apiKey: row.apiKeyName ?? '',
-                      model: row.upstreamName,
-                    })
-                  : `切换 ${row.siteName} ${row.apiKeyName ?? ''} ${row.upstreamName}`
-              }
-              onCheckedChange={onToggle}
-            />
-          </span>
+        onToggle || onLock ? (
+          <div className="flex items-center gap-2">
+            {onLock ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={onLock}
+                aria-label={t ? t('details.lock.pinChannel') : `临时置顶 ${row.siteName} ${row.upstreamName}`}
+                title={t ? t('details.lock.pinChannel') : '临时置顶渠道'}
+              >
+                <LockKeyhole className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {onToggle ? (
+              <span className={cn('inline-flex', disabledReason && 'cursor-not-allowed')} title={disabledReason}>
+                <Switch
+                  checked={checked}
+                  disabled={Boolean(disabledReason)}
+                  className={cn(disabledReason && 'cursor-not-allowed opacity-50')}
+                  aria-label={
+                    t
+                      ? t('details.coverage.switchLabel', {
+                          site: row.siteName,
+                          apiKey: row.apiKeyName ?? '',
+                          model: row.upstreamName,
+                        })
+                      : `切换 ${row.siteName} ${row.apiKeyName ?? ''} ${row.upstreamName}`
+                  }
+                  onCheckedChange={onToggle}
+                />
+              </span>
+            ) : null}
+          </div>
         ) : undefined
       }
     />

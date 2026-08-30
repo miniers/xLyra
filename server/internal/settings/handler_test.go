@@ -139,6 +139,9 @@ func TestGetGeneral_Defaults(t *testing.T) {
 	if cfg.Security.SessionLifetimeHours != 24 {
 		t.Fatalf("unexpected security defaults: %+v", cfg.Security)
 	}
+	if !cfg.Gateway.SessionAffinityEnabled {
+		t.Fatal("session affinity should default to enabled")
+	}
 }
 
 func TestGetGeneral_DefaultPayloadShape(t *testing.T) {
@@ -147,7 +150,7 @@ func TestGetGeneral_DefaultPayloadShape(t *testing.T) {
 
 	settingsAssertStatus(t, rec, http.StatusOK)
 	body := settingsDecodeJSON[map[string]json.RawMessage](t, rec)
-	for _, key := range []string{"tasks", "ip_whitelist", "log", "data", "security"} {
+	for _, key := range []string{"tasks", "ip_whitelist", "log", "data", "security", "gateway"} {
 		if _, ok := body[key]; !ok {
 			t.Fatalf("expected %q in general payload: %#v", key, body)
 		}
@@ -162,6 +165,15 @@ func TestGetGeneral_DefaultPayloadShape(t *testing.T) {
 	if !data.RequestDetailCleanupEnabled || data.RequestDetailRetentionDays != 90 {
 		t.Fatalf("unexpected data defaults: %+v", data)
 	}
+	var gateway struct {
+		SessionAffinityEnabled bool `json:"session_affinity_enabled"`
+	}
+	if err := json.Unmarshal(body["gateway"], &gateway); err != nil {
+		t.Fatalf("decode gateway section: %v", err)
+	}
+	if !gateway.SessionAffinityEnabled {
+		t.Fatal("session affinity should default to enabled")
+	}
 }
 
 func TestUpdateGeneral_PersistsConfig(t *testing.T) {
@@ -170,7 +182,8 @@ func TestUpdateGeneral_PersistsConfig(t *testing.T) {
 		"tasks":{"site_refresh_cron":"*/15 * * * *","newapi_checkin_cron":"0 8 * * *"},
 		"ip_whitelist":{"enabled":true,"entries":["192.168.1.10","10.0.0.0/24"]},
 		"log":{"level":"debug","cleanup_enabled":true,"retention_days":14},
-		"security":{"session_lifetime_hours":168}
+		"security":{"session_lifetime_hours":168},
+		"gateway":{"session_affinity_enabled":false,"max_same_site_credential_retries":2,"first_byte_timeout_ms":1000}
 	}`
 	req := settingsRawJSONRequest(http.MethodPut, "/settings/general", body)
 	rec := settingsPerform(h.UpdateGeneral, req)
@@ -185,6 +198,9 @@ func TestUpdateGeneral_PersistsConfig(t *testing.T) {
 	}
 	if cfg.Security.SessionLifetimeHours != 168 {
 		t.Fatalf("unexpected security config: %+v", cfg.Security)
+	}
+	if cfg.Gateway.SessionAffinityEnabled {
+		t.Fatal("expected session affinity to be disabled")
 	}
 
 	rec = settingsPerform(h.GetGeneral, settingsTestRequest(http.MethodGet, "/settings/general", ""))

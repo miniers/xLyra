@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -227,6 +228,10 @@ func (h Handler) ListRouteCandidates(w http.ResponseWriter, r *http.Request) {
 		Debug:    debug,
 	})
 	if err != nil {
+		if errors.Is(err, routeengine.ErrRouteLockUnavailable) {
+			h.writeError(w, r, http.StatusServiceUnavailable, "route_lock_unavailable", err.Error())
+			return
+		}
 		h.writeError(w, r, http.StatusBadRequest, "route_candidates_failed", err.Error())
 		return
 	}
@@ -234,11 +239,12 @@ func (h Handler) ListRouteCandidates(w http.ResponseWriter, r *http.Request) {
 	items := routeCandidatePayloads(result.Items, debug)
 
 	h.writePayload(w, http.StatusOK, map[string]any{
-		"canonical_model": canonicalModelPayload(result.CanonicalModel),
+		"canonical_model": canonicalModelPayloadWithRouteLock(result.CanonicalModel, result.RoutingLock),
 		"items":           items,
 		"meta": map[string]any{
-			"count": len(items),
-			"debug": debug,
+			"count":        len(items),
+			"debug":        debug,
+			"routing_lock": routeLockPayload(result.RoutingLock),
 		},
 	})
 }
@@ -256,6 +262,10 @@ func (h Handler) SelectRoute(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := h.router.Plan(r.Context(), query)
 	if err != nil {
+		if errors.Is(err, routeengine.ErrRouteLockUnavailable) {
+			h.writeError(w, r, http.StatusServiceUnavailable, "route_lock_unavailable", err.Error())
+			return
+		}
 		h.writeError(w, r, http.StatusBadRequest, "route_select_failed", err.Error())
 		return
 	}
@@ -284,6 +294,10 @@ func (h Handler) FailoverRoute(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := h.router.Plan(r.Context(), query)
 	if err != nil {
+		if errors.Is(err, routeengine.ErrRouteLockUnavailable) {
+			h.writeError(w, r, http.StatusServiceUnavailable, "route_lock_unavailable", err.Error())
+			return
+		}
 		h.writeError(w, r, http.StatusBadRequest, "route_failover_failed", err.Error())
 		return
 	}
@@ -294,6 +308,7 @@ func (h Handler) FailoverRoute(w http.ResponseWriter, r *http.Request) {
 		"excluded_site_ids":       uuidStrings(query.ExcludeSiteIDs),
 		"excluded_site_model_ids": uuidStrings(query.ExcludeSiteModelIDs),
 		"failover_count":          len(plan.Failover),
+		"routing_lock":            routeLockPayload(plan.RoutingLock),
 	}
 	h.writePayload(w, http.StatusOK, response)
 }
@@ -467,12 +482,13 @@ func routeTraceAttemptPayload(item store.RequestLogDetail) map[string]any {
 
 func routeSelectionPlanPayload(plan routeengine.SelectionPlan, debug bool) map[string]any {
 	return map[string]any{
-		"canonical_model": canonicalModelPayload(plan.CanonicalModel),
+		"canonical_model": canonicalModelPayloadWithRouteLock(plan.CanonicalModel, plan.RoutingLock),
 		"selected":        routeCandidatePayload(plan.Selected, debug),
 		"failover":        routeCandidatePayloads(plan.Failover, debug),
 		"meta": map[string]any{
 			"debug":          debug,
 			"failover_count": len(plan.Failover),
+			"routing_lock":   routeLockPayload(plan.RoutingLock),
 		},
 	}
 }
@@ -519,8 +535,9 @@ func routeCandidatePayloads(items []routeengine.Candidate, debug bool) []map[str
 
 func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]any {
 	payload := map[string]any{
-		"rank":  item.Rank,
-		"score": item.Score,
+		"rank":   item.Rank,
+		"score":  item.Score,
+		"locked": item.Locked,
 		"site": map[string]any{
 			"id":                               item.Site.ID.String(),
 			"name":                             item.Site.Name,

@@ -41,6 +41,7 @@ type CandidateQuery struct {
 type CandidateList struct {
 	CanonicalModel store.CanonicalModel
 	Items          []Candidate
+	RoutingLock    *store.RouteLock
 }
 
 type Candidate struct {
@@ -59,6 +60,7 @@ type Candidate struct {
 	ScoreBreakdown        map[string]float64
 	ScoreProfiles         map[string]CandidateScoreProfile
 	Exploration           CandidateExploration
+	Locked                bool
 }
 
 type CandidateExploration struct {
@@ -89,6 +91,17 @@ type SelectionPlan struct {
 	CanonicalModel store.CanonicalModel
 	Selected       Candidate
 	Failover       []Candidate
+	RoutingLock    *store.RouteLock
+}
+
+type RouteLockTarget struct {
+	SiteID            uuid.UUID
+	SiteName          string
+	SiteSlug          string
+	SiteType          string
+	SiteModelID       uuid.UUID
+	UpstreamModelName string
+	DisplayName       string
 }
 
 type CandidateSite struct {
@@ -172,6 +185,23 @@ type CooldownInput struct {
 }
 
 var ErrNoRouteCandidates = errors.New("no route candidates available")
+var ErrRouteLockUnavailable = errors.New("locked route channel is unavailable")
+
+type RouteLockUnavailableError struct {
+	SiteModelID uuid.UUID
+	Lock        *store.RouteLock
+}
+
+func (e *RouteLockUnavailableError) Error() string {
+	if e == nil || e.SiteModelID == uuid.Nil {
+		return ErrRouteLockUnavailable.Error()
+	}
+	return fmt.Sprintf("%s: site_model_id=%s", ErrRouteLockUnavailable, e.SiteModelID)
+}
+
+func (e *RouteLockUnavailableError) Unwrap() error {
+	return ErrRouteLockUnavailable
+}
 
 func NewService(db *store.Store) *Service {
 	return &Service{db: db}
@@ -191,6 +221,15 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 	rows, err := store.NewRouteCandidateRepository(s.db.DB()).ListByCanonicalModel(ctx, canonicalModel.ID)
 	if err != nil {
 		return CandidateList{}, err
+	}
+
+	var routingLock *store.RouteLock
+	lock, lockErr := store.NewRouteLockRepository(s.db.DB()).GetActiveByCanonicalModel(ctx, canonicalModel.ID, time.Now())
+	if lockErr == nil && lock.SiteModelID != uuid.Nil && lock.CanonicalModelID != uuid.Nil {
+		lock.Policy = store.NormalizeRouteLockPolicy(lock.Policy)
+		routingLock = &lock
+	} else if lockErr != nil && !errors.Is(lockErr, gorm.ErrRecordNotFound) {
+		return CandidateList{}, lockErr
 	}
 
 	cooldowns, err := store.NewRouteCooldownRepository(s.db.DB()).ListActive(ctx, time.Now())
@@ -217,6 +256,7 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 
 	candidates := make([]Candidate, 0, len(rows))
 	for _, row := range rows {
+		locked := routingLock != nil && row.SiteModelID == routingLock.SiteModelID
 		availableAPIKeys := row.ModelAvailableKeyCount
 		totalAPIKeys := row.ModelAPIKeyCount
 		if row.SiteType != "newapi" && totalAPIKeys == 0 {
@@ -263,6 +303,9 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 		}
 		cooling, coolingReason := false, ""
 		if item, ok := cooldownState.transientModels[row.SiteModelID]; ok {
+			if locked && routingLock.Policy == store.RouteLockPolicyStrict {
+				continue
+			}
 			cooling = true
 			coolingReason = item.Reason
 		}
@@ -347,6 +390,7 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 			AutomaticAnomaly:      row.AutomaticAnomaly,
 			ManualScoreAdjustment: row.ManualScoreAdjustment,
 			Exploration:           exploration,
+			Locked:                locked,
 		})
 	}
 
@@ -390,6 +434,26 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 	}
 
 	sortCandidates(candidates, preference)
+	if routingLock != nil {
+		if routingLock.Policy == store.RouteLockPolicyStrict {
+			lockedCandidates := make([]Candidate, 0, 1)
+			for _, candidate := range candidates {
+				if candidate.Locked {
+					lockedCandidates = append(lockedCandidates, candidate)
+				}
+			}
+			candidates = lockedCandidates
+		} else {
+			candidates = prioritizeLockedCandidate(candidates, routingLock.SiteModelID)
+		}
+		if routingLock.Policy == store.RouteLockPolicyStrict && len(candidates) == 0 {
+			lockCopy := *routingLock
+			return CandidateList{CanonicalModel: canonicalModel, RoutingLock: &lockCopy}, &RouteLockUnavailableError{
+				SiteModelID: routingLock.SiteModelID,
+				Lock:        &lockCopy,
+			}
+		}
+	}
 
 	for index := range candidates {
 		candidates[index].Rank = index + 1
@@ -405,7 +469,34 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 	return CandidateList{
 		CanonicalModel: canonicalModel,
 		Items:          candidates,
+		RoutingLock:    routingLock,
 	}, nil
+}
+
+func prioritizeLockedCandidate(candidates []Candidate, siteModelID uuid.UUID) []Candidate {
+	if len(candidates) < 2 || siteModelID == uuid.Nil || candidates[0].Model.SiteModelID == siteModelID {
+		return candidates
+	}
+	index := -1
+	for i := range candidates {
+		if candidates[i].Model.SiteModelID == siteModelID {
+			index = i
+			break
+		}
+	}
+	if index <= 0 {
+		return candidates
+	}
+	// A fallback lock should not promote a candidate that is already cooling;
+	// healthy channels remain preferred while the locked target stays available
+	// as a later retry.
+	if candidates[index].Cooling {
+		return candidates
+	}
+	locked := candidates[index]
+	copy(candidates[1:index+1], candidates[:index])
+	candidates[0] = locked
+	return candidates
 }
 
 var routingPreferences = []string{
@@ -518,6 +609,9 @@ func assignScoreProfileRanks(candidates []Candidate) {
 func candidateComesBefore(a Candidate, b Candidate, preference string) bool {
 	if a.Cooling != b.Cooling {
 		return !a.Cooling
+	}
+	if a.Locked != b.Locked {
+		return a.Locked
 	}
 	aScore := candidateScoreForPreference(a, preference)
 	bScore := candidateScoreForPreference(b, preference)
@@ -636,7 +730,7 @@ func (s *Service) Plan(ctx context.Context, query CandidateQuery) (SelectionPlan
 	}
 
 	items := result.Items
-	if query.AllowExploration {
+	if query.AllowExploration && result.RoutingLock == nil {
 		items = s.reserveExplorationCandidate(ctx, result.CanonicalModel, items)
 	}
 
@@ -657,7 +751,50 @@ func (s *Service) Plan(ctx context.Context, query CandidateQuery) (SelectionPlan
 		CanonicalModel: result.CanonicalModel,
 		Selected:       items[0],
 		Failover:       failover,
+		RoutingLock:    result.RoutingLock,
 	}, nil
+}
+
+func (s *Service) GetRouteLock(ctx context.Context, canonicalModelID uuid.UUID) (store.RouteLock, error) {
+	return store.NewRouteLockRepository(s.db.DB()).GetByCanonicalModel(ctx, canonicalModelID)
+}
+
+func (s *Service) GetActiveRouteLock(ctx context.Context, canonicalModelID uuid.UUID) (store.RouteLock, error) {
+	return store.NewRouteLockRepository(s.db.DB()).GetActiveByCanonicalModel(ctx, canonicalModelID, time.Now())
+}
+
+func (s *Service) GetRouteLockTarget(ctx context.Context, siteModelID uuid.UUID) (RouteLockTarget, error) {
+	if siteModelID == uuid.Nil {
+		return RouteLockTarget{}, fmt.Errorf("site_model_id is required")
+	}
+	if s == nil || s.db == nil {
+		return RouteLockTarget{}, fmt.Errorf("get route lock target: store is not initialized")
+	}
+	model, err := store.NewSiteModelRepository(s.db.DB()).GetByID(ctx, siteModelID)
+	if err != nil {
+		return RouteLockTarget{}, err
+	}
+	site, err := store.NewSiteRepository(s.db.DB()).GetByID(ctx, model.SiteID)
+	if err != nil {
+		return RouteLockTarget{}, err
+	}
+	return RouteLockTarget{
+		SiteID:            site.ID,
+		SiteName:          site.Name,
+		SiteSlug:          site.Slug,
+		SiteType:          site.SiteType,
+		SiteModelID:       model.ID,
+		UpstreamModelName: model.UpstreamName,
+		DisplayName:       model.DisplayName,
+	}, nil
+}
+
+func (s *Service) UpsertRouteLock(ctx context.Context, params store.UpsertRouteLockParams) (store.RouteLock, error) {
+	return store.NewRouteLockRepository(s.db.DB()).Upsert(ctx, params)
+}
+
+func (s *Service) DeleteRouteLock(ctx context.Context, canonicalModelID uuid.UUID) error {
+	return store.NewRouteLockRepository(s.db.DB()).Delete(ctx, canonicalModelID)
 }
 
 func (s *Service) reserveExplorationCandidate(ctx context.Context, model store.CanonicalModel, items []Candidate) []Candidate {

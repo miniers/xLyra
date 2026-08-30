@@ -497,6 +497,23 @@ CREATE INDEX route_cooldowns_site_model_id_idx ON route_cooldowns (site_model_id
 CREATE INDEX route_cooldowns_site_credential_id_idx ON route_cooldowns (site_credential_id, active_until DESC);
 CREATE INDEX route_cooldowns_active_idx ON route_cooldowns (active_until DESC) WHERE cleared_at IS NULL;
 
+CREATE TABLE route_locks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  canonical_model_id UUID NOT NULL REFERENCES canonical_models(id) ON DELETE CASCADE,
+  site_model_id UUID NOT NULL REFERENCES site_models(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ,
+  policy TEXT NOT NULL DEFAULT 'strict' CHECK (policy IN ('strict', 'fallback')),
+  reason TEXT NOT NULL DEFAULT '',
+  created_by_admin_id UUID REFERENCES admins(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(canonical_model_id)
+);
+
+CREATE INDEX route_locks_canonical_model_idx ON route_locks (canonical_model_id);
+CREATE INDEX route_locks_site_model_idx ON route_locks (site_model_id);
+CREATE INDEX route_locks_expires_at_idx ON route_locks (expires_at DESC);
+
 CREATE TABLE route_exploration_states (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   canonical_model_id UUID NOT NULL REFERENCES canonical_models(id) ON DELETE CASCADE,
@@ -830,6 +847,10 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER route_cooldowns_set_updated_at
 BEFORE UPDATE ON route_cooldowns
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+CREATE TRIGGER route_locks_set_updated_at
+BEFORE UPDATE ON route_locks
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TRIGGER route_exploration_states_set_updated_at

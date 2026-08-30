@@ -312,6 +312,25 @@ func TestRouteExplorationSchemaIncludesBootstrapIndexes(t *testing.T) {
 	}
 }
 
+func TestRouteLockSchemaIncludesBootstrapIndexes(t *testing.T) {
+	t.Parallel()
+
+	routeLockSchema := parseStoreSchema(t, &RouteLock{})
+	for _, name := range []string{
+		"route_locks_canonical_model_idx",
+		"route_locks_site_model_idx",
+		"route_locks_expires_at_idx",
+	} {
+		index := routeLockSchema.LookIndex(name)
+		if index == nil || len(index.Fields) != 1 {
+			t.Fatalf("route lock index %q = %#v, want one field", name, index)
+		}
+	}
+	if index := routeLockSchema.LookIndex("route_locks_canonical_model_unique_idx"); index == nil || index.Class != "UNIQUE" {
+		t.Fatalf("route lock unique canonical model index = %#v, want unique index", index)
+	}
+}
+
 func parseStoreSchema(t *testing.T, model any) *schema.Schema {
 	t.Helper()
 

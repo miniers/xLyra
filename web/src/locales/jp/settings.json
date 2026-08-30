@@ -17,7 +17,9 @@
     },
     "gateway": {
       "title": "ゲートウェイ Failover",
-      "description": "同一サイトの Credential 再試行と最初のバイトのタイムアウトを設定します。",
+      "description": "セッションアフィニティ、同一サイトの Credential 再試行、最初のバイトのタイムアウトを設定します。",
+      "sessionAffinity": "セッションアフィニティ",
+      "sessionAffinityDesc": "同じセッションで直近に成功したルートを優先し、上流キャッシュの再利用を高めます。無効にすると通常のルート順に戻ります。",
       "sameSiteRetries": "同一サイト Credential 再試行回数",
       "sameSiteRetriesDesc": "下流出力前の通信・タイムアウト・5xx 失敗に適用します。範囲は 0〜20 です。",
       "firstByteTimeout": "全体の最初のバイトのタイムアウト（ms）",

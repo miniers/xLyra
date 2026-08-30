@@ -40,6 +40,7 @@ export type GeneralSettingsConfig = {
     session_lifetime_hours: number
   }
   gateway: {
+    session_affinity_enabled: boolean
     max_same_site_credential_retries: number
     first_byte_timeout_ms: number
   }

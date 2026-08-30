@@ -2,11 +2,15 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
+	"xlyra/server/internal/auth"
 	"xlyra/server/internal/catalog"
 	"xlyra/server/internal/store"
 )
@@ -146,6 +150,91 @@ func (h Handler) UpdateModelRoutingPreference(w http.ResponseWriter, r *http.Req
 
 	h.invalidateGatewayModelsCache()
 	h.writeResource(w, http.StatusOK, "model", canonicalModelPayload(model))
+}
+
+func (h Handler) GetModelRoutingLock(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.router.GetActiveRouteLock(r.Context(), modelID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		h.writeResource(w, http.StatusOK, "routing_lock", nil)
+		return
+	}
+	if err != nil {
+		h.writeError(w, r, http.StatusInternalServerError, "route_lock_get_failed", "failed to get model routing lock")
+		return
+	}
+	h.writeResource(w, http.StatusOK, "routing_lock", h.routeLockPayload(r.Context(), &item))
+}
+
+func (h Handler) UpdateModelRoutingLock(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+	var payload routeLockRequest
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+	if payload.SiteModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_site_model_id", "site_model_id is required")
+		return
+	}
+	adminID, _ := auth.AdminIDFromContext(r.Context())
+	var createdBy *uuid.UUID
+	if adminID != uuid.Nil {
+		createdBy = &adminID
+	}
+	item, err := h.router.UpsertRouteLock(r.Context(), store.UpsertRouteLockParams{
+		CanonicalModelID: modelID,
+		SiteModelID:      payload.SiteModelID,
+		ExpiresAt:        payload.ExpiresAt,
+		Policy:           payload.Policy,
+		Reason:           payload.Reason,
+		CreatedByAdminID: createdBy,
+	})
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "route_lock_update_failed", err.Error())
+		return
+	}
+	h.invalidateGatewayModelsCache()
+	h.logInfo("model routing lock updated", "canonical_model_id", modelID, "site_model_id", item.SiteModelID, "policy", item.Policy, "expires_at", item.ExpiresAt)
+	h.recordAudit(r, currentAdminActor(r), "model.routing_lock.update", "canonical_model", modelID.String(), true, "", map[string]any{
+		"site_model_id": item.SiteModelID.String(),
+		"policy":        item.Policy,
+		"expires_at":    timePtrValue(item.ExpiresAt),
+		"reason":        item.Reason,
+	})
+	h.writeResource(w, http.StatusOK, "routing_lock", h.routeLockPayload(r.Context(), &item))
+}
+
+func (h Handler) DeleteModelRoutingLock(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+	modelID, ok := modelIDParam(w, r)
+	if !ok {
+		return
+	}
+	if err := h.router.DeleteRouteLock(r.Context(), modelID); err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "route_lock_delete_failed", err.Error())
+		return
+	}
+	h.invalidateGatewayModelsCache()
+	h.logInfo("model routing lock deleted", "canonical_model_id", modelID)
+	h.recordAudit(r, currentAdminActor(r), "model.routing_lock.delete", "canonical_model", modelID.String(), true, "", nil)
+	h.writePayload(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h Handler) UpdateModelRoutingExpiryRescue(w http.ResponseWriter, r *http.Request) {
@@ -468,6 +557,57 @@ func canonicalModelPayload(model store.CanonicalModel) map[string]any {
 		"created_at":             timeString(model.CreatedAt),
 		"updated_at":             timeString(model.UpdatedAt),
 	}
+}
+
+func routeLockPayload(item *store.RouteLock) any {
+	if item == nil {
+		return nil
+	}
+	remainingSeconds := 0
+	active := store.RouteLockIsActive(*item, time.Now())
+	if active && item.ExpiresAt != nil {
+		remainingSeconds = max(int(time.Until(*item.ExpiresAt).Seconds()), 0)
+	}
+	return map[string]any{
+		"id":                  item.ID.String(),
+		"canonical_model_id":  item.CanonicalModelID.String(),
+		"site_model_id":       item.SiteModelID.String(),
+		"expires_at":          timePtrValue(item.ExpiresAt),
+		"remaining_seconds":   remainingSeconds,
+		"active":              active,
+		"policy":              store.NormalizeRouteLockPolicy(item.Policy),
+		"reason":              item.Reason,
+		"created_by_admin_id": pointerUUIDValue(item.CreatedByAdminID),
+		"created_at":          timeString(item.CreatedAt),
+		"updated_at":          timeString(item.UpdatedAt),
+	}
+}
+
+func (h Handler) routeLockPayload(ctx context.Context, item *store.RouteLock) any {
+	payload, _ := routeLockPayload(item).(map[string]any)
+	if payload == nil || item == nil || h.router == nil {
+		return payload
+	}
+	target, err := h.router.GetRouteLockTarget(ctx, item.SiteModelID)
+	if err != nil {
+		return payload
+	}
+	payload["target"] = map[string]any{
+		"site_id":             target.SiteID.String(),
+		"site_name":           target.SiteName,
+		"site_slug":           target.SiteSlug,
+		"site_type":           target.SiteType,
+		"site_model_id":       target.SiteModelID.String(),
+		"upstream_model_name": target.UpstreamModelName,
+		"display_name":        target.DisplayName,
+	}
+	return payload
+}
+
+func canonicalModelPayloadWithRouteLock(model store.CanonicalModel, lock *store.RouteLock) map[string]any {
+	payload := canonicalModelPayload(model)
+	payload["routing_lock"] = routeLockPayload(lock)
+	return payload
 }
 
 func canonicalModelItemPayload(item catalog.CanonicalModelItem) map[string]any {

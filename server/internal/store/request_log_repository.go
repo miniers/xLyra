@@ -107,9 +107,10 @@ type RequestLogDetail struct {
 }
 
 type RequestLogCacheObservation struct {
-	Success   bool
-	Metadata  JSON
-	CreatedAt time.Time
+	Success     bool
+	SiteModelID uuid.NullUUID
+	Metadata    JSON
+	CreatedAt   time.Time
 }
 
 type RequestLogRepository struct {

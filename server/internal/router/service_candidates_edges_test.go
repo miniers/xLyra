@@ -397,6 +397,181 @@ func TestPlanUsesDefaultAndExplicitFailoverLimits(t *testing.T) {
 	}
 }
 
+func TestCandidatesStrictRouteLockKeepsOnlyTarget(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "failover-2"})
+	targetID := rows.siteModels[2].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyStrict,
+		Reason:           "limited quota",
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	plan, err := service.Plan(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", FailoverLimit: 3, AllowExploration: true})
+	if err != nil {
+		t.Fatalf("Plan error = %v", err)
+	}
+	if plan.Selected.Model.SiteModelID != targetID || !plan.Selected.Locked {
+		t.Fatalf("selected = %#v, want locked target %s", plan.Selected, targetID)
+	}
+	if len(plan.Failover) != 0 {
+		t.Fatalf("failover = %#v, want no cross-channel failover in strict mode", plan.Failover)
+	}
+	if plan.RoutingLock == nil || plan.RoutingLock.Policy != store.RouteLockPolicyStrict {
+		t.Fatalf("routing lock = %#v, want strict lock", plan.RoutingLock)
+	}
+	if plan.Selected.Exploration.Reserved {
+		t.Fatalf("selected exploration = %#v, want lock to suppress exploration reservation", plan.Selected.Exploration)
+	}
+}
+
+func TestCandidatesFallbackRouteLockPromotesHealthyTarget(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "failover-2"})
+	targetID := rows.siteModels[2].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyFallback,
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	plan, err := service.Plan(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", FailoverLimit: 2, Debug: true})
+	if err != nil {
+		t.Fatalf("Plan error = %v", err)
+	}
+	if plan.Selected.Model.SiteModelID != targetID || !plan.Selected.Locked {
+		t.Fatalf("selected = %#v, want fallback lock target %s", plan.Selected, targetID)
+	}
+	if len(plan.Failover) != 2 || plan.Failover[0].Locked || plan.Failover[1].Locked {
+		t.Fatalf("failover = %#v, want unlocked fallback candidates", plan.Failover)
+	}
+	for _, preference := range []string{store.RoutingPreferenceDefault, store.RoutingPreferenceValue, store.RoutingPreferenceSpeed} {
+		profile, ok := plan.Selected.ScoreProfiles[preference]
+		if !ok || profile.Rank != 1 {
+			t.Fatalf("locked target %s profile[%s] = %#v, want rank 1", targetID, preference, profile)
+		}
+	}
+}
+
+func TestStrictRouteLockPreservesTargetScoreAndBreakdown(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	baseRows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "locked"})
+	targetID := baseRows.siteModels[2].ID
+	lockedRows := baseRows
+	lockedRows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyStrict,
+	}}
+
+	withoutLock, err := routerServiceWithRepositoryRows(t, baseRows).Candidates(context.Background(), CandidateQuery{
+		ModelKey: "openai/gpt-5-mini",
+		Debug:    true,
+	})
+	if err != nil {
+		t.Fatalf("Candidates without lock error = %v", err)
+	}
+	withLock, err := routerServiceWithRepositoryRows(t, lockedRows).Candidates(context.Background(), CandidateQuery{
+		ModelKey: "openai/gpt-5-mini",
+		Debug:    true,
+	})
+	if err != nil {
+		t.Fatalf("Candidates with lock error = %v", err)
+	}
+
+	var expected Candidate
+	for _, candidate := range withoutLock.Items {
+		if candidate.Model.SiteModelID == targetID {
+			expected = candidate
+			break
+		}
+	}
+	if expected.Model.SiteModelID != targetID {
+		t.Fatalf("target candidate missing without lock: %#v", withoutLock.Items)
+	}
+	if len(withLock.Items) != 1 || withLock.Items[0].Model.SiteModelID != targetID {
+		t.Fatalf("strict candidates = %#v, want only target", withLock.Items)
+	}
+	actual := withLock.Items[0]
+	if actual.Score != expected.Score || !reflect.DeepEqual(actual.ScoreBreakdown, expected.ScoreBreakdown) {
+		t.Fatalf("strict target score changed: got score=%v breakdown=%#v, want score=%v breakdown=%#v", actual.Score, actual.ScoreBreakdown, expected.Score, expected.ScoreBreakdown)
+	}
+}
+
+func TestCandidatesFallbackRouteLockLeavesCoolingTargetForNormalCandidates(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "locked"})
+	targetID := rows.siteModels[2].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyFallback,
+	}}
+	rows.cooldowns = []store.RouteCooldown{{
+		ID:          uuid.New(),
+		SiteID:      rows.siteModels[2].SiteID,
+		SiteModelID: uuid.NullUUID{UUID: targetID, Valid: true},
+		Source:      "gateway",
+		Reason:      "upstream_timeout",
+		ActiveUntil: time.Now().Add(time.Hour),
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	plan, err := service.Plan(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", FailoverLimit: 3})
+	if err != nil {
+		t.Fatalf("Plan error = %v", err)
+	}
+	if plan.Selected.Site.Name != "selected" || plan.Selected.Locked {
+		t.Fatalf("selected = %#v, want healthy normal candidate while locked target is cooling", plan.Selected)
+	}
+	if len(plan.Failover) != 2 || plan.Failover[1].Model.SiteModelID != targetID || !plan.Failover[1].Cooling {
+		t.Fatalf("failover = %#v, want cooling locked target retained after healthy candidates", plan.Failover)
+	}
+}
+
+func TestCandidatesStrictRouteLockReturnsUnavailableForCoolingTarget(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1"})
+	targetID := rows.siteModels[1].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyStrict,
+	}}
+	rows.cooldowns = []store.RouteCooldown{{
+		ID:          uuid.New(),
+		SiteID:      rows.siteModels[1].SiteID,
+		SiteModelID: uuid.NullUUID{UUID: targetID, Valid: true},
+		Source:      "gateway",
+		Reason:      "upstream_timeout",
+		ActiveUntil: time.Now().Add(time.Hour),
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	_, err := service.Candidates(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini"})
+	if !errors.Is(err, ErrRouteLockUnavailable) {
+		t.Fatalf("Candidates error = %v, want ErrRouteLockUnavailable", err)
+	}
+}
+
 func TestCandidatesReturnsCooldownRepositoryError(t *testing.T) {
 	t.Parallel()
 
@@ -434,6 +609,7 @@ type routerRepositoryRows struct {
 	pricings            []store.SiteModelPricing
 	oauthConnections    []store.OAuthConnection
 	cooldowns           []store.RouteCooldown
+	routeLocks          []store.RouteLock
 }
 
 func routerPlanRepositoryRows(canonicalID uuid.UUID, modelKey string, siteNames []string) routerRepositoryRows {
@@ -534,6 +710,8 @@ func routerAssignRepositoryRows(tx *gorm.DB, rows routerRepositoryRows) {
 		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
 	case "RouteCooldown":
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.cooldowns)
+	case "RouteLock":
+		routerAssignRowsToDestination(tx.Statement.Dest, rows.routeLocks)
 	}
 }
 

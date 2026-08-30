@@ -1,6 +1,37 @@
 import { apiFetch } from '@/lib/http'
 import type { RoutingPreference } from '@/features/sites/api/sites'
 
+export type RouteLockPolicy = 'strict' | 'fallback'
+
+export const TEMPORARY_ROUTE_LOCK_DURATION_MS = 10 * 60 * 1000
+
+export function temporaryRouteLockExpiresAt(now = new Date()) {
+  return new Date(now.getTime() + TEMPORARY_ROUTE_LOCK_DURATION_MS).toISOString()
+}
+
+export type RouteLock = {
+  id: string
+  canonical_model_id: string
+  site_model_id: string
+  expires_at?: string | null
+  remaining_seconds: number
+  active: boolean
+  policy: RouteLockPolicy
+  reason?: string
+  created_by_admin_id?: string | null
+  created_at?: string
+  updated_at?: string
+  target?: {
+    site_id: string
+    site_name: string
+    site_slug: string
+    site_type: string
+    site_model_id: string
+    upstream_model_name: string
+    display_name?: string
+  }
+}
+
 type RouteCanonicalModel = {
   id: string
   model_key: string
@@ -11,6 +42,7 @@ type RouteCanonicalModel = {
   status: string
   routing_preference?: RoutingPreference
   routing_expiry_rescue_enabled?: boolean
+  routing_lock?: RouteLock | null
   routing_exploration?: {
     enabled: boolean
     new_trials_per_site: number
@@ -147,6 +179,7 @@ export type RouteScoreProfile = {
 export type RouteCandidateItem = {
   rank: number
   score: number
+  locked?: boolean
   site: RouteCandidateSite
   model: RouteCandidateModel
   health: RouteCandidateHealth
@@ -182,6 +215,7 @@ export type RouteCandidateResponse = {
   meta: {
     count: number
     debug: boolean
+    routing_lock?: RouteLock | null
   }
 }
 
@@ -192,6 +226,7 @@ export type RouteSelectionResponse = {
   meta: {
     debug: boolean
     failover_count: number
+    routing_lock?: RouteLock | null
     excluded_site_ids?: string[]
     excluded_site_model_ids?: string[]
   }
@@ -280,6 +315,7 @@ export const routeQueryKeys = {
   candidates: (input: { modelKey: string; debug?: boolean }) => [...routeQueryKeys.all, 'candidates', input] as const,
   traces: (input: { limit: number; modelKey?: string | null }) => [...routeQueryKeys.all, 'traces', input] as const,
   cooldowns: () => [...routeQueryKeys.all, 'cooldowns'] as const,
+  routingLock: (modelId: string) => [...routeQueryKeys.all, 'routing-lock', modelId] as const,
 }
 
 export async function listRoutes(input?: { windowHours?: number }) {
@@ -385,5 +421,33 @@ export async function adjustRouteScore(input: {
       site_model_id: input.siteModelId,
       direction: input.direction,
     }),
+  })
+}
+
+export async function getModelRoutingLock(modelId: string) {
+  return apiFetch<{ routing_lock: RouteLock | null }>(`/api/v1/models/${modelId}/routing-lock`)
+}
+
+export async function updateModelRoutingLock(input: {
+  modelId: string
+  siteModelId: string
+  expiresAt?: string | null
+  policy?: RouteLockPolicy
+  reason?: string
+}) {
+  return apiFetch<{ routing_lock: RouteLock }>(`/api/v1/models/${input.modelId}/routing-lock`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      site_model_id: input.siteModelId,
+      expires_at: input.expiresAt || undefined,
+      policy: input.policy,
+      reason: input.reason,
+    }),
+  })
+}
+
+export async function deleteModelRoutingLock(modelId: string) {
+  return apiFetch<{ ok: boolean }>(`/api/v1/models/${modelId}/routing-lock`, {
+    method: 'DELETE',
   })
 }

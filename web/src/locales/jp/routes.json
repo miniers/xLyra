@@ -48,6 +48,10 @@
       "temporaryScoreAdjustFailed": "一時スコアの調整に失敗しました",
       "preferenceUpdated": "スコア設定を更新しました",
       "preferenceUpdateFailed": "スコア設定の更新に失敗しました",
+      "routingLockUpdated": "上流チャネル固定を更新しました",
+      "routingLockUpdateFailed": "上流チャネル固定の更新に失敗しました",
+      "routingLockRemoved": "上流チャネル固定を解除しました",
+      "routingLockRemoveFailed": "上流チャネル固定の解除に失敗しました",
       "expiryRescueUpdated": "期限切れ救済ボーナスを更新しました",
       "expiryRescueUpdateFailed": "期限切れ救済ボーナスの更新に失敗しました",
       "explorationUpdated": "試行設定を更新しました",
@@ -125,6 +129,27 @@
       "speed": "速度",
       "expiryRescue": "期限切れ救済ボーナスを有効化",
       "expiryRescueDescription": "残り3日以内の候補を加点し、期限切れ前にサブスクリプション枠を消費します。"
+    },
+    "lock": {
+      "title": "上流チャネル固定",
+      "description": "このモデルを1つのサイトモデルに固定し、期限付きクォータを優先消費します。厳格モードではチャネルを跨がず、フォールバックモードでは応答開始前のみ切り替えます。",
+      "target": "固定するサイトモデル",
+      "targetUnavailable": "対象を利用できません",
+      "expiresAt": "期限（空欄は無期限）",
+      "reason": "メモ（任意）",
+      "save": "固定を保存",
+      "remove": "固定を解除",
+      "pinChannel": "このチャネルを一時的に優先",
+      "lockChannel": "このチャネルを固定",
+      "pinned": "優先中",
+      "locked": "固定中",
+      "remaining": "残り {{duration}}",
+      "unlimited": "無期限",
+      "policy": {
+        "title": "ポリシー",
+        "strict": "厳格固定",
+        "fallback": "フォールバック許可"
+      }
     },
     "exploration": {
       "title": "割当試行",

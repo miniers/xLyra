@@ -75,25 +75,7 @@ function buildRouteChannelRows(input: {
   if (input.siteModelStatus === 'unavailable') return []
 
   if (!input.site.supports_multiple_api_keys && !isNewAPISite(input.site.site_type)) {
-    const enabled = input.site.enabled && siteModelEnabled
-    return [{
-      id: `site-model:${input.site.id}:${input.siteModelId}`,
-      kind: 'site_model' as const,
-      siteId: input.site.id,
-      siteName: input.site.name,
-      siteType: input.site.site_type,
-      siteEnabled: input.site.enabled,
-      siteModelId: input.siteModelId,
-      siteModelEnabled,
-      upstreamName: input.upstreamName,
-      current: input.current,
-      cooling: input.cooling,
-      candidate: input.candidate,
-      pricing: input.candidate?.pricing ?? (input.matrixRow ? pickMatrixPricing(input.matrixRow) : undefined),
-      enabled,
-      routable: enabled && !input.cooling,
-      toggleDisabled: !input.site.enabled,
-    }]
+    return [buildSiteModelRow(input, siteModelEnabled)]
   }
 
   const names = buildModelNameSet(input.upstreamName, input.displayName)
@@ -135,6 +117,7 @@ function buildRouteChannelRows(input: {
       current: input.current && (!input.currentCredentialId || input.currentCredentialId === apiKey.id),
       cooling: input.cooling,
       candidate: input.candidate,
+      locked: input.candidate?.locked,
       pricing: input.candidate?.credential.id === apiKey.id
         ? input.candidate.pricing
         : input.matrixRow
@@ -151,7 +134,48 @@ function buildRouteChannelRows(input: {
     })
   }
 
+  // Manual models on compatible sites may not have a per-key model snapshot.
+  // Keep the site-model channel visible because routing can use the site's
+  // fallback credential when no explicit binding exists.
+  if (rows.length === 0 && input.matrixRow?.canonical_match_source === 'manual' && !isNewAPISite(input.site.site_type)) {
+    return [buildSiteModelRow(input, siteModelEnabled)]
+  }
+
   return rows
+}
+
+function buildSiteModelRow(
+  input: {
+    site: Site
+    siteModelId: string
+    upstreamName: string
+    current?: boolean
+    cooling?: boolean
+    candidate?: RouteCandidateItem
+    matrixRow?: CanonicalModelMatrixRow
+  },
+  siteModelEnabled: boolean,
+): RouteChannelRow {
+  const enabled = input.site.enabled && siteModelEnabled
+  return {
+    id: `site-model:${input.site.id}:${input.siteModelId}`,
+    kind: 'site_model',
+    siteId: input.site.id,
+    siteName: input.site.name,
+    siteType: input.site.site_type,
+    siteEnabled: input.site.enabled,
+    siteModelId: input.siteModelId,
+    siteModelEnabled,
+    upstreamName: input.upstreamName,
+    current: input.current,
+    cooling: input.cooling,
+    candidate: input.candidate,
+    locked: input.candidate?.locked,
+    pricing: input.candidate?.pricing ?? (input.matrixRow ? pickMatrixPricing(input.matrixRow) : undefined),
+    enabled,
+    routable: enabled && !input.cooling,
+    toggleDisabled: !input.site.enabled,
+  }
 }
 
 function matrixRowSite(row: CanonicalModelMatrixRow): Site {

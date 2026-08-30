@@ -17,7 +17,9 @@
     },
     "gateway": {
       "title": "Gateway failover",
-      "description": "Configure same-site credential retries and first-byte timeout.",
+      "description": "Configure session affinity, same-site credential retries, and first-byte timeout.",
+      "sessionAffinity": "Session affinity",
+      "sessionAffinityDesc": "Prefer the route that most recently served the same session to improve upstream cache reuse. Disable to restore normal route order.",
       "sameSiteRetries": "Same-site credential retries",
       "sameSiteRetriesDesc": "Applies to pre-output transport, timeout, and 5xx failures. Range: 0–20.",
       "firstByteTimeout": "Global first-byte timeout (ms)",

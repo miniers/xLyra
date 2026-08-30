@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"xlyra/server/internal/config"
+	routeengine "xlyra/server/internal/router"
 	"xlyra/server/internal/site"
 	"xlyra/server/internal/store"
 )
@@ -72,6 +73,40 @@ func TestSameSiteCredentialRetryLimitHonorsExplicitZeroAndGlobalValue(t *testing
 	explicitZero := 0
 	if got := handler.sameSiteCredentialRetryLimitForConfig(&site.GatewayConfig{MaxSameSiteCredentialRetries: &explicitZero}); got != 0 {
 		t.Fatalf("explicit zero retry limit = %d, want 0", got)
+	}
+}
+
+func TestPrioritizeCacheSessionAffinityRespectsGlobalSetting(t *testing.T) {
+	t.Parallel()
+
+	globalFile, err := config.LoadConfigFile(t.TempDir())
+	if err != nil {
+		t.Fatalf("load config file: %v", err)
+	}
+	if err := globalFile.Set("global.general.gateway", map[string]any{
+		"session_affinity_enabled": false,
+	}); err != nil {
+		t.Fatalf("set gateway config: %v", err)
+	}
+
+	attempts := []routeengine.Candidate{{Rank: 1}, {Rank: 2}}
+	ctx := context.WithValue(context.Background(), cacheShadowAffinityContextKey{}, cacheShadowAffinity{
+		Routable:             true,
+		MatchKind:            "session",
+		MatchedCandidateRank: 2,
+	})
+	got := (Handler{confFile: globalFile}).prioritizeCacheSessionAffinity(ctx, attempts)
+	if got[0].Rank != 1 || got[1].Rank != 2 {
+		t.Fatalf("disabled session-affinity attempts = %#v, want ranks [1 2]", got)
+	}
+	if err := globalFile.Set("global.general.gateway", map[string]any{
+		"session_affinity_enabled": true,
+	}); err != nil {
+		t.Fatalf("enable gateway session affinity: %v", err)
+	}
+	got = (Handler{confFile: globalFile}).prioritizeCacheSessionAffinity(ctx, attempts)
+	if got[0].Rank != 2 || got[1].Rank != 1 {
+		t.Fatalf("enabled session-affinity attempts = %#v, want ranks [2 1]", got)
 	}
 }
 

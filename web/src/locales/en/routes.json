@@ -48,6 +48,10 @@
       "temporaryScoreAdjustFailed": "Failed to adjust temporary score",
       "preferenceUpdated": "Scoring preference updated",
       "preferenceUpdateFailed": "Failed to update scoring preference",
+      "routingLockUpdated": "Upstream channel lock updated",
+      "routingLockUpdateFailed": "Failed to update upstream channel lock",
+      "routingLockRemoved": "Upstream channel lock removed",
+      "routingLockRemoveFailed": "Failed to remove upstream channel lock",
       "expiryRescueUpdated": "Expiry rescue bonus updated",
       "expiryRescueUpdateFailed": "Failed to update expiry rescue bonus",
       "explorationUpdated": "Exploration settings updated",
@@ -125,6 +129,27 @@
       "speed": "Speed",
       "expiryRescue": "Enable expiry rescue bonus",
       "expiryRescueDescription": "Boost candidates with 3 days or less remaining to consume expiring subscription quota."
+    },
+    "lock": {
+      "title": "Upstream channel lock",
+      "description": "Pin this model to one site model to consume time-limited quota. Strict mode never crosses channels; fallback mode may switch only before a response starts.",
+      "target": "Locked site model",
+      "targetUnavailable": "Target unavailable",
+      "expiresAt": "Expires (blank for unlimited)",
+      "reason": "Reason (optional)",
+      "save": "Save lock",
+      "remove": "Remove lock",
+      "pinChannel": "Temporarily prioritize this channel",
+      "lockChannel": "Lock this channel",
+      "pinned": "Pinned",
+      "locked": "Locked",
+      "remaining": "{{duration}} remaining",
+      "unlimited": "Unlimited",
+      "policy": {
+        "title": "Policy",
+        "strict": "Strict lock",
+        "fallback": "Allow fallback"
+      }
     },
     "exploration": {
       "title": "Quota exploration",

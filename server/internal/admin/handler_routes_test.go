@@ -75,6 +75,25 @@ func TestRouteHandlersRequireRouterService(t *testing.T) {
 			call:   handler.AdjustRouteScore,
 		},
 		{
+			name:   "get model routing lock",
+			method: http.MethodGet,
+			target: "/api/v1/models/" + uuid.NewString() + "/routing-lock",
+			call:   handler.GetModelRoutingLock,
+		},
+		{
+			name:   "update model routing lock",
+			method: http.MethodPut,
+			target: "/api/v1/models/" + uuid.NewString() + "/routing-lock",
+			body:   `{"site_model_id":"` + uuid.NewString() + `"}`,
+			call:   handler.UpdateModelRoutingLock,
+		},
+		{
+			name:   "delete model routing lock",
+			method: http.MethodDelete,
+			target: "/api/v1/models/" + uuid.NewString() + "/routing-lock",
+			call:   handler.DeleteModelRoutingLock,
+		},
+		{
 			name:   "select route",
 			method: http.MethodPost,
 			target: "/api/v1/routes/select",

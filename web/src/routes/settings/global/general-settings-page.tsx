@@ -36,6 +36,7 @@ type GeneralSettingsDraft = {
   requestDetailCleanupEnabled: boolean
   requestDetailRetentionDays: string
   sessionLifetimeHours: string
+  sessionAffinityEnabled: boolean
   maxSameSiteCredentialRetries: string
   firstByteTimeoutMS: string
 }
@@ -51,6 +52,7 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettingsDraft = {
   requestDetailCleanupEnabled: true,
   requestDetailRetentionDays: '90',
   sessionLifetimeHours: '24',
+  sessionAffinityEnabled: true,
   maxSameSiteCredentialRetries: '0',
   firstByteTimeoutMS: '0',
 }
@@ -286,6 +288,15 @@ export function GeneralSettingsPage() {
         <h4 className="text-sm font-semibold text-foreground">{t('general.gateway.title')}</h4>
         <p className="text-muted-soft text-xs">{t('general.gateway.description')}</p>
         <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('general.gateway.sessionAffinity')} description={t('general.gateway.sessionAffinityDesc')}>
+            <div className="flex h-11 items-center gap-3">
+              <Switch
+                checked={draft.sessionAffinityEnabled}
+                onCheckedChange={(sessionAffinityEnabled) => patchDraft({ sessionAffinityEnabled })}
+                aria-label={t('general.gateway.sessionAffinity')}
+              />
+            </div>
+          </FormField>
           <FormField label={t('general.gateway.sameSiteRetries')} description={t('general.gateway.sameSiteRetriesDesc')} error={maxSameSiteCredentialRetriesError}>
             <Input type="text" inputMode="numeric" value={draft.maxSameSiteCredentialRetries} onChange={(event) => patchDraft({ maxSameSiteCredentialRetries: event.target.value })} />
           </FormField>
@@ -361,6 +372,7 @@ function generalSettingsToDraft(config: GeneralSettingsConfig): GeneralSettingsD
     requestDetailCleanupEnabled: config.data?.request_detail_cleanup_enabled ?? true,
     requestDetailRetentionDays: String(config.data?.request_detail_retention_days ?? 90),
     sessionLifetimeHours: String(config.security?.session_lifetime_hours ?? 24),
+    sessionAffinityEnabled: config.gateway?.session_affinity_enabled ?? true,
     maxSameSiteCredentialRetries: String(config.gateway?.max_same_site_credential_retries ?? 0),
     firstByteTimeoutMS: String(config.gateway?.first_byte_timeout_ms ?? 0),
   }
@@ -389,6 +401,7 @@ function draftToGeneralSettings(draft: GeneralSettingsDraft): GeneralSettingsCon
       session_lifetime_hours: Number(draft.sessionLifetimeHours.trim()),
     },
     gateway: {
+      session_affinity_enabled: draft.sessionAffinityEnabled,
       max_same_site_credential_retries: Number(draft.maxSameSiteCredentialRetries.trim()),
       first_byte_timeout_ms: Number(draft.firstByteTimeoutMS.trim()),
     },

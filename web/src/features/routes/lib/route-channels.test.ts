@@ -87,6 +87,52 @@ describe('routeChannelRowsFromMatrix', () => {
       upstream_cost_multiplier: 1,
     })
   })
+
+  it('keeps a manually added compatible site model visible without a per-key snapshot', () => {
+    const site: Site = {
+      id: 'site-compat',
+      name: 'Compatible relay',
+      slug: 'compatible-relay',
+      site_type: 'openai_compatible',
+      base_url: 'https://example.test',
+      status: 'active',
+      enabled: true,
+      routing_priority: 1,
+      supports_multiple_api_keys: true,
+      meta: {},
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    }
+    const matrixRow: CanonicalModelMatrixRow = {
+      site_id: site.id,
+      site_name: site.name,
+      site_slug: site.slug,
+      site_type: site.site_type,
+      site_enabled: true,
+      site_model_id: 'manual-site-model',
+      upstream_model_name: 'custom-model',
+      display_name: 'Custom Model',
+      model_status: 'active',
+      canonical_match_source: 'manual',
+      canonical_match_confidence: 100,
+      api_key_count: 1,
+      available_api_key_count: 1,
+      pricing: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    }
+
+    const rows = routeChannelRowsFromMatrix([matrixRow], [site], { [site.id]: [] }, undefined, [], [])
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      kind: 'site_model',
+      siteId: site.id,
+      siteModelId: matrixRow.site_model_id,
+      upstreamName: matrixRow.upstream_model_name,
+      routable: true,
+    })
+  })
 })
 
 describe('routeModelCooldown', () => {

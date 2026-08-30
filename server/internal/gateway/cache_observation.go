@@ -72,6 +72,13 @@ func (h Handler) cacheObservationSettings() cacheObservationSettings {
 	}
 }
 
+func (h Handler) prioritizeCacheSessionAffinity(ctx context.Context, attempts []routeengine.Candidate) []routeengine.Candidate {
+	if !config.ReadGeneralConfig(h.confFile).Gateway.SessionAffinityEnabled {
+		return attempts
+	}
+	return prioritizeCacheSessionAffinity(ctx, attempts)
+}
+
 func cacheObservationKey(masterKey string) []byte {
 	masterKey = strings.TrimSpace(masterKey)
 	if masterKey == "" {
@@ -438,6 +445,7 @@ type cacheObservationRequestLog struct {
 	CacheDomainHash  string    `json:"cache_domain_hash"`
 	CacheFingerprint string    `json:"cache_fingerprint"`
 	ExpiresAt        time.Time `json:"expires_at"`
+	SiteModelID      uuid.UUID `json:"-"`
 }
 
 func cacheObservationFromRequestLog(log store.RequestLogCacheObservation) (cacheObservationRequestLog, bool) {
@@ -450,6 +458,9 @@ func cacheObservationFromRequestLog(log store.RequestLogCacheObservation) (cache
 	previous := metadata.CacheObservation
 	if previous.PrefixHash == "" && previous.SessionHash == "" {
 		return cacheObservationRequestLog{}, false
+	}
+	if log.SiteModelID.Valid {
+		previous.SiteModelID = log.SiteModelID.UUID
 	}
 	return previous, true
 }
@@ -474,6 +485,9 @@ func cacheShadowAffinityFromPrevious(key []byte, observation cacheObservation, c
 		lineageKey = previous.SessionHash
 	}
 	for _, candidate := range candidates {
+		if previous.SiteModelID != uuid.Nil && candidate.Candidate.Model.SiteModelID != previous.SiteModelID {
+			continue
+		}
 		if candidate.CacheDomainHash != previous.CacheDomainHash {
 			continue
 		}
@@ -486,6 +500,48 @@ func cacheShadowAffinityFromPrevious(key []byte, observation cacheObservation, c
 		return affinity
 	}
 	return affinity
+}
+
+// prioritizeCacheSessionAffinity applies a soft preference to the route that
+// served the most recent successful request for this explicit session. The
+// candidate remains subject to the normal concurrency, health, and failover
+// checks; moving it to the front only changes which attempt is tried first.
+func prioritizeCacheSessionAffinity(ctx context.Context, attempts []routeengine.Candidate) []routeengine.Candidate {
+	affinity, ok := cacheShadowAffinityFromContext(ctx)
+	if !ok || !affinity.Routable || affinity.MatchKind != "session" || affinity.MatchedCandidateRank <= 0 || len(attempts) < 2 {
+		return attempts
+	}
+	// A routing lock is authoritative. Session affinity must not move an
+	// unlocked channel ahead of the locked target.
+	if attempts[0].Locked {
+		return attempts
+	}
+	// A reserved exploration candidate is an explicit routing decision. Keep it
+	// first so session affinity does not consume an exploration reservation
+	// without giving that candidate a chance to serve the request.
+	if attempts[0].Exploration.Reserved {
+		return attempts
+	}
+	matchedIndex := -1
+	for index, candidate := range attempts {
+		if candidate.Rank == affinity.MatchedCandidateRank {
+			matchedIndex = index
+			break
+		}
+	}
+	if matchedIndex <= 0 {
+		return attempts
+	}
+
+	matched := attempts[matchedIndex]
+	if matched.Locked {
+		// Keep a locked target in the route engine's order. In fallback mode the
+		// target may be cooling and must not be promoted ahead of healthy channels.
+		return attempts
+	}
+	copy(attempts[1:matchedIndex+1], attempts[:matchedIndex])
+	attempts[0] = matched
+	return attempts
 }
 
 func cacheShadowAffinityMatchedAt(value time.Time) any {

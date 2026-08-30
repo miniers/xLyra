@@ -42,8 +42,9 @@ type GeneralSecurityConfig struct {
 }
 
 type GeneralGatewayConfig struct {
-	MaxSameSiteCredentialRetries int `json:"max_same_site_credential_retries"`
-	FirstByteTimeoutMS           int `json:"first_byte_timeout_ms"`
+	SessionAffinityEnabled       bool `json:"session_affinity_enabled"`
+	MaxSameSiteCredentialRetries int  `json:"max_same_site_credential_retries"`
+	FirstByteTimeoutMS           int  `json:"first_byte_timeout_ms"`
 }
 
 type GeneralConfig struct {
@@ -85,6 +86,7 @@ func DefaultGeneralConfig() GeneralConfig {
 			SessionLifetimeHours: 24,
 		},
 		Gateway: GeneralGatewayConfig{
+			SessionAffinityEnabled:       true,
 			MaxSameSiteCredentialRetries: 0,
 			FirstByteTimeoutMS:           0,
 		},
@@ -136,6 +138,7 @@ func GeneralConfigFromRaw(raw any) GeneralConfig {
 		cfg.Security.SessionLifetimeHours = intFromMap(security, "session_lifetime_hours", cfg.Security.SessionLifetimeHours)
 	}
 	if gateway, ok := root["gateway"].(map[string]any); ok {
+		cfg.Gateway.SessionAffinityEnabled = boolFromMap(gateway, "session_affinity_enabled", cfg.Gateway.SessionAffinityEnabled)
 		cfg.Gateway.MaxSameSiteCredentialRetries = intFromMap(gateway, "max_same_site_credential_retries", cfg.Gateway.MaxSameSiteCredentialRetries)
 		cfg.Gateway.FirstByteTimeoutMS = intFromMap(gateway, "first_byte_timeout_ms", cfg.Gateway.FirstByteTimeoutMS)
 	}
@@ -259,6 +262,7 @@ func GeneralConfigToMap(cfg GeneralConfig) map[string]any {
 			"session_lifetime_hours": cfg.Security.SessionLifetimeHours,
 		},
 		"gateway": map[string]any{
+			"session_affinity_enabled":         cfg.Gateway.SessionAffinityEnabled,
 			"max_same_site_credential_retries": cfg.Gateway.MaxSameSiteCredentialRetries,
 			"first_byte_timeout_ms":            cfg.Gateway.FirstByteTimeoutMS,
 		},
