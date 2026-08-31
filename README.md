@@ -36,26 +36,38 @@ xLyra supports:
 
 This repository contains a personal enhancement branch that intentionally follows different product priorities from the original project. The `main` branch is the original baseline; the current `enhancement` branch is an additional, self-use variant and its features are not part of the original `main` behavior by default.
 
-Compared with `main`, this branch adds:
+Compared with `main`, this branch adds the following capabilities (snapshot from `git diff main...HEAD`: 12 commits, 192 files):
 
 ### Routing score and quota exploration
 
 - A more detailed route score: success rate, latency, cache hit rate, API key capacity, actual price, and subscription expiry urgency are scored independently.
 - Actual price combines the upstream credential/key multiplier with observed model cache behavior. Score details show the corresponding raw values, such as percentages, milliseconds, cache hit rate, and price multipliers, alongside each score.
 - Subscription expiry urgency applies only to subscription-based upstream keys and uses the remaining time until expiry. An optional expiry-rescue bonus can be enabled below the model scoring preference to prioritize subscription quota that is about to expire.
+- Canonical models support `default`, `value`, and `speed` routing profiles; the console compares each candidate's score profile instead of exposing only one opaque total.
 - Quota exploration can be configured per canonical model. A site runs its configured trial count consecutively before exploration moves to the next site; progress can be reset globally or restarted for one site. The first request in each exploration cycle is treated as a warm-up request and excluded from cache hit-rate statistics.
+- Sustained first-byte latency or cache-hit-rate regressions can trigger a hysteresis-based automatic down-rank with explainable recent/baseline metrics and dashboard attention items. Administrators can clear the anomaly or apply a temporary +/-5 score adjustment.
+- Cache observations provide optional session affinity for subsequent requests to the same site/model; hard routing constraints take precedence over this soft ordering.
+
+### Upstream channel locks
+
+- A canonical model can be locked to one `site_model_id`, with an optional expiry, reason, and `strict` or `fallback` policy. Strict locks never cross channels, even when the target is unavailable, unauthorized, cooling, or incompatible; the gateway returns a dedicated lock-unavailable error instead.
+- Fallback locks keep the locked channel first and may use ordinary candidates only before the first response byte. Lock metadata, policy, fallback engagement, and exploration suppression are recorded in route traces.
+- Administrators can read, create, update, and remove locks from the model route workspace. Writes validate the site-model mapping, invalidate the gateway model cache, write audit records, and include lock rows in schema bootstrap and backup/restore.
 
 ### Site, credential, and gateway controls
 
 - Site and API key views expose whether quota is balance-based or subscription-based, along with subscription quota and expiry information where available.
-- Same-site credential retries and upstream first-byte timeouts can be configured globally, per site, per downstream API key, and per model override, with inheritance between levels.
-- In-flight requests expose their phase, route, token estimates or actual usage, and first-byte latency. Active requests can be cancelled from the traffic-flow view or request list.
+- OAuth and quota-probe subscription expiry metadata is preserved during refresh/import and feeds credential ordering and expiry-aware routing.
+- Same-site credential retries and upstream first-byte timeouts can be configured globally, per site, per downstream API key, and per model override, with inheritance between levels and explicit clear-to-inherit actions.
+- Site-level concurrency caps can be set or cleared. When a local site/model limit is exhausted, routing can try the next channel without treating the condition as an upstream 429 or activating a cooldown.
+- In-flight requests expose their phase, route, token estimates or actual usage, and first-byte latency. Active requests can be cancelled from the traffic-flow view or request list, and request details can be located by request ID.
 
 ### Requests and analytics
 
 - Real-time request logs use stable live ordering and status animations, while preserving the original start time for historical request records.
 - Cache hit rate is available in request filters and analytics trend views.
-- Route details include compact score breakdowns, raw input values, model score profiles, and multi-column quota-exploration progress.
+- Route details include compact score breakdowns, raw input values, model score profiles, anomaly explanations, lock state, and multi-column quota-exploration progress. The route workspace was reorganized around a responsive site-model/channel table with direct test, pin, lock, cooldown, and score actions.
+- Request traces and detail views expose failover paths, credential retries, first-byte/output timing, cache accounting, and the distinction between estimated and reported token usage.
 
 ### System maintenance and optional tooling
 

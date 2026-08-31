@@ -202,23 +202,23 @@ export function RouteSiteModelTable({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-[hsl(var(--glass-border))] bg-[hsl(var(--surface-panel))]">
-          <table className="min-w-[920px] w-full table-fixed border-collapse text-xs">
+          <table className="min-w-[700px] w-full table-fixed border-collapse text-xs">
             <colgroup>
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '21%' }} />
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '21%' }} />
+              <col style={{ width: '72px' }} />
+              <col style={{ width: '132px' }} />
+              <col style={{ width: 'calc((100% - 388px) / 3)' }} />
+              <col style={{ width: 'calc(100% - 388px - ((100% - 388px) / 3))' }} />
+              <col style={{ width: '72px' }} />
+              <col style={{ width: '112px' }} />
             </colgroup>
             <thead>
               <tr className="border-b border-[hsl(var(--glass-divider))] text-left text-muted-soft">
-                <th className="px-3 py-2 font-medium">{t('details.table.headers.rank')}</th>
-                <th className="px-3 py-2 font-medium">{t('details.table.headers.siteModel')}</th>
-                <th className="px-3 py-2 font-medium">{t('details.table.headers.score')}</th>
-                <th className="px-3 py-2 font-medium">{t('details.table.headers.healthPricing')}</th>
-                <th className="px-3 py-2 font-medium">{t('details.table.headers.exploration')}</th>
-                <th className="px-3 py-2 font-medium">{t('details.table.headers.actions')}</th>
+                <th className="px-2 py-2 font-medium">{t('details.table.headers.rank')}</th>
+                <th className="px-2 py-2 font-medium">{t('details.table.headers.siteModel')}</th>
+                <th className="px-2 py-2 font-medium">{t('details.table.headers.score')}</th>
+                <th className="px-2 py-2 font-medium">{t('details.table.headers.healthPricing')}</th>
+                <th className="px-2 py-2 font-medium">{t('details.table.headers.exploration')}</th>
+                <th className="px-2 py-2 font-medium">{t('details.table.headers.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -244,7 +244,7 @@ export function RouteSiteModelTable({
                     tabIndex={0}
                     aria-expanded={expanded}
                     >
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3">
                         <div className="flex items-center gap-2">
                           <Button
                             size="icon"
@@ -267,7 +267,7 @@ export function RouteSiteModelTable({
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-2 py-3">
                         <div className="min-w-0">
                           <div className="truncate font-medium text-foreground" title={group.siteName}>
                             {group.siteName}
@@ -288,7 +288,7 @@ export function RouteSiteModelTable({
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 tabular-nums">
+                      <td className="px-2 py-3 tabular-nums">
                         {profile ? (
                           <div className="space-y-1">
                             <div className="font-semibold text-foreground">{formatRouteScore(profile.score)}</div>
@@ -303,7 +303,7 @@ export function RouteSiteModelTable({
                           <span className="text-muted-soft">-</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-muted-soft">
+                      <td className="px-2 py-3 text-muted-soft">
                         <div className="space-y-1">
                           <div title={group.candidate ? formatModelHealth(group.candidate, t) : undefined}>
                             {group.candidate ? formatModelHealth(group.candidate, t) : t('details.table.noHealth')}
@@ -313,7 +313,7 @@ export function RouteSiteModelTable({
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-muted-soft">
+                      <td className="px-2 py-3 text-muted-soft">
                         {group.candidate?.exploration ? (
                           <div className="space-y-1">
                             <div>{formatExplorationStatus(group.candidate.exploration.status, t)}</div>
@@ -323,7 +323,7 @@ export function RouteSiteModelTable({
                           <span>-</span>
                         )}
                       </td>
-                      <td className="px-3 py-3" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                      <td className="px-1.5 py-3" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
                         <SiteModelActions
                           group={group}
                           locked={locked}
@@ -570,7 +570,7 @@ function SiteModelActions({
           type="button"
           size="sm"
           variant="outline"
-          className="h-8 gap-1.5 px-2.5 text-xs"
+          className="h-8 gap-1 px-1.5 text-xs"
           onClick={onQuickLock}
           disabled={lockPending}
           aria-label={t('details.table.pinLock')}
