@@ -75,6 +75,31 @@
       "current": "現在",
       "routable": "ルーティング可能 #{{rank}}"
     },
+    "table": {
+      "loadFailed": "サイトモデルの読み込みに失敗しました",
+      "noModels": "サイトモデルがありません",
+      "headers": {
+        "rank": "順位",
+        "siteModel": "サイトモデル",
+        "score": "スコア",
+        "healthPricing": "ヘルス / 価格",
+        "exploration": "試行",
+        "actions": "操作"
+      },
+      "expand": "サイトモデルの詳細を展開",
+      "collapse": "サイトモデルの詳細を折りたたむ",
+      "scoreDetails": "スコア要因",
+      "channelDetails": "キー / チャネル詳細",
+      "noChannels": "チャネル詳細がありません",
+      "noHealth": "ヘルスデータがありません",
+      "test": "接続テスト",
+      "pinLock": "優先固定",
+      "more": "その他の操作",
+      "lock": "サイトモデルを固定",
+      "editLock": "固定を編集",
+      "removeLock": "固定を解除",
+      "cancel": "キャンセル"
+    },
     "scores": {
       "title": "スコアの内訳",
       "loadFailed": "スコアの読み込みに失敗しました",

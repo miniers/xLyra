@@ -40,6 +40,24 @@ export type RouteChannelRow = {
   toggleDisabled?: boolean
 }
 
+export type RouteSiteModelGroup = {
+  siteModelId: string
+  siteId: string
+  siteName: string
+  siteType: string
+  upstreamName: string
+  siteEnabled: boolean
+  siteModelEnabled: boolean
+  current: boolean
+  locked: boolean
+  cooling: boolean
+  routable: boolean
+  enabledChannelCount: number
+  routableChannelCount: number
+  channels: RouteChannelRow[]
+  candidate?: RouteCandidateItem
+}
+
 export type PendingChannelState = {
   id: string
   enabled: boolean

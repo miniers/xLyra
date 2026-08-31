@@ -75,6 +75,31 @@
       "current": "Current",
       "routable": "Routable #{{rank}}"
     },
+    "table": {
+      "loadFailed": "Failed to load site models",
+      "noModels": "No site models",
+      "headers": {
+        "rank": "Rank",
+        "siteModel": "Site model",
+        "score": "Scores",
+        "healthPricing": "Health / price",
+        "exploration": "Exploration",
+        "actions": "Actions"
+      },
+      "expand": "Expand site model details",
+      "collapse": "Collapse site model details",
+      "scoreDetails": "Score factors",
+      "channelDetails": "Key / channel details",
+      "noChannels": "No channel details",
+      "noHealth": "No health data",
+      "test": "Connectivity test",
+      "pinLock": "Pin lock",
+      "more": "More actions",
+      "lock": "Lock site model",
+      "editLock": "Edit lock",
+      "removeLock": "Remove lock",
+      "cancel": "Cancel"
+    },
     "scores": {
       "title": "Score breakdown",
       "loadFailed": "Failed to load scores",

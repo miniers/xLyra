@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { routeChannelRowsFromMatrix, routeModelCooldown } from '@/features/routes/lib/route-channels'
-import type { RouteCooldown } from '@/features/routes/api/routes'
+import { routeChannelRowsFromMatrix, routeModelCooldown, routeSiteModelGroupsFromChannels, routeSiteModelStatus } from '@/features/routes/lib/route-channels'
+import type { RouteCandidateItem, RouteCooldown } from '@/features/routes/api/routes'
 import type { CanonicalModelMatrixRow, Site, SiteAPIKey } from '@/features/sites/api/sites'
+import type { RouteChannelRow } from './types'
 
 describe('routeChannelRowsFromMatrix', () => {
   it('applies the credential cost multiplier to token and per-request prices', () => {
@@ -171,5 +172,137 @@ describe('routeModelCooldown', () => {
     expect(routeModelCooldown(cooldowns, 'site-1', 'model-1')?.id).toBe('site-model-cooldown')
     expect(routeModelCooldown(cooldowns, 'site-1', 'model-2')).toBeUndefined()
     expect(routeModelCooldown(cooldowns, 'site-2', 'model-1')?.id).toBe('site-model-cooldown')
+  })
+})
+
+describe('routeSiteModelGroupsFromChannels', () => {
+  function candidate(siteModelId = 'site-model-1'): RouteCandidateItem {
+    return {
+      rank: 1,
+      score: 90,
+      site: {
+        id: 'site-1',
+        name: 'Primary',
+        slug: 'primary',
+        site_type: 'openai',
+        base_url: 'https://example.test',
+        routing_priority: 1,
+      },
+      model: {
+        site_model_id: siteModelId,
+        upstream_model_name: 'gpt-test',
+        display_name: 'GPT Test',
+        canonical_match_source: 'manual',
+        canonical_match_confidence: 100,
+      },
+      health: {
+        status: 'healthy',
+        consecutive_failures: 0,
+      },
+      availability: {
+        available_api_key_count: 1,
+        total_api_key_count: 1,
+      },
+      credential: {
+        routing_priority: 1,
+        upstream_cost_multiplier: 1,
+      },
+      pricing: {},
+    }
+  }
+
+  function channel(overrides: Partial<RouteChannelRow> = {}): RouteChannelRow {
+    return {
+      id: 'api-key:site-1:site-model-1:key-1:model',
+      kind: 'api_key',
+      siteId: 'site-1',
+      siteName: 'Primary',
+      siteType: 'openai',
+      siteEnabled: true,
+      siteModelId: 'site-model-1',
+      siteModelEnabled: true,
+      upstreamName: 'gpt-test',
+      apiKeyId: 'key-1',
+      apiKeyName: 'Primary key',
+      apiKeyEnabled: true,
+      apiKeyModelEnabled: true,
+      enabled: true,
+      routable: true,
+      ...overrides,
+    }
+  }
+
+  it('deduplicates candidate and exploration data across multiple API keys', () => {
+    const primary = candidate()
+    const groups = routeSiteModelGroupsFromChannels([
+      channel({ candidate: primary, current: true, locked: true }),
+      channel({
+        id: 'api-key:site-1:site-model-1:key-2:model',
+        apiKeyId: 'key-2',
+        apiKeyName: 'Backup key',
+        apiKeyEnabled: false,
+        enabled: false,
+        routable: false,
+        candidate: primary,
+      }),
+    ], [primary])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({
+      siteModelId: 'site-model-1',
+      current: true,
+      locked: true,
+      enabledChannelCount: 1,
+      routableChannelCount: 1,
+      candidate: primary,
+    })
+    expect(groups[0]?.channels).toHaveLength(2)
+  })
+
+  it('keeps candidate-only site models available to the unified table', () => {
+    const item = candidate('candidate-only')
+    const groups = routeSiteModelGroupsFromChannels([], [item])
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({
+      siteModelId: 'candidate-only',
+      siteId: 'site-1',
+      siteName: 'Primary',
+      upstreamName: 'gpt-test',
+      routable: true,
+      locked: false,
+      candidate: item,
+      channels: [],
+    })
+  })
+
+  it('aggregates current, cooling, disabled, and locked channel states', () => {
+    const groups = routeSiteModelGroupsFromChannels([
+      channel({ current: true, cooling: true, routable: false, enabled: false, locked: true }),
+      channel({
+        id: 'api-key:site-1:site-model-1:key-2:model',
+        apiKeyId: 'key-2',
+        siteEnabled: false,
+        siteModelEnabled: false,
+        routable: false,
+        enabled: false,
+      }),
+    ])
+
+    expect(groups[0]).toMatchObject({
+      current: true,
+      cooling: true,
+      routable: false,
+      locked: true,
+    })
+    expect(routeSiteModelStatus(groups[0]!)).toMatchObject({ label: '冷却中' })
+  })
+
+  it('reports disabled status when no channel is cooling', () => {
+    const groups = routeSiteModelGroupsFromChannels([
+      channel({ siteEnabled: false, siteModelEnabled: false, routable: false, enabled: false }),
+    ])
+
+    expect(routeSiteModelStatus(groups[0]!)).toMatchObject({ label: '站点停用' })
   })
 })

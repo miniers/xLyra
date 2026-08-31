@@ -75,6 +75,31 @@
       "current": "当前使用",
       "routable": "可路由 #{{rank}}"
     },
+    "table": {
+      "loadFailed": "站点模型读取失败",
+      "noModels": "暂无站点模型",
+      "headers": {
+        "rank": "排名",
+        "siteModel": "站点模型",
+        "score": "评分",
+        "healthPricing": "健康 / 价格",
+        "exploration": "试运行",
+        "actions": "操作"
+      },
+      "expand": "展开站点模型详情",
+      "collapse": "收起站点模型详情",
+      "scoreDetails": "评分因子",
+      "channelDetails": "Key / 渠道明细",
+      "noChannels": "暂无渠道明细",
+      "noHealth": "暂无健康数据",
+      "test": "连通性测试",
+      "pinLock": "临时置顶",
+      "more": "更多操作",
+      "lock": "锁定站点模型",
+      "editLock": "编辑锁定",
+      "removeLock": "解除锁定",
+      "cancel": "取消"
+    },
     "scores": {
       "title": "评分明细",
       "loadFailed": "评分读取失败",

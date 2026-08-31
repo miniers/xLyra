@@ -38,10 +38,12 @@ type TestRecord =
 export function SiteModelTestSheet({
   site,
   models,
+  modelId,
   onOpenChange,
 }: {
   site: Site | null
   models: SiteModel[]
+  modelId?: string
   onOpenChange: (open: boolean) => void
 }) {
   const open = Boolean(site)
@@ -118,8 +120,9 @@ export function SiteModelTestSheet({
 
   const availableModels = useMemo(
     () => [...(modelsQuery.data?.items ?? EMPTY_MODELS)]
+      .filter((model) => !modelId || model.id === modelId)
       .sort((a, b) => a.upstream_model_name.localeCompare(b.upstream_model_name)),
-    [modelsQuery.data?.items],
+    [modelId, modelsQuery.data?.items],
   )
   const keyword = search.trim().toLowerCase()
   const filteredModels = useMemo(
