@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,73 @@ func TestEnsureCodexConnectionFreshReturnsUnexpiredDetailsOffline(t *testing.T) 
 	}
 	if details.AccessToken != "fixture-access-token" || details.Connection.ID != connection.ID {
 		t.Fatalf("details = %#v, want decrypted unexpired connection", details)
+	}
+}
+
+func TestEnsureCodexConnectionFreshRechecksExpiryAfterRefreshLockOffline(t *testing.T) {
+	t.Parallel()
+
+	bootstrap := NewService(nil, "master-key")
+	encryptedOldAccess, _, err := bootstrap.credentials.Encrypt("old-access-token")
+	if err != nil {
+		t.Fatalf("encrypt old access token: %v", err)
+	}
+	encryptedFreshAccess, _, err := bootstrap.credentials.Encrypt("fresh-access-token")
+	if err != nil {
+		t.Fatalf("encrypt fresh access token: %v", err)
+	}
+	encryptedRefresh, _, err := bootstrap.credentials.Encrypt("refresh-token")
+	if err != nil {
+		t.Fatalf("encrypt refresh token: %v", err)
+	}
+	siteID := uuid.New()
+	connectionID := uuid.New()
+	expired := store.OAuthConnection{
+		ID:                    connectionID,
+		Provider:              codexProvider,
+		SiteID:                &siteID,
+		Status:                "connected",
+		EncryptedAccessToken:  encryptedOldAccess,
+		EncryptedRefreshToken: encryptedRefresh,
+		ExpiresAt:             sql.NullTime{Time: time.Now().Add(-time.Hour), Valid: true},
+	}
+	fresh := expired
+	fresh.EncryptedAccessToken = encryptedFreshAccess
+	fresh.ExpiresAt = sql.NullTime{Time: time.Now().Add(time.Hour), Valid: true}
+	byIDCalls := 0
+	var upstreamCalls int
+	service := oauthServiceWithQueryUpdate(t, func(tx *gorm.DB) {
+		switch item := tx.Statement.Dest.(type) {
+		case *[]store.OAuthConnection:
+			*item = []store.OAuthConnection{expired}
+		case *store.OAuthConnection:
+			byIDCalls++
+			if byIDCalls == 1 {
+				*item = expired
+			} else {
+				*item = fresh
+			}
+		case *store.Site:
+			*item = store.Site{ID: siteID, Meta: store.JSON(`{}`)}
+		default:
+			tx.AddError(errors.New("unexpected ensure refresh query destination"))
+			return
+		}
+		tx.Statement.RowsAffected = 1
+	}, func(tx *gorm.DB) {
+		tx.AddError(errors.New("fresh connection after lock should not save"))
+	})
+	service.httpClient = &http.Client{Transport: oauthRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		upstreamCalls++
+		return oauthHTTPResponse(http.StatusInternalServerError, `unexpected upstream refresh`), nil
+	})}
+
+	details, err := service.EnsureCodexConnectionFresh(context.Background(), siteID)
+	if err != nil {
+		t.Fatalf("EnsureCodexConnectionFresh returned error: %v", err)
+	}
+	if details.AccessToken != "fresh-access-token" || upstreamCalls != 0 {
+		t.Fatalf("details=%#v upstreamCalls=%d, want reread fresh connection without upstream call", details, upstreamCalls)
 	}
 }
 

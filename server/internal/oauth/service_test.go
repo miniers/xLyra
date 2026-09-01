@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"xlyra/server/internal/adapter"
 	"xlyra/server/internal/store"
 )
 
@@ -199,6 +200,7 @@ func TestExchangeCodexCodeEncodesFormAndDecodesToken(t *testing.T) {
 		if req.Header.Get("Content-Type") != "application/x-www-form-urlencoded" || req.Header.Get("Accept") != "application/json" {
 			t.Fatalf("unexpected codex exchange headers: %#v", req.Header)
 		}
+		assertCodexAuthHeaders(t, req)
 		return oauthHTTPResponse(http.StatusOK, `{"access_token":"access","refresh_token":"refresh","id_token":"id","token_type":"Bearer","scope":"openid","expires_in":3600}`), nil
 	})}
 
@@ -221,7 +223,9 @@ func TestRefreshCodexTokensSurfacesNon2xxBody(t *testing.T) {
 			"grant_type":    "refresh_token",
 			"refresh_token": "refresh-token",
 			"client_id":     codexClientID,
+			"scope":         codexRefreshScope,
 		})
+		assertCodexAuthHeaders(t, req)
 		return oauthHTTPResponse(http.StatusUnauthorized, ` invalid_grant `), nil
 	})}
 
@@ -229,6 +233,34 @@ func TestRefreshCodexTokensSurfacesNon2xxBody(t *testing.T) {
 
 	if err == nil || !strings.Contains(err.Error(), "codex token refresh returned 401: invalid_grant") {
 		t.Fatalf("refreshCodexTokens error = %v", err)
+	}
+}
+
+func TestRefreshCodexTokensClassifiesInvalidatedRefreshToken(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, "master-key")
+	client := &http.Client{Transport: oauthRoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return oauthHTTPResponse(http.StatusUnauthorized, `{"error":{"message":"Your refresh token has been invalidated.","type":"invalid_request_error","param":null,"code":"refresh_token_invalidated"}}`), nil
+	})}
+
+	_, err := service.refreshCodexTokens(context.Background(), "refresh-token", client)
+	if err == nil || !errors.Is(err, ErrCodexReauthorizationRequired) {
+		t.Fatalf("refreshCodexTokens error = %v, want reauthorization sentinel", err)
+	}
+	if got := codexTokenErrorCode(err); got != "refresh_token_invalidated" {
+		t.Fatalf("codex token error code = %q, want refresh_token_invalidated", got)
+	}
+}
+
+func assertCodexAuthHeaders(t *testing.T, req *http.Request) {
+	t.Helper()
+	if req.Header.Get("User-Agent") != adapter.CodexUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", req.Header.Get("User-Agent"), adapter.CodexUserAgent)
+	}
+	wantOriginator := strings.SplitN(adapter.CodexUserAgent, "/", 2)[0]
+	if req.Header.Get("originator") != wantOriginator {
+		t.Fatalf("originator = %q, want %q", req.Header.Get("originator"), wantOriginator)
 	}
 }
 
@@ -679,6 +711,7 @@ func TestIsPermanentAuthError(t *testing.T) {
 
 	permanent := []string{
 		"codex token refresh returned 401: token_invalidated",
+		"codex token refresh returned 401: refresh_token_invalidated",
 		"upstream returned 403 forbidden",
 		"refresh_token_reused",
 		"invalid_grant",

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -68,6 +70,70 @@ func TestOAuthHTTPClientForConnectionUsesDefaultWithoutSiteLookup(t *testing.T) 
 	}
 	if client == nil {
 		t.Fatal("nil site connection client is nil")
+	}
+}
+
+func TestDevPostgresOAuthRefreshLockSerializesAcrossStores(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cfg, err := devPostgresOAuthSmokeConfig()
+	if err != nil {
+		t.Skipf("dev PostgreSQL refresh-lock smoke disabled: %v", err)
+	}
+	first, err := store.Open(ctx, cfg)
+	if err != nil {
+		t.Skipf("dev PostgreSQL unavailable: %s", redactOAuthDatabaseOpenError(err, cfg))
+	}
+	defer first.Close()
+	second, err := store.Open(ctx, cfg)
+	if err != nil {
+		t.Skipf("dev PostgreSQL unavailable: %s", redactOAuthDatabaseOpenError(err, cfg))
+	}
+	defer second.Close()
+
+	connectionID := uuid.New()
+	var active, maxActive, calls int32
+	updateMax := func(value int32) {
+		for {
+			previous := atomic.LoadInt32(&maxActive)
+			if value <= previous || atomic.CompareAndSwapInt32(&maxActive, previous, value) {
+				return
+			}
+		}
+	}
+	start := make(chan struct{})
+	errorsCh := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, repo := range []store.OAuthConnectionRepository{
+		store.NewOAuthConnectionRepository(first.DB()),
+		store.NewOAuthConnectionRepository(second.DB()),
+	} {
+		repo := repo
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errorsCh <- repo.WithRefreshLock(ctx, connectionID, func(store.OAuthConnectionRepository) error {
+				atomic.AddInt32(&calls, 1)
+				current := atomic.AddInt32(&active, 1)
+				updateMax(current)
+				time.Sleep(150 * time.Millisecond)
+				atomic.AddInt32(&active, -1)
+				return nil
+			})
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errorsCh)
+	for err := range errorsCh {
+		if err != nil {
+			t.Fatalf("WithRefreshLock returned error: %v", err)
+		}
+	}
+	if calls != 2 || maxActive != 1 {
+		t.Fatalf("refresh lock calls=%d max_active=%d, want calls=2 and serialized max_active=1", calls, maxActive)
 	}
 }
 

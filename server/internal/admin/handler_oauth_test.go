@@ -340,6 +340,17 @@ func TestOAuthConnectionPayloadPreservesExplicitLastError(t *testing.T) {
 	}
 }
 
+func TestOAuthConnectionRefreshErrorCodeUsesStableReauthorizationCode(t *testing.T) {
+	t.Parallel()
+
+	if got := oauthConnectionRefreshErrorCode(oauthsvc.ErrCodexReauthorizationRequired); got != "oauth_reauthorization_required" {
+		t.Fatalf("reauthorization error code = %q, want oauth_reauthorization_required", got)
+	}
+	if got := oauthConnectionRefreshErrorCode(assertionError("refresh failed")); got != "oauth_connection_refresh_failed" {
+		t.Fatalf("generic refresh error code = %q, want oauth_connection_refresh_failed", got)
+	}
+}
+
 func TestApplyOAuthCallbackProxyOverrideAndSiteMeta(t *testing.T) {
 	t.Parallel()
 

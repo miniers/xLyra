@@ -21,12 +21,13 @@ import (
 )
 
 type Service struct {
-	db           *store.Store
-	credentials  credential.Service
-	httpClient   *http.Client
-	httpClients  *httpclient.Manager
-	masterKey    string
-	refreshGroup singleflight.Group
+	db               *store.Store
+	credentials      credential.Service
+	httpClient       *http.Client
+	httpClients      *httpclient.Manager
+	masterKey        string
+	refreshGroup     singleflight.Group
+	codexRefreshLock func(context.Context, uuid.UUID, func(store.OAuthConnectionRepository) error) error
 }
 
 type PendingSite struct {
@@ -607,7 +608,7 @@ func (s *Service) EnsureCodexConnectionFresh(ctx context.Context, siteID uuid.UU
 	if !connection.ExpiresAt.Valid || time.Until(connection.ExpiresAt.Time) > codexRefreshLead {
 		return s.codexConnectionDetails(connection)
 	}
-	return s.RefreshCodexConnection(ctx, connection.ID)
+	return s.refreshCodexConnection(ctx, connection.ID, false)
 }
 
 func (s *Service) EnsureAntigravityConnectionFresh(ctx context.Context, siteID uuid.UUID) (CodexConnection, error) {
@@ -644,8 +645,12 @@ func (s *Service) EnsureClaudeCodeConnectionFresh(ctx context.Context, siteID uu
 // would present an already-invalidated token, get invalid_grant, and wrongly
 // disable a healthy site. Losers instead receive the winner's fresh result.
 func (s *Service) RefreshCodexConnection(ctx context.Context, connectionID uuid.UUID) (CodexConnection, error) {
+	return s.refreshCodexConnection(ctx, connectionID, true)
+}
+
+func (s *Service) refreshCodexConnection(ctx context.Context, connectionID uuid.UUID, force bool) (CodexConnection, error) {
 	result, err, _ := s.refreshGroup.Do(connectionID.String(), func() (any, error) {
-		return s.refreshConnectionOnce(ctx, connectionID)
+		return s.refreshConnectionOnce(ctx, connectionID, force)
 	})
 	if err != nil {
 		return CodexConnection{}, err
@@ -654,7 +659,10 @@ func (s *Service) RefreshCodexConnection(ctx context.Context, connectionID uuid.
 	return connection, nil
 }
 
-func (s *Service) refreshConnectionOnce(ctx context.Context, connectionID uuid.UUID) (CodexConnection, error) {
+func (s *Service) refreshConnectionOnce(ctx context.Context, connectionID uuid.UUID, force bool) (CodexConnection, error) {
+	if s.db == nil || s.db.DB() == nil {
+		return CodexConnection{}, fmt.Errorf("oauth store is not available")
+	}
 	repo := store.NewOAuthConnectionRepository(s.db.DB())
 	connection, err := repo.GetByID(ctx, connectionID)
 	if err != nil {
@@ -669,67 +677,193 @@ func (s *Service) refreshConnectionOnce(ctx context.Context, connectionID uuid.U
 	if connection.Provider != codexProvider {
 		return CodexConnection{}, fmt.Errorf("oauth connection provider %q is not supported", connection.Provider)
 	}
-	if strings.TrimSpace(connection.EncryptedRefreshToken) == "" {
-		if connection.ExpiresAt.Valid && !connection.ExpiresAt.Time.After(time.Now()) {
-			return CodexConnection{}, fmt.Errorf("oauth connection has no refresh_token and access token has expired; re-import or sign in again")
+	var httpClient *http.Client
+	if strings.TrimSpace(connection.EncryptedRefreshToken) != "" && !codexConnectionRequiresReauthorization(connection) {
+		httpClient, err = s.httpClientForConnection(ctx, connection)
+		if err != nil {
+			return CodexConnection{}, err
 		}
-		return s.codexConnectionDetails(connection)
 	}
-	refreshToken, err := s.credentials.Decrypt(connection.EncryptedRefreshToken)
+	return s.refreshCodexConnectionLocked(ctx, connectionID, force, httpClient)
+}
+
+func (s *Service) refreshCodexConnectionLocked(ctx context.Context, connectionID uuid.UUID, force bool, httpClient *http.Client) (CodexConnection, error) {
+	var details CodexConnection
+	var permanentConnection store.OAuthConnection
+	var permanentError string
+	err := s.withCodexRefreshLock(ctx, connectionID, func(lockedRepo store.OAuthConnectionRepository) error {
+		connection, err := lockedRepo.GetByID(ctx, connectionID)
+		if err != nil {
+			return err
+		}
+		if connection.Provider != codexProvider {
+			return fmt.Errorf("oauth connection provider %q is not supported", connection.Provider)
+		}
+		if !force && connection.ExpiresAt.Valid && time.Until(connection.ExpiresAt.Time) > codexRefreshLead {
+			details, err = s.codexConnectionDetails(connection)
+			return err
+		}
+
+		meta := oauthConnectionMetadata(connection.Metadata)
+		if codexConnectionRequiresReauthorization(connection) {
+			return ErrCodexReauthorizationRequired
+		}
+		if strings.TrimSpace(connection.EncryptedRefreshToken) == "" {
+			if connection.ExpiresAt.Valid && !connection.ExpiresAt.Time.After(time.Now()) {
+				return fmt.Errorf("oauth connection has no refresh_token and access token has expired; re-import or sign in again")
+			}
+			details, err = s.codexConnectionDetails(connection)
+			return err
+		}
+
+		expectedEncryptedRefreshToken := connection.EncryptedRefreshToken
+		originalConnection := connection
+		refreshToken, err := s.credentials.Decrypt(expectedEncryptedRefreshToken)
+		if err != nil {
+			return err
+		}
+		if httpClient == nil {
+			httpClient, err = s.httpClientForConnection(ctx, connection)
+			if err != nil {
+				return err
+			}
+		}
+		recordFailure := func(refreshErr error) error {
+			errMsg := refreshErr.Error()
+			metadata := store.JSON(updateMetadataErrorWithCode(originalConnection.Metadata, errMsg, codexTokenErrorCode(refreshErr)))
+			marked, saveErr := lockedRepo.MarkCodexRefreshFailureIfRefreshTokenMatches(ctx, connectionID, expectedEncryptedRefreshToken, metadata)
+			if saveErr != nil {
+				return fmt.Errorf("%w (save codex refresh failure: %v)", refreshErr, saveErr)
+			}
+			if !marked {
+				current, reloadErr := lockedRepo.GetByID(ctx, connectionID)
+				if reloadErr == nil && codexRefreshStateChanged(originalConnection, current) {
+					details, reloadErr = s.codexConnectionDetails(current)
+					return reloadErr
+				}
+			}
+			if marked && isPermanentAuthError(errMsg) {
+				permanentConnection = originalConnection
+				permanentError = errMsg
+			}
+			return refreshErr
+		}
+
+		refreshed, err := s.refreshCodexTokens(ctx, refreshToken, httpClient)
+		if err != nil {
+			return recordFailure(err)
+		}
+		if strings.TrimSpace(refreshed.AccessToken) == "" {
+			return recordFailure(fmt.Errorf("codex token refresh returned empty access_token"))
+		}
+
+		claims, rawClaims, idTokenErr := parseCodexIDToken(refreshed.IDToken)
+		validIDToken := idTokenErr == nil
+		if validIDToken {
+			connection.RawProfile = jsonBytes(rawClaims)
+			if value := strings.TrimSpace(claims.Email); value != "" {
+				connection.Email = value
+			}
+			if value := strings.TrimSpace(claims.AuthInfo.ChatGPTAccountID); value != "" {
+				connection.AccountID = value
+			}
+		}
+		meta = oauthConnectionMetadata(connection.Metadata)
+		delete(meta, "last_error")
+		delete(meta, "last_error_code")
+		delete(meta, "last_error_at")
+		if validIDToken {
+			if value := strings.TrimSpace(claims.AuthInfo.ChatGPTPlanType); value != "" {
+				meta["plan_type"] = value
+			}
+			if value := strings.TrimSpace(claims.AuthInfo.ChatGPTUserID); value != "" {
+				meta["chatgpt_user_id"] = value
+			}
+			if value := strings.TrimSpace(claims.AuthInfo.UserID); value != "" {
+				meta["user_id"] = value
+			}
+			if claims.AuthInfo.ChatGPTSubscriptionActiveStart != nil {
+				meta["chatgpt_subscription_active_start"] = claims.AuthInfo.ChatGPTSubscriptionActiveStart
+			}
+			if claims.AuthInfo.ChatGPTSubscriptionActiveUntil != nil {
+				meta["chatgpt_subscription_active_until"] = claims.AuthInfo.ChatGPTSubscriptionActiveUntil
+			}
+		}
+		meta["refreshable"] = true
+		meta["token_mode"] = "oauth_refresh"
+		connection.Metadata = jsonBytes(meta)
+		connection.Status = "connected"
+		if value := strings.TrimSpace(refreshed.TokenType); value != "" {
+			connection.TokenType = value
+		}
+		if value := strings.TrimSpace(refreshed.Scope); value != "" {
+			connection.Scopes = value
+		}
+		now := time.Now()
+		connection.LastRefreshAt = sql.NullTime{Time: now, Valid: true}
+		if expiresAt := codexTokenExpiry(now, refreshed.ExpiresIn); !expiresAt.IsZero() {
+			connection.ExpiresAt = sql.NullTime{Time: expiresAt, Valid: true}
+		}
+		if connection.EncryptedAccessToken, connection.MaskedAccessToken, err = s.credentials.Encrypt(refreshed.AccessToken); err != nil {
+			return recordFailure(err)
+		}
+		if strings.TrimSpace(refreshed.RefreshToken) != "" {
+			if connection.EncryptedRefreshToken, connection.MaskedRefreshToken, err = s.credentials.Encrypt(refreshed.RefreshToken); err != nil {
+				return recordFailure(err)
+			}
+		}
+		if validIDToken {
+			if connection.EncryptedIDToken, connection.MaskedIDToken, err = s.credentials.Encrypt(refreshed.IDToken); err != nil {
+				return recordFailure(err)
+			}
+		}
+
+		saved, err := lockedRepo.SaveCodexRefreshIfRefreshTokenMatches(ctx, connection, expectedEncryptedRefreshToken)
+		if err != nil {
+			return err
+		}
+		if !saved {
+			current, reloadErr := lockedRepo.GetByID(ctx, connectionID)
+			if reloadErr != nil {
+				return fmt.Errorf("reload codex connection after concurrent refresh: %w", reloadErr)
+			}
+			if codexRefreshStateChanged(originalConnection, current) {
+				details, reloadErr = s.codexConnectionDetails(current)
+				return reloadErr
+			}
+			return fmt.Errorf("save codex refresh: connection changed before update")
+		}
+		details, err = s.codexConnectionDetails(connection)
+		return err
+	})
 	if err != nil {
 		return CodexConnection{}, err
 	}
-	httpClient, err := s.httpClientForConnection(ctx, connection)
-	if err != nil {
-		return CodexConnection{}, err
+	if permanentError != "" {
+		s.disableSiteOnPermanentError(ctx, permanentConnection, permanentError)
 	}
-	refreshed, err := s.refreshCodexTokens(ctx, refreshToken, httpClient)
-	if err != nil {
-		errMsg := err.Error()
-		connection.Status = "reconnect_required"
-		connection.Metadata = store.JSON(updateMetadataError(connection.Metadata, errMsg))
-		_, _ = repo.Save(ctx, connection)
-		s.disableSiteOnPermanentError(ctx, connection, errMsg)
-		return CodexConnection{}, err
+	return details, nil
+}
+
+func (s *Service) withCodexRefreshLock(ctx context.Context, connectionID uuid.UUID, fn func(store.OAuthConnectionRepository) error) error {
+	if s.codexRefreshLock != nil {
+		return s.codexRefreshLock(ctx, connectionID, fn)
 	}
-	claims, rawClaims, err := parseCodexIDToken(refreshed.IDToken)
-	if err != nil {
-		return CodexConnection{}, err
+	return store.NewOAuthConnectionRepository(s.db.DB()).WithRefreshLock(ctx, connectionID, fn)
+}
+
+func codexRefreshStateChanged(before store.OAuthConnection, after store.OAuthConnection) bool {
+	return before.EncryptedRefreshToken != after.EncryptedRefreshToken ||
+		before.Status != after.Status ||
+		after.UpdatedAt.After(before.UpdatedAt)
+}
+
+func codexConnectionRequiresReauthorization(connection store.OAuthConnection) bool {
+	if !strings.EqualFold(strings.TrimSpace(connection.Status), "reconnect_required") {
+		return false
 	}
-	connectionMeta := map[string]any{
-		"plan_type":                         strings.TrimSpace(claims.AuthInfo.ChatGPTPlanType),
-		"chatgpt_user_id":                   strings.TrimSpace(claims.AuthInfo.ChatGPTUserID),
-		"user_id":                           strings.TrimSpace(claims.AuthInfo.UserID),
-		"chatgpt_subscription_active_start": claims.AuthInfo.ChatGPTSubscriptionActiveStart,
-		"chatgpt_subscription_active_until": claims.AuthInfo.ChatGPTSubscriptionActiveUntil,
-		"refreshable":                       true,
-		"token_mode":                        "oauth_refresh",
-	}
-	connection.Metadata = jsonBytes(connectionMeta)
-	connection.RawProfile = jsonBytes(rawClaims)
-	connection.Email = strings.TrimSpace(claims.Email)
-	connection.AccountID = strings.TrimSpace(claims.AuthInfo.ChatGPTAccountID)
-	connection.TokenType = defaultTokenType(refreshed.TokenType)
-	connection.Scopes = strings.TrimSpace(refreshed.Scope)
-	connection.Status = "connected"
-	now := time.Now()
-	expiresAt := codexTokenExpiry(now, refreshed.ExpiresIn)
-	connection.LastRefreshAt = sql.NullTime{Time: now, Valid: true}
-	connection.ExpiresAt = sql.NullTime{Time: expiresAt, Valid: !expiresAt.IsZero()}
-	if connection.EncryptedAccessToken, connection.MaskedAccessToken, err = s.credentials.Encrypt(refreshed.AccessToken); err != nil {
-		return CodexConnection{}, err
-	}
-	if connection.EncryptedRefreshToken, connection.MaskedRefreshToken, err = s.credentials.Encrypt(refreshed.RefreshToken); err != nil {
-		return CodexConnection{}, err
-	}
-	if connection.EncryptedIDToken, connection.MaskedIDToken, err = s.credentials.Encrypt(refreshed.IDToken); err != nil {
-		return CodexConnection{}, err
-	}
-	connection, err = repo.Save(ctx, connection)
-	if err != nil {
-		return CodexConnection{}, err
-	}
-	return s.codexConnectionDetails(connection)
+	meta := oauthConnectionMetadata(connection.Metadata)
+	return isPermanentAuthError(stringFromAny(meta["last_error_code"])) || isPermanentAuthError(stringFromAny(meta["last_error"]))
 }
 
 func (s *Service) refreshClaudeCodeConnection(ctx context.Context, repo store.OAuthConnectionRepository, connection store.OAuthConnection) (CodexConnection, error) {
@@ -1188,19 +1322,40 @@ func defaultTokenType(value string) string {
 }
 
 func updateMetadataError(existing store.JSON, errMsg string) []byte {
-	meta := map[string]any{}
-	if len(existing) > 0 {
-		_ = json.Unmarshal(existing, &meta)
-	}
+	meta := oauthConnectionMetadata(existing)
 	meta["last_error"] = errMsg
 	meta["last_error_at"] = time.Now().UTC().Format(time.RFC3339)
 	encoded, _ := json.Marshal(meta)
 	return encoded
 }
 
+func updateMetadataErrorWithCode(existing store.JSON, errMsg string, code string) []byte {
+	meta := oauthConnectionMetadata(existing)
+	meta["last_error"] = errMsg
+	meta["last_error_at"] = time.Now().UTC().Format(time.RFC3339)
+	if code = strings.TrimSpace(code); code != "" {
+		meta["last_error_code"] = code
+	} else {
+		delete(meta, "last_error_code")
+	}
+	encoded, _ := json.Marshal(meta)
+	return encoded
+}
+
+func oauthConnectionMetadata(existing store.JSON) map[string]any {
+	meta := map[string]any{}
+	if len(existing) > 0 {
+		_ = json.Unmarshal(existing, &meta)
+	}
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	return meta
+}
+
 func isPermanentAuthError(errMsg string) bool {
 	lower := strings.ToLower(errMsg)
-	if strings.Contains(lower, "refresh_token_reused") || strings.Contains(lower, "invalid_grant") {
+	if strings.Contains(lower, "refresh_token_invalidated") || strings.Contains(lower, "refresh_token_reused") || strings.Contains(lower, "invalid_grant") {
 		return true
 	}
 	return messageContainsHTTPAuthCode(lower)
@@ -1241,7 +1396,7 @@ func (s *Service) disableSiteOnPermanentError(ctx context.Context, connection st
 	if !isPermanentAuthError(errMsg) {
 		return
 	}
-	if connection.SiteID == nil {
+	if connection.SiteID == nil || s.db == nil || s.db.DB() == nil {
 		return
 	}
 	siteRepo := store.NewSiteRepository(s.db.DB())

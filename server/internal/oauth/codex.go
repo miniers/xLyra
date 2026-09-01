@@ -6,12 +6,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"xlyra/server/internal/adapter"
 )
 
 const (
@@ -21,6 +24,7 @@ const (
 	codexTokenURL              = "https://auth.openai.com/oauth/token"
 	codexClientID              = "app_EMoamEEZ73f0CkXaXp7hrann"
 	codexScope                 = "openid email profile offline_access"
+	codexRefreshScope          = "openid profile email"
 	codexCallbackPort          = 1455
 	codexRedirectURI           = "http://localhost:1455/auth/callback"
 	codexSuccessHTML           = `<html><head><meta charset="utf-8"><title>Codex login complete</title></head><body><h1>Codex login complete</h1><p>You can close this window.</p></body></html>`
@@ -37,6 +41,87 @@ type codexTokenResponse struct {
 	TokenType    string `json:"token_type"`
 	Scope        string `json:"scope"`
 	ExpiresIn    int    `json:"expires_in"`
+}
+
+var ErrCodexReauthorizationRequired = errors.New("oauth connection requires reauthorization; sign in again")
+
+type codexTokenError struct {
+	operation  string
+	statusCode int
+	code       string
+	message    string
+	body       string
+}
+
+func (e *codexTokenError) Error() string {
+	detail := strings.TrimSpace(e.code)
+	if message := strings.TrimSpace(e.message); message != "" {
+		if detail != "" {
+			detail += ": "
+		}
+		detail += message
+	}
+	if detail == "" {
+		detail = strings.TrimSpace(e.body)
+	}
+	if detail == "" {
+		detail = http.StatusText(e.statusCode)
+	}
+	return fmt.Sprintf("codex token %s returned %d: %s", e.operation, e.statusCode, detail)
+}
+
+func (e *codexTokenError) Is(target error) bool {
+	return target == ErrCodexReauthorizationRequired && isPermanentCodexTokenError(e.code, e.statusCode)
+}
+
+func isPermanentCodexTokenError(code string, statusCode int) bool {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "refresh_token_invalidated", "refresh_token_reused", "invalid_grant":
+		return true
+	default:
+		return statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden
+	}
+}
+
+func codexTokenErrorCode(err error) string {
+	var tokenErr *codexTokenError
+	if errors.As(err, &tokenErr) {
+		return strings.TrimSpace(tokenErr.code)
+	}
+	return ""
+}
+
+func codexTokenErrorFromResponse(operation string, statusCode int, body []byte) error {
+	raw := strings.TrimSpace(string(body))
+	parsed := struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}{}
+	if json.Unmarshal(body, &parsed) == nil && (parsed.Error.Code != "" || parsed.Error.Message != "") {
+		return &codexTokenError{
+			operation:  operation,
+			statusCode: statusCode,
+			code:       parsed.Error.Code,
+			message:    parsed.Error.Message,
+		}
+	}
+	code := raw
+	if strings.ContainsAny(code, " \t\r\n") {
+		code = ""
+	}
+	return &codexTokenError{operation: operation, statusCode: statusCode, code: code, body: raw}
+}
+
+func setCodexAuthHeaders(req *http.Request) {
+	userAgent := adapter.CodexUserAgent
+	originator := userAgent
+	if index := strings.IndexByte(userAgent, '/'); index > 0 {
+		originator = userAgent[:index]
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("originator", originator)
 }
 
 type codexJWTClaims struct {
@@ -125,6 +210,7 @@ func (s *Service) exchangeCodexCode(ctx context.Context, code string, redirectUR
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	setCodexAuthHeaders(req)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return codexTokenResponse{}, fmt.Errorf("exchange codex code: %w", err)
@@ -132,7 +218,7 @@ func (s *Service) exchangeCodexCode(ctx context.Context, code string, redirectUR
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return codexTokenResponse{}, fmt.Errorf("codex token exchange returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return codexTokenResponse{}, codexTokenErrorFromResponse("exchange", resp.StatusCode, body)
 	}
 	var tokenResp codexTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
@@ -146,12 +232,14 @@ func (s *Service) refreshCodexTokens(ctx context.Context, refreshToken string, h
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
 	form.Set("client_id", codexClientID)
+	form.Set("scope", codexRefreshScope)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, codexTokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return codexTokenResponse{}, fmt.Errorf("create codex refresh request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
+	setCodexAuthHeaders(req)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return codexTokenResponse{}, fmt.Errorf("refresh codex token: %w", err)
@@ -159,7 +247,7 @@ func (s *Service) refreshCodexTokens(ctx context.Context, refreshToken string, h
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return codexTokenResponse{}, fmt.Errorf("codex token refresh returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return codexTokenResponse{}, codexTokenErrorFromResponse("refresh", resp.StatusCode, body)
 	}
 	var tokenResp codexTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {

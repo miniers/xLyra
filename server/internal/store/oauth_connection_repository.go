@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"sort"
 	"strings"
@@ -178,6 +179,85 @@ func (r OAuthConnectionRepository) Save(ctx context.Context, connection OAuthCon
 		return OAuthConnection{}, fmt.Errorf("save oauth connection: %w", err)
 	}
 	return connection, nil
+}
+
+// WithRefreshLock keeps one PostgreSQL session pinned while the caller reads,
+// refreshes, and conditionally persists a single OAuth connection.
+func (r OAuthConnectionRepository) WithRefreshLock(ctx context.Context, id uuid.UUID, fn func(OAuthConnectionRepository) error) error {
+	if r.db == nil {
+		return fmt.Errorf("oauth connection refresh lock: database is not initialized")
+	}
+	if id == uuid.Nil {
+		return fmt.Errorf("oauth connection refresh lock: connection id is required")
+	}
+	if fn == nil {
+		return fmt.Errorf("oauth connection refresh lock: callback is required")
+	}
+
+	key1, key2 := oauthRefreshAdvisoryLockKeys(id)
+	return r.db.WithContext(ctx).Connection(func(conn *gorm.DB) (callbackErr error) {
+		if err := conn.WithContext(ctx).Exec("SELECT pg_advisory_lock(?, ?)", key1, key2).Error; err != nil {
+			return fmt.Errorf("acquire oauth connection refresh lock: %w", err)
+		}
+		defer func() {
+			unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := conn.WithContext(unlockCtx).Exec("SELECT pg_advisory_unlock(?, ?)", key1, key2).Error; err != nil && callbackErr == nil {
+				callbackErr = fmt.Errorf("release oauth connection refresh lock: %w", err)
+			}
+		}()
+		return fn(NewOAuthConnectionRepository(conn.WithContext(ctx)))
+	})
+}
+
+func oauthRefreshAdvisoryLockKeys(id uuid.UUID) (int32, int32) {
+	return int32(binary.BigEndian.Uint32(id[0:4])), int32(binary.BigEndian.Uint32(id[4:8]))
+}
+
+func (r OAuthConnectionRepository) SaveCodexRefreshIfRefreshTokenMatches(ctx context.Context, connection OAuthConnection, expectedEncryptedRefreshToken string) (bool, error) {
+	updates := map[string]any{
+		"status":                 connection.Status,
+		"account_id":             connection.AccountID,
+		"email":                  connection.Email,
+		"encrypted_access_token": connection.EncryptedAccessToken,
+		"masked_access_token":    connection.MaskedAccessToken,
+		"encrypted_id_token":     connection.EncryptedIDToken,
+		"masked_id_token":        connection.MaskedIDToken,
+		"token_type":             connection.TokenType,
+		"scopes":                 connection.Scopes,
+		"expires_at":             connection.ExpiresAt,
+		"last_refresh_at":        connection.LastRefreshAt,
+		"raw_profile":            connection.RawProfile,
+		"metadata":               connection.Metadata,
+		"updated_at":             time.Now().UTC(),
+	}
+	if connection.EncryptedRefreshToken != expectedEncryptedRefreshToken {
+		updates["encrypted_refresh_token"] = connection.EncryptedRefreshToken
+		updates["masked_refresh_token"] = connection.MaskedRefreshToken
+	}
+	result := r.db.WithContext(ctx).
+		Model(&OAuthConnection{}).
+		Where("id = ? AND encrypted_refresh_token = ?", connection.ID, expectedEncryptedRefreshToken).
+		Updates(updates)
+	if result.Error != nil {
+		return false, fmt.Errorf("save codex refresh: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (r OAuthConnectionRepository) MarkCodexRefreshFailureIfRefreshTokenMatches(ctx context.Context, id uuid.UUID, expectedEncryptedRefreshToken string, metadata JSON) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&OAuthConnection{}).
+		Where("id = ? AND encrypted_refresh_token = ?", id, expectedEncryptedRefreshToken).
+		Updates(map[string]any{
+			"status":     "reconnect_required",
+			"metadata":   metadata,
+			"updated_at": time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("save codex refresh failure: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func defaultOAuthConnectionString(value string, fallback string) string {
