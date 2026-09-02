@@ -58,6 +58,9 @@ Compared with `main`, this branch adds the following capabilities (snapshot from
 
 - Site and API key views expose whether quota is balance-based or subscription-based, along with subscription quota and expiry information where available.
 - OAuth and quota-probe subscription expiry metadata is preserved during refresh/import and feeds credential ordering and expiry-aware routing.
+- Codex OAuth refresh requests include the required scope and paired identity headers; refresh results preserve the previous ID token, account profile, and refresh token when optional fields are omitted.
+- Codex refreshes use process-local and PostgreSQL session locking with conditional writes, preventing concurrent requests from consuming a rotated refresh token or overwriting a newer refresh or reauthorization state.
+- Permanently invalidated Codex refresh tokens (`refresh_token_invalidated`, `refresh_token_reused`, and `invalid_grant`) are recorded as requiring reauthorization and are not retried automatically; the admin refresh endpoint returns `oauth_reauthorization_required`.
 - Same-site credential retries and upstream first-byte timeouts can be configured globally, per site, per downstream API key, and per model override, with inheritance between levels and explicit clear-to-inherit actions.
 - Site-level concurrency caps can be set or cleared. When a local site/model limit is exhausted, routing can try the next channel without treating the condition as an upstream 429 or activating a cooldown.
 - In-flight requests expose their phase, route, token estimates or actual usage, and first-byte latency. Active requests can be cancelled from the traffic-flow view or request list, and request details can be located by request ID.

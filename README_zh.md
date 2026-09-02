@@ -58,6 +58,9 @@ xLyra 支持：
 
 - 站点和 API Key 界面会展示额度属于余额模式还是订阅模式，并在可用时显示订阅额度和到期信息。
 - OAuth 和余额探测得到的订阅到期元数据会在刷新/导入时保留，并参与凭证排序和到期感知路由。
+- Codex OAuth 刷新请求会携带所需 scope 和配对的身份请求头；刷新响应缺少可选字段时，会保留旧的 ID Token、账号 profile 和 refresh token。
+- Codex 刷新同时使用进程内互斥和 PostgreSQL 会话锁，并通过条件更新保存，避免并发请求重复消费轮换后的 refresh token，或覆盖较新的刷新/重新授权状态。
+- `refresh_token_invalidated`、`refresh_token_reused` 和 `invalid_grant` 等永久失效错误会记录为需要重新授权，后续自动刷新不再重复请求；管理员刷新接口返回 `oauth_reauthorization_required`。
 - 支持配置同站 Credential 重试和上游首字超时，且可在全局、站点、下游 API Key 以及 API Key 下的模型覆盖层级进行配置；支持显式清除并恢复继承。
 - 支持设置或清除站点并发上限。站点或模型达到本地并发上限时，可继续尝试下一个渠道，不会把本地容量不足误判为上游 429，也不会因此触发冷却。
 - 在途请求会展示当前阶段、路由、Token 估算或实际用量以及首字延迟；可从实时流量图或请求列表中直接打断进行中的请求，并可按请求 ID 定位详情。
