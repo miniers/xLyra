@@ -33,6 +33,12 @@ type UpdateSiteCredentialRoutingConfigParams struct {
 	UpstreamCostMultiplier *float64
 }
 
+type UpdateSiteCredentialProbeParams struct {
+	ExpectedUpdatedAt      time.Time
+	Meta                   JSON
+	UpstreamCostMultiplier *float64
+}
+
 type UpsertSiteCredentialParams struct {
 	SiteID          uuid.UUID
 	CredentialType  string
@@ -298,6 +304,27 @@ func (r SiteCredentialRepository) UpdateRoutingConfig(ctx context.Context, id uu
 		if result.RowsAffected == 0 {
 			return SiteCredential{}, fmt.Errorf("update site credential routing config: %w", gorm.ErrRecordNotFound)
 		}
+	}
+	return r.GetByID(ctx, id)
+}
+
+func (r SiteCredentialRepository) UpdateProbeState(ctx context.Context, id uuid.UUID, params UpdateSiteCredentialProbeParams) (SiteCredential, error) {
+	updates := map[string]any{
+		"meta": jsonDefault(params.Meta, "{}"),
+	}
+	if params.UpstreamCostMultiplier != nil {
+		updates["upstream_cost_multiplier"] = *params.UpstreamCostMultiplier
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&SiteCredential{}).
+		Where("id = ? AND updated_at = ?", id, params.ExpectedUpdatedAt).
+		Updates(updates)
+	if result.Error != nil {
+		return SiteCredential{}, fmt.Errorf("update site credential probe state: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return SiteCredential{}, fmt.Errorf("update site credential probe state: %w", gorm.ErrRecordNotFound)
 	}
 	return r.GetByID(ctx, id)
 }

@@ -56,4 +56,21 @@ describe('parseSiteAPIKeyForm', () => {
       ),
     ).toBeNull()
   })
+
+  it('allows automatic detection without a manual multiplier or routing fields', () => {
+    expect(
+      parseSiteAPIKeyForm(
+        {
+          ...DEFAULT_API_KEY_FORM_DRAFT,
+          upstreamCostMultiplier: 'not-a-number',
+          upstreamCostMultiplierSource: 'auto',
+        },
+        {
+          includeCostMultiplier: true,
+          requireAPIKey: false,
+          includeRoutingConfig: false,
+        },
+      ),
+    ).toEqual({ upstreamCostMultiplierSource: 'auto' })
+  })
 })

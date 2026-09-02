@@ -73,6 +73,7 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
         name: z.string(),
         routingPriority: z.number(),
         upstreamCostMultiplier: z.number().optional(),
+        upstreamCostMultiplierSource: z.enum(['manual', 'auto']).optional(),
       })),
       newapiAccessToken: z.string().trim(),
       newapiUserId: z.string().trim(),
@@ -672,6 +673,7 @@ export function SiteCreateSheet({
       apiKey: apiKey.apiKey,
       routingPriority: String(apiKey.routingPriority),
       upstreamCostMultiplier: String(apiKey.upstreamCostMultiplier ?? 1),
+      upstreamCostMultiplierSource: apiKey.upstreamCostMultiplierSource ?? 'manual',
     })
     setAPIKeyEditorOpen(true)
   }
@@ -684,9 +686,10 @@ export function SiteCreateSheet({
     if (!parsed?.apiKey) return
     const nextAPIKey = {
       apiKey: parsed.apiKey,
-      name: parsed.name,
-      routingPriority: parsed.routingPriority,
+      name: parsed.name ?? '',
+      routingPriority: parsed.routingPriority ?? 1,
       upstreamCostMultiplier: parsed.upstreamCostMultiplier,
+      upstreamCostMultiplierSource: parsed.upstreamCostMultiplierSource,
     }
     const next = [...apiKeys]
     if (editingAPIKeyIndex == null) {

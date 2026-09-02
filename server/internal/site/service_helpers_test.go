@@ -146,10 +146,13 @@ func TestSiteTypeAndCredentialTypeHelpersNormalizeDefaults(t *testing.T) {
 	if !SupportsAPIKeyCostMultiplier("anthropic") {
 		t.Fatal("anthropic should support api key cost multiplier")
 	}
-	for _, siteType := range []string{"google_gemini", "deepseek", "newapi", "grok"} {
+	for _, siteType := range []string{"google_gemini", "deepseek", "grok"} {
 		if SupportsAPIKeyCostMultiplier(siteType) {
 			t.Fatalf("site type %q should not support api key cost multiplier", siteType)
 		}
+	}
+	if !SupportsAPIKeyCostMultiplier("newapi") {
+		t.Fatal("newapi should support api key cost multiplier")
 	}
 }
 

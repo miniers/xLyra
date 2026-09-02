@@ -107,12 +107,12 @@ func (a NewAPI) FetchBalance(ctx context.Context, site SiteConfig, auth SystemAu
 }
 
 func (a NewAPI) FetchPricing(ctx context.Context, site SiteConfig, auth SystemAuth) (PricingSnapshot, error) {
-	summary, err := a.FetchUserSummary(ctx, site, auth)
+	payload, err := a.serviceForSite(site).Pricing(ctx, site.BaseURL, auth.AccessToken, auth.UserID)
 	if err != nil {
 		return PricingSnapshot{}, err
 	}
 
-	return a.ParsePricing(summary.Pricing), nil
+	return a.ParsePricing(payload), nil
 }
 
 func (a NewAPI) ExecuteCheckin(ctx context.Context, site SiteConfig, auth SystemAuth) (CheckinResult, error) {

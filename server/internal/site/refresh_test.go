@@ -57,10 +57,11 @@ func TestMergeAPIKeyRefreshMetaPreservesLocalSwitches(t *testing.T) {
 
 	merged := mergeAPIKeyRefreshMeta(
 		map[string]any{
-			"enabled":                           false,
-			credentialMetaAutoDisabledByRefresh: true,
-			"disabled_models":                   []any{"gpt-test"},
-			"manually_completed":                true,
+			"enabled":                            false,
+			credentialMetaAutoDisabledByRefresh:  true,
+			"disabled_models":                    []any{"gpt-test"},
+			"manually_completed":                 true,
+			upstreamCostMultiplierHistoryMetaKey: []any{"change"},
 		},
 		map[string]any{
 			"name":            "upstream",
@@ -79,6 +80,9 @@ func TestMergeAPIKeyRefreshMetaPreservesLocalSwitches(t *testing.T) {
 	}
 	if merged["disabled_models"] == nil {
 		t.Fatalf("expected disabled models to be preserved, got %#v", merged)
+	}
+	if merged[upstreamCostMultiplierHistoryMetaKey] == nil {
+		t.Fatalf("expected multiplier history to be preserved, got %#v", merged)
 	}
 }
 

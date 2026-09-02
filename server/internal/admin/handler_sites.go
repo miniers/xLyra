@@ -830,12 +830,13 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		APIKey                 string   `json:"api_key"`
-		Secret                 string   `json:"secret"`
-		Name                   string   `json:"name"`
-		RoutingPriority        *float64 `json:"routing_priority"`
-		UpstreamCostMultiplier *float64 `json:"upstream_cost_multiplier"`
-		CacheDomain            string   `json:"cache_domain"`
+		APIKey                       string   `json:"api_key"`
+		Secret                       string   `json:"secret"`
+		Name                         string   `json:"name"`
+		RoutingPriority              *float64 `json:"routing_priority"`
+		UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
+		UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
+		CacheDomain                  string   `json:"cache_domain"`
 	}
 	if !h.decodeJSON(w, r, &payload) {
 		return
@@ -857,12 +858,13 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	apiKey, err := h.sites.CreateAPIKey(r.Context(), siteID, sitepkg.CreateAPIKeyInput{
-		APIKey:                 secret,
-		DisplayName:            payload.Name,
-		RoutingPriority:        payload.RoutingPriority,
-		UpstreamCostMultiplier: payload.UpstreamCostMultiplier,
-		CacheDomain:            payload.CacheDomain,
-		QueueSync:              true,
+		APIKey:                       secret,
+		DisplayName:                  payload.Name,
+		RoutingPriority:              payload.RoutingPriority,
+		UpstreamCostMultiplier:       payload.UpstreamCostMultiplier,
+		UpstreamCostMultiplierSource: payload.UpstreamCostMultiplierSource,
+		CacheDomain:                  payload.CacheDomain,
+		QueueSync:                    true,
 	})
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "site_api_key_create_failed", err.Error())
@@ -878,12 +880,13 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	h.invalidateGatewayModelsCache()
 	h.recordAudit(r, currentAdminActor(r), "site_api_key.create", "site_api_key", apiKey.Credential.ID.String(), true, "", map[string]any{
-		"site_id":                  siteID.String(),
-		"display_name":             apiKey.DisplayName,
-		"routing_priority":         apiKey.RoutingPriority,
-		"upstream_cost_multiplier": apiKey.UpstreamCostMultiplier,
-		"cache_domain":             apiKey.CacheDomain,
-		"enabled":                  apiKey.Enabled,
+		"site_id":                         siteID.String(),
+		"display_name":                    apiKey.DisplayName,
+		"routing_priority":                apiKey.RoutingPriority,
+		"upstream_cost_multiplier":        apiKey.UpstreamCostMultiplier,
+		"upstream_cost_multiplier_source": apiKey.Meta["upstream_cost_multiplier_source"],
+		"cache_domain":                    apiKey.CacheDomain,
+		"enabled":                         apiKey.Enabled,
 	})
 	h.writeResource(w, http.StatusAccepted, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
 }
@@ -999,11 +1002,12 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var payload struct {
-		Enabled                *bool    `json:"enabled"`
-		Name                   *string  `json:"name"`
-		RoutingPriority        *float64 `json:"routing_priority"`
-		UpstreamCostMultiplier *float64 `json:"upstream_cost_multiplier"`
-		CacheDomain            *string  `json:"cache_domain"`
+		Enabled                      *bool    `json:"enabled"`
+		Name                         *string  `json:"name"`
+		RoutingPriority              *float64 `json:"routing_priority"`
+		UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
+		UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
+		CacheDomain                  *string  `json:"cache_domain"`
 	}
 	if !h.decodeJSON(w, r, &payload) {
 		return
@@ -1017,11 +1021,12 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	existing, _ := h.sites.APIKeyByCredentialID(r.Context(), siteID, apiKeyID)
 
 	apiKey, err := h.sites.UpdateAPIKey(r.Context(), siteID, apiKeyID, sitepkg.UpdateAPIKeyInput{
-		Enabled:                payload.Enabled,
-		DisplayName:            payload.Name,
-		RoutingPriority:        payload.RoutingPriority,
-		UpstreamCostMultiplier: payload.UpstreamCostMultiplier,
-		CacheDomain:            payload.CacheDomain,
+		Enabled:                      payload.Enabled,
+		DisplayName:                  payload.Name,
+		RoutingPriority:              payload.RoutingPriority,
+		UpstreamCostMultiplier:       payload.UpstreamCostMultiplier,
+		UpstreamCostMultiplierSource: payload.UpstreamCostMultiplierSource,
+		CacheDomain:                  payload.CacheDomain,
 	})
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "site_api_key_update_failed", err.Error())
@@ -1039,18 +1044,20 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	h.recordAudit(r, currentAdminActor(r), "site_api_key.update", "site_api_key", apiKeyID.String(), true, "", map[string]any{
 		"site_id": siteID.String(),
 		"old": map[string]any{
-			"display_name":             existing.DisplayName,
-			"routing_priority":         existing.RoutingPriority,
-			"upstream_cost_multiplier": existing.UpstreamCostMultiplier,
-			"cache_domain":             existing.CacheDomain,
-			"enabled":                  existing.Enabled,
+			"display_name":                    existing.DisplayName,
+			"routing_priority":                existing.RoutingPriority,
+			"upstream_cost_multiplier":        existing.UpstreamCostMultiplier,
+			"upstream_cost_multiplier_source": existing.Meta["upstream_cost_multiplier_source"],
+			"cache_domain":                    existing.CacheDomain,
+			"enabled":                         existing.Enabled,
 		},
 		"new": map[string]any{
-			"display_name":             apiKey.DisplayName,
-			"routing_priority":         apiKey.RoutingPriority,
-			"upstream_cost_multiplier": apiKey.UpstreamCostMultiplier,
-			"cache_domain":             apiKey.CacheDomain,
-			"enabled":                  apiKey.Enabled,
+			"display_name":                    apiKey.DisplayName,
+			"routing_priority":                apiKey.RoutingPriority,
+			"upstream_cost_multiplier":        apiKey.UpstreamCostMultiplier,
+			"upstream_cost_multiplier_source": apiKey.Meta["upstream_cost_multiplier_source"],
+			"cache_domain":                    apiKey.CacheDomain,
+			"enabled":                         apiKey.Enabled,
 		},
 	})
 	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
@@ -1275,12 +1282,13 @@ func (h Handler) resolveSiteCredentials(w http.ResponseWriter, r *http.Request, 
 				}
 				displayName := item.Name
 				credentials = append(credentials, sitepkg.CredentialInput{
-					Type:                   "api_key",
-					Secret:                 apiKey,
-					Meta:                   map[string]any{"enabled": true},
-					DisplayName:            &displayName,
-					RoutingPriority:        item.RoutingPriority,
-					UpstreamCostMultiplier: item.UpstreamCostMultiplier,
+					Type:                         "api_key",
+					Secret:                       apiKey,
+					Meta:                         map[string]any{"enabled": true},
+					DisplayName:                  &displayName,
+					RoutingPriority:              item.RoutingPriority,
+					UpstreamCostMultiplier:       item.UpstreamCostMultiplier,
+					UpstreamCostMultiplierSource: item.UpstreamCostMultiplierSource,
 				})
 			}
 			return credentials, true
@@ -1454,22 +1462,29 @@ func (h Handler) freshNewAPIKeyByID(r *http.Request, item store.Site, siteID uui
 func (h Handler) siteAPIKeyPayload(r *http.Request, item store.Site, apiKey sitepkg.APIKeyCredential, freshKey newapi.UserAPIKey) map[string]any {
 	upstreamName := apiKey.Name
 	keyItem := map[string]any{
-		"id":                       apiKey.Credential.ID.String(),
-		"upstream_id":              apiKey.UpstreamID,
-		"name":                     siteAPIKeyEffectiveName(apiKey.DisplayName, upstreamName, apiKey.MaskedSecret),
-		"display_name":             apiKey.DisplayName,
-		"upstream_name":            upstreamName,
-		"routing_priority":         apiKey.RoutingPriority,
-		"upstream_cost_multiplier": apiKey.UpstreamCostMultiplier,
-		"cache_domain":             apiKey.CacheDomain,
-		"key":                      apiKey.MaskedSecret,
-		"status":                   apiKey.Meta["status"],
-		"enabled":                  apiKey.Enabled,
-		"models":                   []string{},
-		"model_items":              []map[string]any{},
+		"id":                              apiKey.Credential.ID.String(),
+		"upstream_id":                     apiKey.UpstreamID,
+		"name":                            siteAPIKeyEffectiveName(apiKey.DisplayName, upstreamName, apiKey.MaskedSecret),
+		"display_name":                    apiKey.DisplayName,
+		"upstream_name":                   upstreamName,
+		"routing_priority":                apiKey.RoutingPriority,
+		"upstream_cost_multiplier":        apiKey.UpstreamCostMultiplier,
+		"cache_domain":                    apiKey.CacheDomain,
+		"upstream_cost_multiplier_source": sitepkg.APIKeyCostMultiplierSource(apiKey.Meta),
+		"key":                             apiKey.MaskedSecret,
+		"status":                          apiKey.Meta["status"],
+		"enabled":                         apiKey.Enabled,
+		"models":                          []string{},
+		"model_items":                     []map[string]any{},
 	}
 	if probe, ok := apiKey.Meta[sitepkg.QuotaProbeCredentialMetaKey]; ok {
 		keyItem["quota_probe"] = probe
+	}
+	if probe, ok := sitepkg.APIKeyCostMultiplierProbePayload(apiKey.Meta); ok {
+		keyItem["upstream_cost_multiplier_probe"] = probe
+	}
+	if history := sitepkg.APIKeyCostMultiplierHistory(apiKey.Meta); len(history) > 0 {
+		keyItem["upstream_cost_multiplier_history"] = history
 	}
 	if freshKey.Name != "" {
 		keyItem["upstream_name"] = freshKey.Name
@@ -1562,22 +1577,23 @@ func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIK
 	}
 
 	keyItem := map[string]any{
-		"id":                       apiKey.Credential.ID.String(),
-		"upstream_id":              upstreamID,
-		"name":                     name,
-		"display_name":             apiKey.DisplayName,
-		"upstream_name":            upstreamName,
-		"routing_priority":         apiKey.RoutingPriority,
-		"upstream_cost_multiplier": apiKey.UpstreamCostMultiplier,
-		"cache_domain":             apiKey.CacheDomain,
-		"key":                      apiKey.MaskedSecret,
-		"status":                   status,
-		"enabled":                  enabled,
-		"secret_missing":           apiKey.SecretMissing,
-		"can_complete":             apiKey.SecretMissing,
-		"usage":                    usage,
-		"models":                   modelNames,
-		"model_items":              modelItems,
+		"id":                              apiKey.Credential.ID.String(),
+		"upstream_id":                     upstreamID,
+		"name":                            name,
+		"display_name":                    apiKey.DisplayName,
+		"upstream_name":                   upstreamName,
+		"routing_priority":                apiKey.RoutingPriority,
+		"upstream_cost_multiplier":        apiKey.UpstreamCostMultiplier,
+		"cache_domain":                    apiKey.CacheDomain,
+		"key":                             apiKey.MaskedSecret,
+		"status":                          status,
+		"enabled":                         enabled,
+		"secret_missing":                  apiKey.SecretMissing,
+		"can_complete":                    apiKey.SecretMissing,
+		"usage":                           usage,
+		"models":                          modelNames,
+		"model_items":                     modelItems,
+		"upstream_cost_multiplier_source": sitepkg.APIKeyCostMultiplierSource(apiKey.Meta),
 	}
 	if hasState && strings.TrimSpace(state.SyncStatus) != "" {
 		keyItem["sync_status"] = state.SyncStatus
@@ -1592,6 +1608,12 @@ func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIK
 	}
 	if probe, ok := apiKey.Meta[sitepkg.QuotaProbeCredentialMetaKey]; ok {
 		keyItem["quota_probe"] = probe
+	}
+	if probe, ok := sitepkg.APIKeyCostMultiplierProbePayload(apiKey.Meta); ok {
+		keyItem["upstream_cost_multiplier_probe"] = probe
+	}
+	if history := sitepkg.APIKeyCostMultiplierHistory(apiKey.Meta); len(history) > 0 {
+		keyItem["upstream_cost_multiplier_history"] = history
 	}
 
 	return keyItem

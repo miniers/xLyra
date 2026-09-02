@@ -56,6 +56,7 @@ import {
   canCompleteAPIKey,
   formatAPIKeyValue,
   formatDisplayQuota,
+  formatDateTime,
   formatProbeAmount,
   isNewAPISite,
   siteAPIKeyGroupBadgeVariant,
@@ -98,7 +99,7 @@ export function SiteAPIKeysDraw({
   )
   const [editingAPIKey, setEditingAPIKey] = useState<SiteAPIKey | null>(null)
   const [deletingAPIKey, setDeletingAPIKey] = useState<SiteAPIKey | null>(null)
-  const [newAPIKeyDraft, setNewAPIKeyDraft] = useState(
+  const [newAPIKeyDraft, setNewAPIKeyDraft] = useState<APIKeyFormDraft>(
     DEFAULT_API_KEY_FORM_DRAFT,
   )
   const [configDraft, setConfigDraft] = useState<APIKeyFormDraft>(
@@ -139,9 +140,10 @@ export function SiteAPIKeysDraw({
   const createAPIKeyMutation = useMutation({
     mutationFn: (input: {
       apiKey: string
-      name: string
-      routingPriority: number
+      name?: string
+      routingPriority?: number
       upstreamCostMultiplier?: number
+      upstreamCostMultiplierSource?: 'manual' | 'auto'
     }) => {
       if (!site) throw new Error('site required')
       return createSiteAPIKey(site.id, input)
@@ -217,9 +219,10 @@ export function SiteAPIKeysDraw({
   const updateConfigMutation = useMutation({
     mutationFn: (input: {
       apiKeyId: string
-      name: string
-      routingPriority: number
+      name?: string
+      routingPriority?: number
       upstreamCostMultiplier?: number
+      upstreamCostMultiplierSource?: 'manual' | 'auto'
     }) => {
       if (!site) throw new Error('site required')
       return updateSiteAPIKeyConfig(site.id, input.apiKeyId, input)
@@ -598,21 +601,21 @@ export function SiteAPIKeysDraw({
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-soft">
                         {site?.supports_multiple_api_keys ? (
-                          <>
-                            <Badge variant="neutral">
-                              {t('apiKeys.routingPriority')}:{' '}
-                              {formatAPIKeyNumber(item.routing_priority ?? 1)}
-                            </Badge>
-                            {supportsCostMultiplier ? (
-                              <Badge variant="neutral">
-                                {t('apiKeys.costMultiplier')}:{' '}
-                                {formatAPIKeyNumber(
-                                  item.upstream_cost_multiplier ?? 1,
-                                )}
-                                x
-                              </Badge>
-                            ) : null}
-                          </>
+                          <Badge variant="neutral">
+                            {t('apiKeys.routingPriority')}:{' '}
+                            {formatAPIKeyNumber(item.routing_priority ?? 1)}
+                          </Badge>
+                        ) : null}
+                        {supportsCostMultiplier ? (
+                          <Badge variant="neutral">
+                            {t('apiKeys.costMultiplier')}:{' '}
+                            {formatAPIKeyNumber(
+                              item.upstream_cost_multiplier ?? 1,
+                            )}
+                            x · {item.upstream_cost_multiplier_source === 'auto'
+                              ? t('apiKeys.multiplierAuto')
+                              : t('apiKeys.multiplierManual')}
+                          </Badge>
                         ) : null}
                         {item.upstream_name &&
                         item.upstream_name !== item.name ? (
@@ -621,6 +624,47 @@ export function SiteAPIKeysDraw({
                           </span>
                         ) : null}
                       </div>
+
+                      {supportsCostMultiplier && item.upstream_cost_multiplier_probe ? (
+                        <div
+                          className="text-xs text-muted-soft"
+                          title={item.upstream_cost_multiplier_probe.error}
+                        >
+                          {t('apiKeys.multiplierProbe')}:{' '}
+                          {item.upstream_cost_multiplier_probe.resolved_rate_multiplier != null
+                            ? `${formatAPIKeyNumber(item.upstream_cost_multiplier_probe.resolved_rate_multiplier)}x`
+                            : multiplierProbeStatusLabel(item.upstream_cost_multiplier_probe.status, t)}
+                          {item.upstream_cost_multiplier_probe.effective_rate_multiplier != null
+                            ? ` · ${t('apiKeys.multiplierPeakHint')} ${formatAPIKeyNumber(item.upstream_cost_multiplier_probe.effective_rate_multiplier)}x`
+                            : ''}
+                          {item.upstream_cost_multiplier_probe.probed_at
+                            ? ` · ${formatDateTime(item.upstream_cost_multiplier_probe.probed_at)}`
+                            : ''}
+                          {item.upstream_cost_multiplier_probe.error
+                            ? ` · ${item.upstream_cost_multiplier_probe.error}`
+                            : ''}
+                        </div>
+                      ) : null}
+                      {supportsCostMultiplier && item.upstream_cost_multiplier_history?.length ? (
+                        <details className="text-xs text-muted-soft">
+                          <summary className="cursor-pointer hover:text-foreground">
+                            {t('apiKeys.multiplierHistory', {
+                              count: item.upstream_cost_multiplier_history.length,
+                            })}
+                          </summary>
+                          <div className="mt-2 space-y-1 pl-3">
+                            {[...item.upstream_cost_multiplier_history]
+                              .reverse()
+                              .map((change, index) => (
+                                <div key={`${change.changed_at}:${index}`}>
+                                  {formatDateTime(change.changed_at)} ·{' '}
+                                  {formatAPIKeyNumber(change.from)}x →{' '}
+                                  {formatAPIKeyNumber(change.to)}x · {change.source}
+                                </div>
+                              ))}
+                          </div>
+                        </details>
+                      ) : null}
 
                       <button
                         type="button"
@@ -703,7 +747,7 @@ export function SiteAPIKeysDraw({
                               {t('apiKeys.complete')}
                             </Button>
                           ) : null}
-                          {site?.supports_multiple_api_keys ? (
+                          {site?.supports_multiple_api_keys || supportsCostMultiplier ? (
                             <Button
                               size="icon"
                               variant="ghost"
@@ -723,6 +767,10 @@ export function SiteAPIKeysDraw({
                                   upstreamCostMultiplier: String(
                                     item.upstream_cost_multiplier ?? 1,
                                   ),
+                                  upstreamCostMultiplierSource:
+                                    item.upstream_cost_multiplier_source === 'auto'
+                                      ? 'auto'
+                                      : 'manual',
                                 })
                               }}
                             >
@@ -865,6 +913,7 @@ export function SiteAPIKeysDraw({
               onChange={setConfigDraft}
               showAPIKey={false}
               showCostMultiplier={supportsCostMultiplier}
+              showRoutingConfig={site?.supports_multiple_api_keys === true}
               t={t}
             />
           </DrawBody>
@@ -876,6 +925,7 @@ export function SiteAPIKeysDraw({
                   {
                     includeCostMultiplier: supportsCostMultiplier,
                     requireAPIKey: false,
+                    includeRoutingConfig: site?.supports_multiple_api_keys === true,
                   },
                 )
                 if (!configuringAPIKey || !values) return
@@ -888,6 +938,7 @@ export function SiteAPIKeysDraw({
                 !parseSiteAPIKeyForm(configDraft, {
                   includeCostMultiplier: supportsCostMultiplier,
                   requireAPIKey: false,
+                  includeRoutingConfig: site?.supports_multiple_api_keys === true,
                 }) ||
                 updateConfigMutation.isPending
               }
@@ -1096,6 +1147,23 @@ function apiKeySyncBadge(status?: string | null): {
         className: 'text-muted-soft',
         label: (t) => t('apiKeys.sync.unknown'),
       }
+  }
+}
+
+function multiplierProbeStatusLabel(
+  status: string | undefined,
+  t: (key: string) => string,
+) {
+  switch ((status ?? '').toLowerCase()) {
+    case 'ok':
+      return t('apiKeys.multiplierProbeOk')
+    case 'error':
+      return t('apiKeys.multiplierProbeError')
+    case 'incomplete':
+    case 'unsupported':
+      return t('apiKeys.multiplierProbeIncomplete')
+    default:
+      return t('apiKeys.multiplierProbeUnknown')
   }
 }
 

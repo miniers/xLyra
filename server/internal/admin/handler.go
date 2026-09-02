@@ -191,10 +191,11 @@ type siteUpsertRequest struct {
 }
 
 type siteAPIKeyRequest struct {
-	APIKey                 string   `json:"api_key"`
-	Name                   string   `json:"name"`
-	RoutingPriority        *float64 `json:"routing_priority"`
-	UpstreamCostMultiplier *float64 `json:"upstream_cost_multiplier"`
+	APIKey                       string   `json:"api_key"`
+	Name                         string   `json:"name"`
+	RoutingPriority              *float64 `json:"routing_priority"`
+	UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
+	UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
 }
 
 type oauthAuthorizeRequest struct {

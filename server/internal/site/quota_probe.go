@@ -77,11 +77,24 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 		}
 		probed++
 		result := QuotaProbeResult{Status: "error", FetchedAt: time.Now().UTC()}
+		var multiplierProbe *APIKeyCostMultiplierProbe
 		secret, decryptErr := s.credentials.Decrypt(credential.EncryptedSecret)
 		if decryptErr != nil {
 			result.Error = "credential decrypt failed"
+			if probeType == QuotaProbeTypeSub2API {
+				multiplierProbe = &APIKeyCostMultiplierProbe{
+					Status:   "error",
+					Source:   QuotaProbeTypeSub2API,
+					ProbedAt: time.Now().UTC(),
+					Error:    "credential decrypt failed",
+				}
+			}
 		} else {
 			result = probeQuota(ctx, client, probeType, item.BaseURL, secret)
+			if probeType == QuotaProbeTypeSub2API {
+				probedMultiplier := probeSub2APIBilling(ctx, client, item.BaseURL, secret)
+				multiplierProbe = &probedMultiplier
+			}
 		}
 		if probeType == QuotaProbeTypeSub2API && result.Status == "ok" {
 			s.recoverSub2APISubscriptionCooldown(ctx, item.ID, credential.ID, result)
@@ -124,7 +137,11 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 			_ = json.Unmarshal(credential.Meta, &meta)
 		}
 		meta[QuotaProbeCredentialMetaKey] = result
-		_, _ = updateCredentialMeta(ctx, credentialRepo, credential.ID, meta)
+		if multiplierProbe != nil {
+			_, _ = s.updateAPIKeyMultiplierProbe(ctx, credential, meta, *multiplierProbe)
+		} else {
+			_, _ = updateCredentialMeta(ctx, credentialRepo, credential.ID, meta)
+		}
 	}
 
 	if probed == 0 {

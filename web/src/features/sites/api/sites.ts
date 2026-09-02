@@ -355,6 +355,9 @@ export type SiteAPIKey = {
   upstream_name?: string
   routing_priority: number
   upstream_cost_multiplier: number
+  upstream_cost_multiplier_source?: 'manual' | 'auto' | string
+  upstream_cost_multiplier_probe?: SiteAPIKeyMultiplierProbe | null
+  upstream_cost_multiplier_history?: SiteAPIKeyMultiplierChange[]
   group?: string | null
   key: string
   copy_key?: string
@@ -368,6 +371,22 @@ export type SiteAPIKey = {
   usage?: SiteAPIKeyUsage
   quota_probe?: SiteQuotaProbeResult | null
   message?: string
+}
+
+export type SiteAPIKeyMultiplierProbe = {
+  status?: string
+  source?: string
+  resolved_rate_multiplier?: number
+  effective_rate_multiplier?: number
+  probed_at?: string
+  error?: string
+}
+
+export type SiteAPIKeyMultiplierChange = {
+  changed_at: string
+  from: number
+  to: number
+  source: string
 }
 
 export type SiteAPIKeyUsage = {
@@ -552,6 +571,7 @@ export type SiteCreateAPIKeyInput = {
   name: string
   routingPriority: number
   upstreamCostMultiplier?: number
+  upstreamCostMultiplierSource?: 'manual' | 'auto'
 }
 
 export type CreateSiteInput = SiteUpsertInput
@@ -720,6 +740,7 @@ function siteUpsertBody(input: SiteUpsertInput) {
       name: apiKey.name,
       routing_priority: apiKey.routingPriority,
       upstream_cost_multiplier: apiKey.upstreamCostMultiplier,
+      upstream_cost_multiplier_source: apiKey.upstreamCostMultiplierSource,
     })),
     newapi: input.newapi
       ? {
@@ -847,6 +868,7 @@ export type SiteAPIKeyConfigInput = {
   name?: string
   routingPriority?: number
   upstreamCostMultiplier?: number
+  upstreamCostMultiplierSource?: 'manual' | 'auto'
 }
 
 export async function createSiteAPIKey(
@@ -860,6 +882,7 @@ export async function createSiteAPIKey(
       name: input.name,
       routing_priority: input.routingPriority,
       upstream_cost_multiplier: input.upstreamCostMultiplier,
+      upstream_cost_multiplier_source: input.upstreamCostMultiplierSource,
     },
   })
 }
@@ -1007,6 +1030,7 @@ export async function updateSiteAPIKeyConfig(
         name: input.name,
         routing_priority: input.routingPriority,
         upstream_cost_multiplier: input.upstreamCostMultiplier,
+        upstream_cost_multiplier_source: input.upstreamCostMultiplierSource,
       },
     },
   )

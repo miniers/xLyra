@@ -310,6 +310,9 @@ func messageContainsAuthFailureCode(message string) bool {
 func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, module adapter.Module) (RefreshResult, error) {
 	auth, err := s.SystemAuth(ctx, item.ID)
 	if err != nil {
+		if normalizeSiteType(item.SiteType) == "newapi" {
+			s.markAPIKeyMultiplierProbeIncomplete(ctx, item.ID, "system auth is unavailable")
+		}
 		return s.markRefreshFailed(ctx, item, err.Error())
 	}
 
@@ -325,6 +328,9 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 	now := time.Now()
 	freshKeys, err := keyInventoryFetcher.ListAPIKeys(ctx, s.toAdapterSite(ctx, item), auth)
 	if err != nil {
+		if normalizeSiteType(item.SiteType) == "newapi" {
+			s.markAPIKeyMultiplierProbeIncomplete(ctx, item.ID, "api key inventory is unavailable")
+		}
 		return s.markRefreshFailed(ctx, item, err.Error())
 	}
 
@@ -417,9 +423,13 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 				credentialMeta["enabled"] = false
 				credentialMeta[credentialMetaAutoDisabledByRefresh] = true
 				credential.Meta = store.JSON(jsonBytes(credentialMeta))
-				if _, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta); metaErr != nil {
+				updatedCredential, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta)
+				if metaErr != nil {
 					return s.markRefreshFailed(ctx, item, fmt.Sprintf("mark api key disabled after auth failure: %v", metaErr))
 				}
+				credential = updatedCredential
+				preparedKey.credential = updatedCredential
+				preparedKeys[index].credential = updatedCredential
 			} else {
 				recoverableKeyErrorMessage = lastKeyErrorMessage
 			}
@@ -429,9 +439,13 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 			credentialMeta["enabled"] = true
 			delete(credentialMeta, credentialMetaAutoDisabledByRefresh)
 			credential.Meta = store.JSON(jsonBytes(credentialMeta))
-			if _, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta); metaErr != nil {
+			updatedCredential, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta)
+			if metaErr != nil {
 				return s.markRefreshFailed(ctx, item, fmt.Sprintf("restore api key after auth recovery: %v", metaErr))
 			}
+			credential = updatedCredential
+			preparedKey.credential = updatedCredential
+			preparedKeys[index].credential = updatedCredential
 		}
 		if preparedKey.enabled && refreshKeySummaryValidated(preparedKey, summary) {
 			enabledSummaryCount++
@@ -485,6 +499,13 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 		refreshedKeys = append(refreshedKeys, refreshed)
 	}
 	if resolvedUsableKeyCount > 0 && enabledSummaryCount == 0 {
+		if normalizeSiteType(item.SiteType) == "newapi" {
+			pricingSnapshot := adapter.PricingSnapshot{}
+			if parser, ok := adapter.AsPricingParser(module); ok && userSummary.Pricing != nil {
+				pricingSnapshot = parser.ParsePricing(userSummary.Pricing)
+			}
+			s.probeNewAPIKeyMultipliersFromSnapshot(ctx, preparedKeys, pricingSnapshot)
+		}
 		message := lastKeyErrorMessage
 		if recoverableKeyErrorMessage != "" || permanentKeyErrors < keyErrors {
 			message = recoverableKeyErrorMessage
@@ -549,6 +570,9 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 				siteMessages = append(siteMessages, err.Error())
 			}
 		}
+	}
+	if normalizeSiteType(item.SiteType) == "newapi" {
+		s.probeNewAPIKeyMultipliersFromSnapshot(ctx, preparedKeys, pricingSnapshot)
 	}
 	if len(pricingSnapshot.Items) > 0 {
 		siteModels, err = s.mergePricingModelsState(ctx, item, pricingSnapshot, siteModels, siteModelRepo)
@@ -1181,6 +1205,14 @@ func (s *Service) RefreshSingleAPIKey(ctx context.Context, siteID uuid.UUID, cre
 	if len(credential.Meta) > 0 {
 		_ = json.Unmarshal(credential.Meta, &meta)
 	}
+	if normalizeSiteType(site.SiteType) == "newapi" {
+		probe := s.probeNewAPIKeyMultiplier(ctx, site, module, credential, meta)
+		if updated, probeErr := s.updateAPIKeyMultiplierProbe(ctx, credential, meta, probe); probeErr == nil {
+			credential = updated
+			meta = map[string]any{}
+			_ = json.Unmarshal(updated.Meta, &meta)
+		}
+	}
 	apiKey := strings.TrimSpace(secretFromCredentialMeta(secret, meta))
 	if strings.EqualFold(strings.TrimSpace(site.SiteType), "grok") {
 		apiKey, err = s.oauth.EnsureGrokAccessToken(ctx, credential.ID)
@@ -1295,6 +1327,9 @@ func (s *Service) RefreshSingleAPIKey(ctx context.Context, siteID uuid.UUID, cre
 	}
 
 	siteModels, _ := s.syncSiteModelsFromAPIKeyState(ctx, siteID, site.SiteType, site.BaseURL)
+	if QuotaProbeTypeFromConfig(GatewayConfigFromSiteMeta(site.Meta)) == QuotaProbeTypeSub2API {
+		s.runQuotaProbes(ctx, site)
+	}
 
 	return RefreshSingleAPIKeyResult{
 		State:      state,
@@ -1669,6 +1704,9 @@ func mergeAPIKeyRefreshMeta(existing map[string]any, upstream map[string]any) ma
 		"manually_completed",
 		"manual_secret_invalidated",
 		"manual_secret_invalidated_at",
+		upstreamCostMultiplierSourceMetaKey,
+		upstreamCostMultiplierProbeMetaKey,
+		upstreamCostMultiplierHistoryMetaKey,
 	} {
 		if value, ok := existing[key]; ok {
 			merged[key] = value

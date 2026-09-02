@@ -85,6 +85,21 @@ func (s *Service) UserAPIKeys(ctx context.Context, baseURL string, accessToken s
 	return s.client.UserAPIKeys(ctx, baseURL, accessToken, userID)
 }
 
+func (s *Service) Pricing(ctx context.Context, baseURL string, accessToken string, userID int) (any, error) {
+	baseURL = normalizeBaseURL(baseURL)
+	if baseURL == "" {
+		return nil, fmt.Errorf("base_url is required")
+	}
+	if userID <= 0 {
+		return nil, fmt.Errorf("user_id must be greater than 0")
+	}
+	if strings.TrimSpace(accessToken) == "" {
+		return nil, fmt.Errorf("access_token is required")
+	}
+
+	return s.client.Pricing(ctx, baseURL, accessToken, userID)
+}
+
 func (s *Service) UserAPIKeySummaries(ctx context.Context, baseURL string, accessToken string, userID int) (UserAPIKeysSummary, error) {
 	baseURL = normalizeBaseURL(baseURL)
 	if baseURL == "" {
