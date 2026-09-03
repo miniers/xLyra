@@ -204,6 +204,11 @@
     "targetRequired": "サイトを選択してください",
     "loading": "分担データを読み込み中",
     "loadFailed": "分担データの読み込みに失敗しました",
+    "observationNotice": "このサイトの観測 · 推定料金（上流の請求額ではありません）",
+    "analyticsUnavailable": "モデル別・時間別分析は現在利用できません",
+    "cost": {
+      "unconfigured": "価格未設定"
+    },
     "filters": {
       "target": "サイト",
       "searchSites": "サイトを検索",
@@ -225,30 +230,46 @@
     "metrics": {
       "totalCost": "総消費",
       "totalTokens": "総 Tokens",
+      "inputTokens": "入力 Tokens",
+      "outputTokens": "出力 Tokens",
+      "cachedTokens": "キャッシュ Tokens",
       "apiKeys": "下流 Key",
       "requests": "リクエスト",
+      "successRate": "成功率",
+      "failureRate": "失敗率",
+      "cacheHitRate": "キャッシュヒット率",
+      "avgLatency": "平均レイテンシ",
       "cost": "消費",
       "tokens": "Tokens"
     },
     "chart": {
       "title": "消費割合",
+      "modelTitle": "モデル別消費割合",
       "description": "使用量順に API Key の上位を表示します。"
+    },
+    "hourlyTitle": "日内時間別トレンド",
+    "dailyTitle": "日別トレンド",
+    "hourlyEmpty": "時間別の使用量はありません",
+    "dailyEmpty": "日別の使用量はありません",
+    "dimensions": {
+      "apiKey": "下流 API Key 別",
+      "model": "モデル別"
     },
     "table": {
       "title": "分担明細",
-      "totalPrice": "分担総額",
-      "totalPricePlaceholder": "総額を入力",
       "apiKey": "API Key",
+      "model": "モデル",
+      "modelTitle": "モデル明細",
       "cost": "消費",
       "share": "割合",
-      "actualPrice": "実価格",
       "tokens": "Tokens",
       "requests": "リクエスト",
       "successRate": "成功率"
     },
     "empty": {
       "title": "分担データがありません",
-      "description": "この期間には下流 API Key に紐付く使用量がありません。"
+      "description": "この期間には下流 API Key に紐付く使用量がありません。",
+      "breakdown": "この表示軸の使用量はありません"
     }
   },
   "quota": {

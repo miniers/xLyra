@@ -89,6 +89,7 @@ export function formatSiteTypeLabel(siteType: string, siteTypes?: SiteTypeInfo[]
   if (t === 'newapi') return 'NewAPI'
   if (t === 'xlyra') return 'xLyra'
   if (t === 'openai' || t === 'openai_compatible') return 'OpenAI'
+  if (t === 'cliproxyapi') return 'CLIProxyAPI'
   if (t === 'anthropic') return 'Anthropic Claude'
   if (t === 'google_gemini') return 'Google Gemini'
   if (t === 'deepseek') return 'DeepSeek'
@@ -121,6 +122,7 @@ export function normalizedSiteTypeFilter(siteType: string): string {
   if (t === 'claude_code') return 'claude_code'
   if (t === 'newapi') return 'newapi'
   if (t === 'xlyra') return 'xlyra'
+  if (t === 'cliproxyapi') return 'cliproxyapi'
   if (t === 'anthropic') return 'anthropic'
   if (t === 'google_gemini') return 'google_gemini'
   if (t === 'deepseek') return 'deepseek'
@@ -143,6 +145,10 @@ export function isNewAPISite(site: Site, siteTypes?: SiteTypeInfo[]): boolean {
   const credType = siteTypes?.find((siteTypeInfo) => siteTypeInfo.site_type === site.site_type)?.credential_type
   if (credType) return credType === 'system_token'
   return site.site_type === 'newapi'
+}
+
+export function isCLIProxyAPISite(site: Site): boolean {
+  return site.site_type.trim().toLowerCase() === 'cliproxyapi' || site.cliproxyapi?.management_key_configured === true
 }
 
 

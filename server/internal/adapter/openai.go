@@ -25,7 +25,7 @@ func NewOpenAICompatible() OpenAICompatible {
 }
 
 func (a OpenAICompatible) SiteTypes() []string {
-	return []string{"openai", "deepseek", "minimax", "xiaomi_mimo", "moonshot", "kimi_code"}
+	return []string{"openai", "cliproxyapi", "deepseek", "minimax", "xiaomi_mimo", "moonshot", "kimi_code"}
 }
 
 func (a OpenAICompatible) Capabilities() []Capability {

@@ -125,10 +125,11 @@ func run() int {
 	reconcileCancel()
 	router, gatewayHandler := app.NewRouterWithGateway(cfg, logger, db, confFile, masterKey)
 	schedule := scheduler.New(logger.With("thread", "scheduler"), scheduler.Options{
-		SiteHealthInterval: cfg.SiteHealthInterval,
-		SiteHealthTimeout:  cfg.SiteHealthTimeout,
-		SiteHealthWorkers:  cfg.SiteHealthWorkers,
-		ConfigFile:         confFile,
+		SiteHealthInterval:      cfg.SiteHealthInterval,
+		SiteHealthTimeout:       cfg.SiteHealthTimeout,
+		SiteHealthWorkers:       cfg.SiteHealthWorkers,
+		CLIProxyAPISyncInterval: 5 * time.Minute,
+		ConfigFile:              confFile,
 	}, siteService, syncService, usageSummaryService, automaticBackupService).WithModelsCacheInvalidator(gatewayHandler.InvalidateModelsCache)
 	logger.Info("business services ready")
 

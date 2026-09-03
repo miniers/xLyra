@@ -204,6 +204,11 @@
     "targetRequired": "请选择站点",
     "loading": "正在读取分账数据",
     "loadFailed": "分账数据读取失败",
+    "observationNotice": "本站观测 · 估算费用，不代表上游实际账单",
+    "analyticsUnavailable": "模型与小时分析暂时不可用",
+    "cost": {
+      "unconfigured": "未配置价格"
+    },
     "filters": {
       "target": "站点",
       "searchSites": "搜索站点",
@@ -225,30 +230,46 @@
     "metrics": {
       "totalCost": "总消耗",
       "totalTokens": "总 Tokens",
+      "inputTokens": "输入 Tokens",
+      "outputTokens": "输出 Tokens",
+      "cachedTokens": "缓存 Tokens",
       "apiKeys": "下游 Key",
       "requests": "请求数",
+      "successRate": "成功率",
+      "failureRate": "失败率",
+      "cacheHitRate": "缓存命中率",
+      "avgLatency": "平均延迟",
       "cost": "额度",
       "tokens": "Tokens"
     },
     "chart": {
       "title": "消耗占比",
+      "modelTitle": "模型消耗占比",
       "description": "按 API Key 排序展示 Top 消耗。"
+    },
+    "hourlyTitle": "单日小时趋势",
+    "dailyTitle": "每日趋势",
+    "hourlyEmpty": "暂无小时用量",
+    "dailyEmpty": "暂无每日用量",
+    "dimensions": {
+      "apiKey": "按下游 API Key",
+      "model": "按模型"
     },
     "table": {
       "title": "分账明细",
-      "totalPrice": "分账总价",
-      "totalPricePlaceholder": "输入总价",
       "apiKey": "API Key",
+      "model": "模型",
+      "modelTitle": "模型明细",
       "cost": "消耗",
       "share": "占比",
-      "actualPrice": "实际价格",
       "tokens": "Tokens",
       "requests": "请求",
       "successRate": "成功率"
     },
     "empty": {
       "title": "暂无分账数据",
-      "description": "当前时间段内没有可归属到下游 API Key 的用量。"
+      "description": "当前时间段内没有可归属到下游 API Key 的用量。",
+      "breakdown": "当前维度暂无用量"
     }
   },
   "quota": {

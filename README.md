@@ -176,6 +176,7 @@ Concurrency queue timeouts (`upstream_concurrency_wait_timeout`) never trigger a
 | Type | Current capability |
 | --- | --- |
 | OpenAI Compatible / official API-key sites | Credential validation, model sync, and protocol forwarding |
+| CLIProxyAPI | OpenAI-compatible forwarding plus read-only upstream auth-file account/quota snapshots |
 | Anthropic | Messages forwarding, plus Chat / Responses ↔ Messages conversion |
 | Grok | OAuth CLI channel, multi-account management, image generation, tier-based model availability |
 | OpenCode Go | Subscription plan models and quota-based routing |
@@ -198,6 +199,8 @@ Concurrency queue timeouts (`upstream_concurrency_wait_timeout`) never trigger a
 - Codex / Antigravity OAuth account import
 - Codex reset-credit lookup and redemption
 - Site upstream balance probing: balance and usage displayed per-credential
+- CLIProxyAPI management sync: encrypted management key, read-only account status/request statistics, and recent Codex/Claude quota observations in the site drawer; snapshots stay stale-safe on failures and never affect routing
+- Site usage split: input, output, cached, and total tokens, request success rates, hourly single-day trends, model/API-key breakdowns, and per-currency estimated costs (not upstream bills)
 
 ### Models and Pricing
 

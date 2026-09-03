@@ -15,12 +15,13 @@ import (
 
 func TestNormalizeQuotaProbeType(t *testing.T) {
 	for input, expected := range map[string]string{
-		"":        "",
-		"none":    "",
-		"sub2api": QuotaProbeTypeSub2API,
-		"newapi":  QuotaProbeTypeNewAPI,
-		"xlyra":   QuotaProbeTypeXLyra,
-		"kimi":    QuotaProbeTypeKimi,
+		"":            "",
+		"none":        "",
+		"sub2api":     QuotaProbeTypeSub2API,
+		"newapi":      QuotaProbeTypeNewAPI,
+		"xlyra":       QuotaProbeTypeXLyra,
+		"kimi":        QuotaProbeTypeKimi,
+		"cliproxyapi": QuotaProbeTypeCLIProxyAPI,
 	} {
 		value, err := NormalizeQuotaProbeType(input)
 		if err != nil || value != expected {

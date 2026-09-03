@@ -17,6 +17,7 @@ import {
   formatRelativeDateTime,
   formatRoutingPriority,
   formatSiteTypeLabel,
+  isCLIProxyAPISite,
   isOAuthSite,
   isSiteEnableBlockedByAbnormalState,
   siteAccountEmail,
@@ -34,7 +35,7 @@ export function SitesTable({
   items, modelsMap, apiKeysMap, validationSnapshots, refreshingSiteIds, togglingSiteId, deletingSiteId,
   abnormalItems = [], abnormalCollapsed = true, onAbnormalCollapsedChange,
   updatedAtMode, now, onUpdatedAtModeChange,
-  onRefresh, onToggleEnabled, onEdit, onDelete, onOpenModels, onOpenAPIKeys, onOpenGrokAccounts, onOpenTest, onOpenUsageSplit, resolvedMode, siteTypes,
+  onRefresh, onToggleEnabled, onEdit, onDelete, onOpenModels, onOpenAPIKeys, onOpenGrokAccounts, onOpenCLIProxyAPI, onOpenTest, onOpenUsageSplit, resolvedMode, siteTypes,
   className,
 }: {
   items: Site[]
@@ -57,6 +58,7 @@ export function SitesTable({
   onOpenModels: (site: Site) => void
   onOpenAPIKeys: (site: Site) => void
   onOpenGrokAccounts: (site: Site) => void
+  onOpenCLIProxyAPI: (site: Site) => void
   onOpenTest: (site: Site) => void
   onOpenUsageSplit: (site: Site) => void
   resolvedMode: 'light' | 'dark'
@@ -139,13 +141,29 @@ export function SitesTable({
         const keys = apiKeysMap[site.id] ?? EMPTY_API_KEYS
         const modelCount = siteModelsDisplayCount(site, models, keys)
         const isGrok = site.site_type === 'grok'
+        const isCLIProxyAPI = isCLIProxyAPISite(site)
         const keyInfo = isOAuthSite(site) || isGrok ? null : { enabled: keys.filter((key) => key.enabled).length, total: keys.length || site.api_key_count || 0 }
         return (
           <div className="flex items-center justify-center gap-1 text-xs tabular-nums whitespace-nowrap">
             <button type="button" className="hover:text-foreground text-foreground cursor-pointer" onClick={() => onOpenModels(site)}>
               {t('table.resources.models', { count: modelCount })}
             </button>
-            {isGrok ? (
+            {isCLIProxyAPI ? (
+              <>
+                <span className="text-muted-soft">/</span>
+                <button type="button" className="hover:text-foreground text-foreground cursor-pointer" onClick={() => onOpenCLIProxyAPI(site)}>
+                  {t('table.resources.accounts', { count: site.cliproxyapi?.sync?.account_count ?? 0 })}
+                </button>
+                {keyInfo ? (
+                  <>
+                    <span className="text-muted-soft">/</span>
+                    <button type="button" className="hover:text-foreground text-foreground cursor-pointer" onClick={() => onOpenAPIKeys(site)}>
+                      {t('table.resources.keys', { enabled: keyInfo.enabled, total: keyInfo.total })}
+                    </button>
+                  </>
+                ) : null}
+              </>
+            ) : isGrok ? (
               <>
                 <span className="text-muted-soft">/</span>
                 <button type="button" className="hover:text-foreground text-foreground cursor-pointer" onClick={() => onOpenGrokAccounts(site)}>
@@ -197,10 +215,15 @@ export function SitesTable({
             </span>
           )
         }
-        const totalTokens = usage.total_tokens ?? 0
-        const cost = usage.estimated_cost ?? 0
+        const totalTokens = typeof usage.total_tokens === 'number' && Number.isFinite(usage.total_tokens) && usage.total_tokens > 0
+          ? formatCompactTokens(usage.total_tokens)
+          : '—'
+        const cost = typeof usage.estimated_cost === 'number' && Number.isFinite(usage.estimated_cost) && usage.estimated_cost > 0
+          ? usage.estimated_cost
+          : null
         const currency = usage.currency?.trim().toUpperCase()
         const costPrefix = currency === 'CNY' || currency === 'RMB' ? '¥' : '$'
+        const costLabel = cost == null ? '—' : `${costPrefix}${cost.toFixed(2)}`
         return (
           <div
             role="button"
@@ -215,8 +238,8 @@ export function SitesTable({
               }
             }}
           >
-            <span className="text-foreground">{formatCompactTokens(totalTokens)}</span>
-            <span className="text-muted-soft">{costPrefix}{cost.toFixed(2)}</span>
+            <span className="text-foreground">{totalTokens}</span>
+            <span className="text-muted-soft">{costLabel}</span>
           </div>
         )
       },
@@ -304,7 +327,7 @@ export function SitesTable({
       },
       meta: { className: 'w-[11%]', align: 'left' as const },
     },
-  ], [apiKeysMap, deletingSiteId, i18n.language, modelsMap, now, onDelete, onEdit, onOpenAPIKeys, onOpenGrokAccounts, onOpenModels, onOpenTest, onOpenUsageSplit, onRefresh, onToggleEnabled, onUpdatedAtModeChange, refreshingSiteIds, resolvedMode, siteTypes, t, togglingSiteId, updatedAtMode, validationSnapshots])
+  ], [apiKeysMap, deletingSiteId, i18n.language, modelsMap, now, onDelete, onEdit, onOpenAPIKeys, onOpenCLIProxyAPI, onOpenGrokAccounts, onOpenModels, onOpenTest, onOpenUsageSplit, onRefresh, onToggleEnabled, onUpdatedAtModeChange, refreshingSiteIds, resolvedMode, siteTypes, t, togglingSiteId, updatedAtMode, validationSnapshots])
 
   return (
     <DataTable

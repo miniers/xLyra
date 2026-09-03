@@ -39,29 +39,31 @@ func (l cronLogger) Error(err error, msg string, keysAndValues ...any) {
 }
 
 type Options struct {
-	SiteHealthInterval time.Duration
-	SiteHealthTimeout  time.Duration
-	SiteHealthWorkers  int
-	ConfigFile         *config.ConfigFile
+	SiteHealthInterval      time.Duration
+	SiteHealthTimeout       time.Duration
+	SiteHealthWorkers       int
+	CLIProxyAPISyncInterval time.Duration
+	ConfigFile              *config.ConfigFile
 }
 
 type Scheduler struct {
-	cron          *cron.Cron
-	logger        *slog.Logger
-	options       Options
-	sites         *site.Service
-	sync          *catalog.SyncService
-	usageSummary  *usage.SummaryService
-	autoBackups   *backup.AutomaticService
-	configuredMu  sync.Mutex
-	siteRefreshID cron.EntryID
-	checkinID     cron.EntryID
-	autoBackupID  cron.EntryID
-	running       atomic.Bool
-	syncing       atomic.Bool
-	summarizing   atomic.Bool
-	refreshing    atomic.Bool
-	checkingIn    atomic.Bool
+	cron               *cron.Cron
+	logger             *slog.Logger
+	options            Options
+	sites              *site.Service
+	sync               *catalog.SyncService
+	usageSummary       *usage.SummaryService
+	autoBackups        *backup.AutomaticService
+	configuredMu       sync.Mutex
+	siteRefreshID      cron.EntryID
+	checkinID          cron.EntryID
+	autoBackupID       cron.EntryID
+	running            atomic.Bool
+	syncing            atomic.Bool
+	summarizing        atomic.Bool
+	refreshing         atomic.Bool
+	checkingIn         atomic.Bool
+	cliProxyAPISyncing atomic.Bool
 
 	modelsCacheInvalidator func()
 }
@@ -135,11 +137,39 @@ func (s *Scheduler) RegisterDefaultJobs() {
 	}
 
 	s.RegisterConfiguredJobs()
+	if s.sites != nil && s.options.CLIProxyAPISyncInterval > 0 {
+		spec := "@every " + s.options.CLIProxyAPISyncInterval.String()
+		if _, err := s.cron.AddFunc(spec, s.runCLIProxyAPISync); err != nil {
+			s.logger.Error("register cli proxy api sync scheduler failed", "error", err, "interval", s.options.CLIProxyAPISyncInterval)
+		} else {
+			s.logger.Info("cli proxy api sync scheduler registered", "interval", s.options.CLIProxyAPISyncInterval)
+		}
+	}
 	if s.options.ConfigFile != nil {
 		s.options.ConfigFile.OnChange(func(map[string]any) {
 			go s.RegisterConfiguredJobs()
 		})
 	}
+}
+
+func (s *Scheduler) runCLIProxyAPISync() {
+	if !s.cliProxyAPISyncing.CompareAndSwap(false, true) {
+		s.logger.Warn("cli proxy api sync scheduler skipped: previous run still active")
+		return
+	}
+	defer s.cliProxyAPISyncing.Store(false)
+	results, err := s.sites.SyncConfiguredCLIProxyAPIs(context.Background())
+	if err != nil {
+		s.logger.Error("cli proxy api sync scheduler failed", "error", err)
+		return
+	}
+	failed := 0
+	for _, result := range results {
+		if result.Err != nil {
+			failed++
+		}
+	}
+	s.logger.Info("cli proxy api sync scheduler completed", "count", len(results), "failed", failed)
 }
 
 func (s *Scheduler) RegisterConfiguredJobs() {

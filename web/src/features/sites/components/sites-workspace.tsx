@@ -60,6 +60,7 @@ import { ChannelSplitDialog } from '@/features/usage/components/channel-split-di
 import type { ChannelSplitTarget } from '@/features/usage/api/channel-split'
 import { SiteAPIKeysDraw } from '@/features/sites/components/site-api-keys-draw'
 import { GrokAccountsDraw } from '@/features/sites/components/grok-accounts-draw'
+import { CLIProxyAPIAccountsDraw } from '@/features/sites/components/cliproxyapi-accounts-draw'
 import {
   SiteCreateSheet,
   type SiteCreateSubmitInput,
@@ -137,6 +138,7 @@ export function SitesWorkspace({
   const [testSite, setTestSite] = useState<Site | null>(null)
   const [apiKeysSite, setAPIKeysSite] = useState<Site | null>(null)
   const [grokAccountsSite, setGrokAccountsSite] = useState<Site | null>(null)
+  const [cliproxyAPISite, setCLIProxyAPISite] = useState<Site | null>(null)
   const [usageSplitTarget, setUsageSplitTarget] =
     useState<ChannelSplitTarget | null>(null)
   const [urlAPIKeysOpen, setURLAPIKeysOpen] = useState(true)
@@ -781,6 +783,7 @@ export function SitesWorkspace({
     onOpenModels: setModelsSite,
     onOpenAPIKeys: setAPIKeysSite,
     onOpenGrokAccounts: setGrokAccountsSite,
+    onOpenCLIProxyAPI: setCLIProxyAPISite,
     onOpenTest: setTestSite,
     onOpenUsageSplit: (site: Site) =>
       setUsageSplitTarget({ type: 'site', id: site.id }),
@@ -1056,6 +1059,13 @@ export function SitesWorkspace({
             setGrokAccountsSite(null)
             setURLAPIKeysOpen(false)
           }
+        }}
+      />
+
+      <CLIProxyAPIAccountsDraw
+        site={cliproxyAPISite}
+        onOpenChange={(open) => {
+          if (!open) setCLIProxyAPISite(null)
         }}
       />
 

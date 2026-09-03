@@ -115,18 +115,21 @@ func (h Handler) CreateSite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	managementURL, managementKey := cliProxyAPIParams(payload)
 	created, _, err := h.sites.Create(r.Context(), sitepkg.CreateSiteParams{
-		Name:            payload.Name,
-		Slug:            payload.Slug,
-		SiteType:        payload.SiteType,
-		BaseURL:         baseURL,
-		Enabled:         enabled,
-		RoutingPriority: payload.RoutingPriority,
-		GatewayConfig:   payload.Gateway.toSiteGatewayConfig(),
-		ProxyID:         payload.ProxyID,
-		RequestHeaders:  requestHeadersFromInput(payload.RequestHeaders),
-		Credentials:     credentials,
-		QueueSync:       true,
+		Name:                     payload.Name,
+		Slug:                     payload.Slug,
+		SiteType:                 payload.SiteType,
+		BaseURL:                  baseURL,
+		Enabled:                  enabled,
+		RoutingPriority:          payload.RoutingPriority,
+		GatewayConfig:            payload.Gateway.toSiteGatewayConfig(),
+		ProxyID:                  payload.ProxyID,
+		RequestHeaders:           requestHeadersFromInput(payload.RequestHeaders),
+		Credentials:              credentials,
+		QueueSync:                true,
+		CLIProxyAPIManagementURL: managementURL,
+		CLIProxyAPIManagementKey: managementKey,
 	})
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "site_create_failed", err.Error())
@@ -171,19 +174,22 @@ func (h Handler) UpdateSite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	managementURL, managementKey := cliProxyAPIParams(payload)
 	updated, _, err := h.sites.Update(r.Context(), sitepkg.UpdateSiteParams{
-		ID:                siteID,
-		Name:              payload.Name,
-		Slug:              payload.Slug,
-		SiteType:          payload.SiteType,
-		BaseURL:           baseURL,
-		Enabled:           enabled,
-		RoutingPriority:   payload.RoutingPriority,
-		GatewayConfig:     payload.Gateway.toSiteGatewayConfig(),
-		ProxyID:           payload.ProxyID,
-		RequestHeaders:    requestHeadersFromInput(payload.RequestHeaders),
-		RequestHeadersSet: payload.RequestHeaders != nil,
-		Credentials:       credentials,
+		ID:                       siteID,
+		Name:                     payload.Name,
+		Slug:                     payload.Slug,
+		SiteType:                 payload.SiteType,
+		BaseURL:                  baseURL,
+		Enabled:                  enabled,
+		RoutingPriority:          payload.RoutingPriority,
+		GatewayConfig:            payload.Gateway.toSiteGatewayConfig(),
+		ProxyID:                  payload.ProxyID,
+		RequestHeaders:           requestHeadersFromInput(payload.RequestHeaders),
+		RequestHeadersSet:        payload.RequestHeaders != nil,
+		Credentials:              credentials,
+		CLIProxyAPIManagementURL: managementURL,
+		CLIProxyAPIManagementKey: managementKey,
 	})
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "site_update_failed", err.Error())
@@ -464,6 +470,46 @@ func (h Handler) RefreshSite(w http.ResponseWriter, r *http.Request) {
 	payload["ok"] = true
 	h.logInfo("site refreshed", "site_id", siteID, "model_count", len(result.Models), "api_key_count", len(result.APIKeyStates))
 	h.invalidateGatewayModelsCache()
+	h.writePayload(w, http.StatusOK, payload)
+}
+
+func (h Handler) SyncCLIProxyAPISite(w http.ResponseWriter, r *http.Request) {
+	if h.sites == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "site_service_unavailable", "site service is not available")
+		return
+	}
+	siteID, ok := siteIDParam(w, r)
+	if !ok {
+		return
+	}
+	item, snapshot, err := h.sites.SyncCLIProxyAPI(r.Context(), siteID)
+	if item.ID == uuid.Nil {
+		if current, getErr := h.sites.Get(r.Context(), siteID); getErr == nil {
+			item = current
+		}
+	}
+	if item.ID == uuid.Nil {
+		h.writeError(w, r, http.StatusNotFound, "site_not_found", "site was not found")
+		return
+	}
+	payload := map[string]any{
+		"ok":   err == nil,
+		"site": h.sitePayloadWithStats(r, item),
+	}
+	if snapshot.Status != "" {
+		payload["sync"] = snapshot
+	}
+	if err != nil {
+		payload["message"] = err.Error()
+		if errors.Is(err, sitepkg.ErrCLIProxyAPIManagementKeyMissing) || errors.Is(err, sitepkg.ErrCLIProxyAPIManagementURLInvalid) {
+			h.writePayload(w, http.StatusBadRequest, payload)
+			return
+		}
+		h.logWarn("cli proxy api sync failed", "site_id", siteID, "error", err)
+		h.writePayload(w, http.StatusOK, payload)
+		return
+	}
+	h.logInfo("cli proxy api synced", "site_id", siteID, "account_count", snapshot.AccountCount)
 	h.writePayload(w, http.StatusOK, payload)
 }
 
@@ -1696,8 +1742,25 @@ func sitePayload(item store.Site) map[string]any {
 			payload["quota_probe"] = v
 		}
 	}
+	if sitepkg.CLIProxyAPIConfigured(item) || strings.EqualFold(strings.TrimSpace(item.SiteType), "cliproxyapi") {
+		payload["cliproxyapi"] = sitepkg.CLIProxyAPIConfig(item)
+	}
 
 	return payload
+}
+
+func cliProxyAPIParams(payload siteUpsertRequest) (*string, *string) {
+	if payload.CLIProxyAPI == nil {
+		return nil, nil
+	}
+	var key *string
+	if payload.CLIProxyAPI.ClearManagementKey {
+		cleared := ""
+		key = &cleared
+	} else if payload.CLIProxyAPI.ManagementKey != nil {
+		key = payload.CLIProxyAPI.ManagementKey
+	}
+	return payload.CLIProxyAPI.ManagementURL, key
 }
 
 func oauthAccountPayload(meta map[string]any) map[string]any {

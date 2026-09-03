@@ -17,6 +17,7 @@ import {
   formatRoutingPriority,
   formatSiteBalance,
   formatSiteTypeLabel,
+  isCLIProxyAPISite,
   isOAuthSite,
   isSub2APIQuotaSite,
   isSiteEnableBlockedByAbnormalState,
@@ -52,6 +53,7 @@ export function MobileSitesList({
   onOpenModels,
   onOpenAPIKeys,
   onOpenGrokAccounts,
+  onOpenCLIProxyAPI,
   onOpenTest,
   onOpenUsageSplit,
   resolvedMode,
@@ -78,6 +80,7 @@ export function MobileSitesList({
   onOpenModels: (site: Site) => void
   onOpenAPIKeys: (site: Site) => void
   onOpenGrokAccounts: (site: Site) => void
+  onOpenCLIProxyAPI: (site: Site) => void
   onOpenTest: (site: Site) => void
   onOpenUsageSplit: (site: Site) => void
   resolvedMode: 'light' | 'dark'
@@ -116,6 +119,7 @@ export function MobileSitesList({
             onOpenModels={onOpenModels}
             onOpenAPIKeys={onOpenAPIKeys}
             onOpenGrokAccounts={onOpenGrokAccounts}
+            onOpenCLIProxyAPI={onOpenCLIProxyAPI}
             onOpenTest={onOpenTest}
             onOpenUsageSplit={onOpenUsageSplit}
             resolvedMode={resolvedMode}
@@ -153,6 +157,7 @@ function MobileSiteCard({
   onOpenModels,
   onOpenAPIKeys,
   onOpenGrokAccounts,
+  onOpenCLIProxyAPI,
   onOpenTest,
   onOpenUsageSplit,
   resolvedMode,
@@ -175,6 +180,7 @@ function MobileSiteCard({
   onOpenModels: (site: Site) => void
   onOpenAPIKeys: (site: Site) => void
   onOpenGrokAccounts: (site: Site) => void
+  onOpenCLIProxyAPI: (site: Site) => void
   onOpenTest: (site: Site) => void
   onOpenUsageSplit: (site: Site) => void
   resolvedMode: 'light' | 'dark'
@@ -185,12 +191,18 @@ function MobileSiteCard({
   const icon = siteTypeIcon(site.site_type, siteTypes, resolvedMode) || site.icon_url
   const modelCount = siteModelsDisplayCount(site, models, apiKeys)
   const isGrok = site.site_type === 'grok'
+  const isCLIProxyAPI = isCLIProxyAPISite(site)
   const keyInfo = oauth || isGrok ? null : { enabled: apiKeys.filter((key) => key.enabled).length, total: apiKeys.length || site.api_key_count || 0 }
   const usage = site.usage
-  const totalTokens = usage?.total_tokens ?? 0
-  const cost = usage?.estimated_cost ?? 0
+  const totalTokens = typeof usage?.total_tokens === 'number' && Number.isFinite(usage.total_tokens) && usage.total_tokens > 0
+    ? formatCompactTokens(usage.total_tokens, false)
+    : '—'
+  const cost = typeof usage?.estimated_cost === 'number' && Number.isFinite(usage.estimated_cost) && usage.estimated_cost > 0
+    ? usage.estimated_cost
+    : null
   const currency = usage?.currency?.trim().toUpperCase()
   const costPrefix = currency === 'CNY' || currency === 'RMB' ? '¥' : '$'
+  const costLabel = cost == null ? '—' : `${costPrefix}${cost.toFixed(2)}`
   const updatedValue = siteDisplayUpdatedAt(site)
   const updatedLabel = updatedAtMode === 'absolute'
     ? formatDateTime(updatedValue, i18n.language)
@@ -235,7 +247,7 @@ function MobileSiteCard({
         <MobileMetric label={t('table.headers.priority')} value={formatRoutingPriority(site.routing_priority)} />
         <MobileMetricButton
           label={t('table.headers.usage')}
-          value={usage ? `${formatCompactTokens(totalTokens, false)} / ${costPrefix}${cost.toFixed(2)}` : '-'}
+          value={usage ? `${totalTokens} / ${costLabel}` : '-'}
           onClick={() => onOpenUsageSplit(site)}
         />
         <MobileMetricButton
@@ -243,7 +255,22 @@ function MobileSiteCard({
           value={t('table.resources.models', { count: modelCount })}
           onClick={() => onOpenModels(site)}
         />
-        {isGrok ? (
+        {isCLIProxyAPI ? (
+          <>
+            <MobileMetricButton
+              label={t('table.headers.accounts')}
+              value={t('table.resources.accounts', { count: site.cliproxyapi?.sync?.account_count ?? 0 })}
+              onClick={() => onOpenCLIProxyAPI(site)}
+            />
+            {keyInfo ? (
+              <MobileMetricButton
+                label={t('table.headers.apiKeys')}
+                value={t('table.resources.keys', { enabled: keyInfo.enabled, total: keyInfo.total })}
+                onClick={() => onOpenAPIKeys(site)}
+              />
+            ) : null}
+          </>
+        ) : isGrok ? (
           <MobileMetricButton
             label={t('table.headers.accounts')}
             value={t('table.resources.accounts', { count: site.grok_account_count ?? site.api_key_count ?? 0 })}

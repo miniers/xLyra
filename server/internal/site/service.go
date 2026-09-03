@@ -45,34 +45,38 @@ type Service struct {
 }
 
 type CreateSiteParams struct {
-	Name            string
-	Slug            string
-	SiteType        string
-	BaseURL         string
-	Enabled         bool
-	RoutingPriority *float64
-	GatewayConfig   *GatewayConfig
-	ProxyID         *string
-	RequestHeaders  map[string]string
-	Credential      *CredentialInput
-	Credentials     []CredentialInput
-	QueueSync       bool
+	Name                     string
+	Slug                     string
+	SiteType                 string
+	BaseURL                  string
+	Enabled                  bool
+	RoutingPriority          *float64
+	GatewayConfig            *GatewayConfig
+	ProxyID                  *string
+	RequestHeaders           map[string]string
+	Credential               *CredentialInput
+	Credentials              []CredentialInput
+	QueueSync                bool
+	CLIProxyAPIManagementURL *string
+	CLIProxyAPIManagementKey *string
 }
 
 type UpdateSiteParams struct {
-	ID                uuid.UUID
-	Name              string
-	Slug              string
-	SiteType          string
-	BaseURL           string
-	Enabled           bool
-	RoutingPriority   *float64
-	GatewayConfig     *GatewayConfig
-	ProxyID           *string
-	RequestHeaders    map[string]string
-	RequestHeadersSet bool
-	Credential        *CredentialInput
-	Credentials       []CredentialInput
+	ID                       uuid.UUID
+	Name                     string
+	Slug                     string
+	SiteType                 string
+	BaseURL                  string
+	Enabled                  bool
+	RoutingPriority          *float64
+	GatewayConfig            *GatewayConfig
+	ProxyID                  *string
+	RequestHeaders           map[string]string
+	RequestHeadersSet        bool
+	Credential               *CredentialInput
+	Credentials              []CredentialInput
+	CLIProxyAPIManagementURL *string
+	CLIProxyAPIManagementKey *string
 }
 
 type CredentialInput struct {
@@ -472,6 +476,30 @@ func (s *Service) Create(ctx context.Context, params CreateSiteParams) (store.Si
 	if err := validateBaseURL(params.BaseURL); err != nil {
 		return store.Site{}, nil, err
 	}
+	if params.CLIProxyAPIManagementURL != nil {
+		if strings.TrimSpace(*params.CLIProxyAPIManagementURL) == "" {
+			params.CLIProxyAPIManagementURL = nil
+		} else {
+			normalized, err := normalizeCLIProxyAPIManagementBaseURL(*params.CLIProxyAPIManagementURL)
+			if err != nil {
+				return store.Site{}, nil, err
+			}
+			params.CLIProxyAPIManagementURL = &normalized
+		}
+	}
+	if !supportsCLIProxyAPIManagement(params.SiteType) && (params.CLIProxyAPIManagementURL != nil || params.CLIProxyAPIManagementKey != nil) {
+		if (params.CLIProxyAPIManagementURL != nil && strings.TrimSpace(*params.CLIProxyAPIManagementURL) != "") || (params.CLIProxyAPIManagementKey != nil && strings.TrimSpace(*params.CLIProxyAPIManagementKey) != "") {
+			return store.Site{}, nil, fmt.Errorf("cli proxy api management is only supported for openai and cliproxyapi sites")
+		}
+	}
+	encryptedManagementKey := ""
+	if params.CLIProxyAPIManagementKey != nil && strings.TrimSpace(*params.CLIProxyAPIManagementKey) != "" {
+		encrypted, _, err := s.credentials.Encrypt(*params.CLIProxyAPIManagementKey)
+		if err != nil {
+			return store.Site{}, nil, fmt.Errorf("encrypt cli proxy api management key: %w", err)
+		}
+		encryptedManagementKey = encrypted
+	}
 
 	if _, ok := s.adapters.ModuleForSiteType(params.SiteType); !ok {
 		return store.Site{}, nil, fmt.Errorf("unsupported site_type %q", params.SiteType)
@@ -502,16 +530,18 @@ func (s *Service) Create(ctx context.Context, params CreateSiteParams) (store.Si
 		}
 		meta = mergeStringMeta(meta, "proxy_id", params.ProxyID)
 		meta = mergeRequestHeadersMeta(meta, params.RequestHeaders, true)
+		meta = mergeStringMeta(meta, cliProxyAPIManagementURLMetaKey, params.CLIProxyAPIManagementURL)
 
 		site, err := siteRepo.Create(ctx, store.CreateSiteParams{
-			Name:            params.Name,
-			Slug:            params.Slug,
-			SiteType:        params.SiteType,
-			BaseURL:         params.BaseURL,
-			Status:          "active",
-			Enabled:         params.Enabled,
-			RoutingPriority: routingPriority,
-			Meta:            meta,
+			Name:                              params.Name,
+			Slug:                              params.Slug,
+			SiteType:                          params.SiteType,
+			BaseURL:                           params.BaseURL,
+			Status:                            "active",
+			Enabled:                           params.Enabled,
+			RoutingPriority:                   routingPriority,
+			Meta:                              meta,
+			EncryptedCLIProxyAPIManagementKey: encryptedManagementKey,
 		})
 		if err != nil {
 			return err
@@ -578,6 +608,32 @@ func (s *Service) Update(ctx context.Context, params UpdateSiteParams) (store.Si
 	if err := validateBaseURL(params.BaseURL); err != nil {
 		return store.Site{}, nil, err
 	}
+	if params.CLIProxyAPIManagementURL != nil {
+		if strings.TrimSpace(*params.CLIProxyAPIManagementURL) == "" {
+			cleared := ""
+			params.CLIProxyAPIManagementURL = &cleared
+		} else {
+			normalized, err := normalizeCLIProxyAPIManagementBaseURL(*params.CLIProxyAPIManagementURL)
+			if err != nil {
+				return store.Site{}, nil, err
+			}
+			params.CLIProxyAPIManagementURL = &normalized
+		}
+	}
+	var encryptedManagementKey *string
+	if params.CLIProxyAPIManagementKey != nil {
+		value := strings.TrimSpace(*params.CLIProxyAPIManagementKey)
+		if value == "" {
+			cleared := ""
+			encryptedManagementKey = &cleared
+		} else {
+			encrypted, _, err := s.credentials.Encrypt(value)
+			if err != nil {
+				return store.Site{}, nil, fmt.Errorf("encrypt cli proxy api management key: %w", err)
+			}
+			encryptedManagementKey = &encrypted
+		}
+	}
 	if _, ok := s.adapters.ModuleForSiteType(params.SiteType); !ok {
 		return store.Site{}, nil, fmt.Errorf("unsupported site_type %q", params.SiteType)
 	}
@@ -599,6 +655,11 @@ func (s *Service) Update(ctx context.Context, params UpdateSiteParams) (store.Si
 		if err != nil {
 			return err
 		}
+		if !supportsCLIProxyAPIManagement(params.SiteType) {
+			cleared := ""
+			params.CLIProxyAPIManagementURL = &cleared
+			encryptedManagementKey = &cleared
+		}
 
 		routingPriority, err := normalizeRoutingPriorityWithFallback(params.RoutingPriority, existing.RoutingPriority)
 		if err != nil {
@@ -611,17 +672,23 @@ func (s *Service) Update(ctx context.Context, params UpdateSiteParams) (store.Si
 		}
 		meta = mergeStringMeta(meta, "proxy_id", params.ProxyID)
 		meta = mergeRequestHeadersMeta(meta, params.RequestHeaders, params.RequestHeadersSet)
+		meta = mergeStringMeta(meta, cliProxyAPIManagementURLMetaKey, params.CLIProxyAPIManagementURL)
+		encryptedManagementKeyValue := existing.EncryptedCLIProxyAPIManagementKey
+		if encryptedManagementKey != nil {
+			encryptedManagementKeyValue = *encryptedManagementKey
+		}
 
 		site, err := siteRepo.Update(ctx, store.UpdateSiteParams{
-			ID:              params.ID,
-			Name:            params.Name,
-			Slug:            params.Slug,
-			SiteType:        params.SiteType,
-			BaseURL:         params.BaseURL,
-			Status:          "active",
-			Enabled:         params.Enabled,
-			RoutingPriority: routingPriority,
-			Meta:            meta,
+			ID:                                params.ID,
+			Name:                              params.Name,
+			Slug:                              params.Slug,
+			SiteType:                          params.SiteType,
+			BaseURL:                           params.BaseURL,
+			Status:                            "active",
+			Enabled:                           params.Enabled,
+			RoutingPriority:                   routingPriority,
+			Meta:                              meta,
+			EncryptedCLIProxyAPIManagementKey: encryptedManagementKeyValue,
 		})
 		if err != nil {
 			return err
@@ -2259,6 +2326,9 @@ func (r errorRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func (s *Service) httpClientForSite(_ context.Context, item store.Site, stream bool) (*http.Client, error) {
+	if s == nil || s.httpClients == nil {
+		return nil, fmt.Errorf("http client manager is not initialized")
+	}
 	proxyID := proxyIDFromMeta(item.Meta)
 	profile := httpclientProfileFromGatewayConfig(GatewayConfigFromSiteMeta(item.Meta), proxyID)
 	if stream {

@@ -204,6 +204,11 @@
     "targetRequired": "Choose a site",
     "loading": "Loading usage split",
     "loadFailed": "Failed to load usage split",
+    "observationNotice": "Observed by this site · estimated cost, not the upstream bill",
+    "analyticsUnavailable": "Model and hourly analytics are unavailable right now.",
+    "cost": {
+      "unconfigured": "Pricing not configured"
+    },
     "filters": {
       "target": "Sites",
       "searchSites": "Search sites",
@@ -225,30 +230,46 @@
     "metrics": {
       "totalCost": "Total cost",
       "totalTokens": "Total tokens",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "cachedTokens": "Cached tokens",
       "apiKeys": "Downstream keys",
       "requests": "Requests",
+      "successRate": "Success rate",
+      "failureRate": "Failure rate",
+      "cacheHitRate": "Cache hit rate",
+      "avgLatency": "Avg latency",
       "cost": "Cost",
       "tokens": "Tokens"
     },
     "chart": {
       "title": "Cost share",
+      "modelTitle": "Model cost share",
       "description": "Top API keys sorted by usage."
+    },
+    "hourlyTitle": "Hourly trend",
+    "dailyTitle": "Daily trend",
+    "hourlyEmpty": "No hourly usage",
+    "dailyEmpty": "No daily usage",
+    "dimensions": {
+      "apiKey": "By downstream API key",
+      "model": "By model"
     },
     "table": {
       "title": "Split details",
-      "totalPrice": "Split total",
-      "totalPricePlaceholder": "Enter total",
       "apiKey": "API Key",
+      "model": "Model",
+      "modelTitle": "Model details",
       "cost": "Cost",
       "share": "Share",
-      "actualPrice": "Actual price",
       "tokens": "Tokens",
       "requests": "Requests",
       "successRate": "Success"
     },
     "empty": {
       "title": "No split data",
-      "description": "No usage in this range can be attributed to downstream API keys."
+      "description": "No usage in this range can be attributed to downstream API keys.",
+      "breakdown": "No usage for this dimension"
     }
   },
   "quota": {

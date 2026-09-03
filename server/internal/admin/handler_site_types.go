@@ -21,6 +21,7 @@ type siteTypeInfo struct {
 func (h Handler) ListSiteTypes(w http.ResponseWriter, r *http.Request) {
 	types := []siteTypeInfo{
 		{SiteType: "openai", DisplayName: "OpenAI", Subtitle: "OpenAI 平台 API Key 接入", CredentialKey: "openai", CredentialType: "api_key", RequiresBaseURL: false, OfficialBaseURL: "https://api.openai.com", ShowInCreateDialog: true, IconURL: "/brand-icons/openai.png"},
+		{SiteType: "cliproxyapi", DisplayName: "CLIProxyAPI", Subtitle: "自建 CLIProxyAPI OpenAI-compatible 接入，可同步上游账号额度", CredentialKey: "cliproxyapi", CredentialType: "api_key", RequiresBaseURL: true, ShowInCreateDialog: true, IconURL: "/brand-icons/openai.png"},
 		{SiteType: "anthropic", DisplayName: "Anthropic Claude", Subtitle: "Anthropic Messages API Key 接入", CredentialKey: "anthropic", CredentialType: "api_key", RequiresBaseURL: false, OfficialBaseURL: "https://api.anthropic.com", ShowInCreateDialog: true, IconURL: "/brand-icons/anthropic.png"},
 		{SiteType: "google_gemini", DisplayName: "Google Gemini", Subtitle: "Google AI Studio API Key 接入", CredentialKey: "google_gemini", CredentialType: "api_key", RequiresBaseURL: false, OfficialBaseURL: "https://generativelanguage.googleapis.com", ShowInCreateDialog: true, IconURL: "/brand-icons/google.png"},
 		{SiteType: "grok", DisplayName: "Grok", Subtitle: "通过 xAI OAuth 设备登录接入 Grok", CredentialKey: "grok", CredentialType: "grok_oauth", RequiresBaseURL: false, OfficialBaseURL: "https://cli-chat-proxy.grok.com", ShowInCreateDialog: true, IconURL: "/brand-icons/grok.png"},

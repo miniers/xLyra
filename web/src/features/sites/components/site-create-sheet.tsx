@@ -79,6 +79,9 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
       newapiUserId: z.string().trim(),
       xlyraAuthMode: z.enum(['access_token', 'api_key']),
       xlyraAccessToken: z.string().trim(),
+      cliproxyapiManagementUrl: z.string().trim(),
+      cliproxyapiManagementKey: z.string(),
+      clearCLIProxyAPIManagementKey: z.boolean(),
       routingPriority: z.string().trim(),
       maxConcurrency: z.string().trim(),
       maxSameSiteCredentialRetries: z.string().trim(),
@@ -87,7 +90,7 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
       proxyId: z.string(),
       responsesToolPolicy: z.enum(['passthrough', 'compatibility']),
       disableResponsesImageGenerationTool: z.boolean(),
-      quotaProbe: z.enum(['none', 'sub2api', 'newapi', 'xlyra']),
+      quotaProbe: z.enum(['none', 'sub2api', 'newapi', 'xlyra', 'cliproxyapi']),
       impersonateCodexClient: z.boolean(),
       impersonateClaudeCodeClient: z.boolean(),
       siteGroupIds: z.array(z.string()),
@@ -103,6 +106,15 @@ function createSiteSchema(mode: SiteSheetMode, siteTypes: SiteTypeInfo[] | undef
         }
       } else if (value.siteType !== 'grok' && requiresBaseURL(value.siteType, siteTypes)) {
         ctx.addIssue({ code: 'custom', path: ['baseUrl'], message: t('form.validation.urlRequired') })
+      }
+
+      if ((value.siteType === 'cliproxyapi' || value.quotaProbe === 'cliproxyapi') && value.cliproxyapiManagementUrl) {
+        try {
+          const parsed = new URL(value.cliproxyapiManagementUrl)
+          if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.host) throw new Error('invalid')
+        } catch {
+          ctx.addIssue({ code: 'custom', path: ['cliproxyapiManagementUrl'], message: t('form.validation.managementUrlInvalid') })
+        }
       }
 
       const credType = credentialTypeOf(value.siteType, siteTypes)
@@ -230,6 +242,9 @@ const defaultValues: CreateSiteFormValues = {
   newapiUserId: '',
   xlyraAuthMode: 'api_key',
   xlyraAccessToken: '',
+  cliproxyapiManagementUrl: '',
+  cliproxyapiManagementKey: '',
+  clearCLIProxyAPIManagementKey: false,
   routingPriority: '1.0',
   maxConcurrency: '',
   maxSameSiteCredentialRetries: '',
@@ -278,7 +293,8 @@ function responsesToolConfigFromSite(site: Site) {
 
 function quotaProbeFromSite(site: Site): CreateSiteFormValues['quotaProbe'] {
   const value = site.gateway_config?.quota_probe
-  if (value === 'sub2api' || value === 'newapi' || value === 'xlyra') return value
+  if (value === 'cliproxyapi' && site.site_type !== 'openai') return 'none'
+  if (value === 'sub2api' || value === 'newapi' || value === 'xlyra' || value === 'cliproxyapi') return value
   return 'none'
 }
 
@@ -296,6 +312,9 @@ function formValuesFromSite(site?: Site | null): CreateSiteFormValues {
     newapiUserId: site.auth_config?.newapi?.user_id ? String(site.auth_config.newapi.user_id) : '',
     xlyraAuthMode: site.auth_config?.xlyra?.auth_mode ?? 'api_key',
     xlyraAccessToken: site.auth_config?.xlyra?.access_token ?? '',
+    cliproxyapiManagementUrl: site.cliproxyapi?.management_url ?? '',
+    cliproxyapiManagementKey: '',
+    clearCLIProxyAPIManagementKey: false,
     routingPriority: formatRoutingPriorityInput(site.routing_priority),
     maxConcurrency: site.gateway_config?.max_concurrency == null ? '' : String(site.gateway_config.max_concurrency),
     maxSameSiteCredentialRetries: site.gateway_config?.max_same_site_credential_retries == null ? '' : String(site.gateway_config.max_same_site_credential_retries),
@@ -485,9 +504,9 @@ function providerSubtitle(siteType: SiteTypeInfo, language: string, t: (key: str
 }
 
 function providerGroups(providers: SiteTypeInfo[], t: (key: string) => string) {
-  const official = providers.filter((st) => st.credential_type === 'api_key' || st.site_type === 'grok')
+  const official = providers.filter((st) => (st.credential_type === 'api_key' || st.site_type === 'grok') && st.site_type !== 'cliproxyapi')
   const relay = providers
-    .filter((st) => st.site_type === 'xlyra' || st.site_type === 'newapi' || st.credential_type === 'system_token')
+    .filter((st) => st.site_type === 'xlyra' || st.site_type === 'newapi' || st.site_type === 'cliproxyapi' || st.credential_type === 'system_token')
     .sort((a, b) => relayProviderRank(a.site_type) - relayProviderRank(b.site_type))
   const rest = providers.filter((st) => !official.includes(st) && !relay.includes(st) && st.credential_type !== 'oauth')
 
@@ -501,7 +520,8 @@ function providerGroups(providers: SiteTypeInfo[], t: (key: string) => string) {
 function relayProviderRank(siteType: string) {
   if (siteType === 'xlyra') return 0
   if (siteType === 'newapi') return 1
-  return 2
+  if (siteType === 'cliproxyapi') return 2
+  return 3
 }
 
 export function SiteCreateSheet({
@@ -563,6 +583,8 @@ export function SiteCreateSheet({
   const newapiAccessTokenField = register('newapiAccessToken')
   const newapiUserIdField = register('newapiUserId')
   const xlyraAccessTokenField = register('xlyraAccessToken')
+  const cliproxyapiManagementUrlField = register('cliproxyapiManagementUrl')
+  const cliproxyapiManagementKeyField = register('cliproxyapiManagementKey')
   const routingPriorityField = register('routingPriority')
   const maxConcurrencyField = register('maxConcurrency')
   const showV1Hint = (baseUrl ?? '').trim().length > 0 && /\/v1\/?$/.test((baseUrl ?? '').trim())
@@ -571,7 +593,9 @@ export function SiteCreateSheet({
   const showSystemTokenFields = currentCredType === 'system_token'
   const showXLyraFields = currentCredType === 'xlyra'
   const xlyraAuthMode = useWatch({ control, name: 'xlyraAuthMode' })
+  const quotaProbe = useWatch({ control, name: 'quotaProbe' })
   const isGrok = siteType === 'grok'
+  const showCLIProxyAPIManagement = siteType === 'cliproxyapi' || (siteType === 'openai' && quotaProbe === 'cliproxyapi')
   const canConfigureQuotaProbe = siteType === 'openai' || siteType === 'anthropic'
   const showAPIKeyField = !isGrok && currentCredType !== 'system_token' && currentCredType !== 'oauth' && currentCredType !== 'xlyra' && !!siteType && mode === 'create'
   const supportsAPIKeyCostMultiplier = siteType === 'openai' || siteType === 'anthropic'
@@ -621,6 +645,8 @@ export function SiteCreateSheet({
         initialSite.auth_config?.newapi?.user_id ?? '',
         initialSite.auth_config?.xlyra?.auth_mode ?? '',
         initialSite.auth_config?.xlyra?.access_token ?? '',
+        initialSite.cliproxyapi?.management_url ?? '',
+        initialSite.cliproxyapi?.management_key_configured ? 'configured' : '',
       ].join(':')
       if (lastFormResetKeyRef.current !== resetKey) {
         reset({
@@ -641,6 +667,9 @@ export function SiteCreateSheet({
   function handleSelectProvider(siteType: string) {
     setValue('siteType', siteType, { shouldDirty: true })
     setValue('apiKeys', [], { shouldDirty: false })
+    if (siteType !== 'openai' && quotaProbe === 'cliproxyapi') {
+      setValue('quotaProbe', 'none', { shouldDirty: true })
+    }
     if (siteType === 'grok' || !requiresBaseURL(siteType, siteTypes)) {
       setValue('baseUrl', '')
     }
@@ -656,6 +685,9 @@ export function SiteCreateSheet({
     setValue('newapiUserId', '', { shouldDirty: false })
     setValue('xlyraAuthMode', 'api_key', { shouldDirty: false })
     setValue('xlyraAccessToken', '', { shouldDirty: false })
+    setValue('cliproxyapiManagementUrl', '', { shouldDirty: false })
+    setValue('cliproxyapiManagementKey', '', { shouldDirty: false })
+    setValue('clearCLIProxyAPIManagementKey', false, { shouldDirty: false })
   }
 
   function openNewAPIKeyForm() {
@@ -757,6 +789,13 @@ export function SiteCreateSheet({
               apiKey: values.xlyraAuthMode === 'api_key' ? values.apiKey.trim() || undefined : undefined,
             }
           : undefined,
+      cliproxyapi: showCLIProxyAPIManagement
+        ? {
+            managementUrl: values.cliproxyapiManagementUrl,
+            managementKey: values.cliproxyapiManagementKey.trim() || undefined,
+            clearManagementKey: values.clearCLIProxyAPIManagementKey,
+          }
+        : undefined,
       requestHeaders: values.requestHeaders.filter((h) => h.key.trim()),
       gateway: !shouldSendGatewayConfig
         ? undefined
@@ -1180,11 +1219,59 @@ export function SiteCreateSheet({
                                     <SelectItem value="xlyra">xLyra</SelectItem>
                                     <SelectItem value="sub2api">Sub2API</SelectItem>
                                     <SelectItem value="newapi">NewAPI / OneAPI</SelectItem>
+                                    {siteType === 'openai' ? <SelectItem value="cliproxyapi">{t('form.fields.quotaProbeCLIProxyAPI')}</SelectItem> : null}
                                   </SelectContent>
                                 </Select>
                               </FormField>
                             )}
                           />
+                        ) : null}
+
+                        {showCLIProxyAPIManagement ? (
+                          <div className="space-y-4 border-b border-[hsl(var(--glass-divider))] pb-4">
+                            <h4 className="text-sm font-semibold text-foreground">
+                              {t('form.sections.cliproxyapi')}
+                            </h4>
+                            <FormField
+                              label={t('form.fields.managementUrl')}
+                              hint={t('form.fields.managementUrlHint')}
+                              error={errors.cliproxyapiManagementUrl?.message}
+                            >
+                              <Input
+                                placeholder={t('form.fields.managementUrlPlaceholder')}
+                                {...cliproxyapiManagementUrlField}
+                              />
+                            </FormField>
+                            <FormField
+                              label={t('form.fields.managementKey')}
+                              hint={
+                                initialSite?.cliproxyapi?.management_key_configured
+                                  ? t('form.fields.managementKeyConfigured')
+                                  : t('form.fields.managementKeyHint')
+                              }
+                            >
+                              <Input
+                                type="password"
+                                autoComplete="new-password"
+                                placeholder={t('form.fields.managementKeyPlaceholder')}
+                                {...cliproxyapiManagementKeyField}
+                              />
+                            </FormField>
+                            {mode === 'edit' && initialSite?.cliproxyapi?.management_key_configured ? (
+                              <Controller
+                                control={control}
+                                name="clearCLIProxyAPIManagementKey"
+                                render={({ field }) => (
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                    label={t('form.fields.clearManagementKey')}
+                                    description={t('form.fields.clearManagementKeyDesc')}
+                                  />
+                                )}
+                              />
+                            ) : null}
+                          </div>
                         ) : null}
 
                         <Controller

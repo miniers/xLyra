@@ -35,6 +35,23 @@
       "syncQueued": "已保存，正在后台同步"
     }
   },
+  "cliproxyapi": {
+    "title": "上游账号与额度",
+    "observationHint": "额度为上游最近观测值，并非实时余额；同步失败时保留上次成功快照。",
+    "refresh": "同步上游",
+    "managementUrl": "管理地址",
+    "lastSuccess": "最近成功：{{time}}",
+    "lastFetched": "最近尝试：{{time}}",
+    "stale": "数据已过期",
+    "unconfigured": "尚未配置 CLIProxyAPI 管理密钥",
+    "noSnapshot": "同步失败，暂无成功快照",
+    "noAccounts": "上游暂无账号",
+    "status": {"ok": "已同步", "error": "同步失败", "unconfigured": "未配置", "never": "未同步", "stale": "上次观测"},
+    "summary": {"total": "账号总数", "available": "可用", "disabled": "禁用", "unavailable": "不可用"},
+    "account": {"available": "可用", "disabled": "禁用", "unavailable": "不可用", "toggleQuota": "展开额度详情", "showDetails": "展开账号详情", "hideDetails": "收起账号详情", "showEmail": "显示完整邮箱", "hideEmail": "隐藏完整邮箱", "success": "成功", "failed": "失败", "lastRefresh": "最近刷新", "retry": "重试时间", "quotaWindows": "额度窗口", "quotaNotObserved": "暂无额度观测", "fiveHour": "5 小时", "sevenDay": "7 天", "primaryWindow": "Primary 窗口", "secondaryWindow": "Secondary 窗口", "additionalWindow": "Additional", "codeReviewWindow": "Code Review", "usedPercent": "已用 {{value}}", "remainingPercent": "剩余 {{value}}", "windowDuration": "窗口 {{value}}", "reset": "重置 {{value}}", "limitReached": "已达到限额", "allowed": "可用", "notAllowed": "不可用", "notObserved": "未观测", "modelQuota": "模型级额度", "requestHistory": "最近 200 分钟请求历史", "noRequestHistory": "暂无请求记录", "totalRequests": "总请求 {{value}}", "legacyRequestCount": "历史格式仅提供请求总数：{{value}}", "historySummary": "共 {{count}} 个时间桶，成功 {{success}} 次，失败 {{failed}} 次", "historyPoint": "{{time}}：成功 {{success}}，失败 {{failed}}", "time": "时间", "overallQuota": "账号额度", "observedAt": "观测于 {{time}}", "noStandardQuota": "暂无标准化额度"},
+    "duration": {"seconds": "{{count}} 秒", "minutes": "{{count}} 分钟", "hours": "{{count}} 小时", "days": "{{count}} 天", "weeks": "{{count}} 周"},
+    "toast": {"synced": "上游账号额度已同步", "syncFailed": "上游账号额度同步失败"}
+  },
   "table": {
     "headers": {
       "site": "站点",
@@ -100,6 +117,7 @@
       "basic": "基础信息",
       "connection": "连接配置",
       "auth": "认证配置",
+      "cliproxyapi": "CLIProxyAPI 管理连接",
       "grokAccounts": "账号导入",
       "groups": "分组配置",
       "routing": "路由设置",
@@ -125,6 +143,15 @@
       "xlyraAccessTokenHint": "通过 xLyra 后台管理接口同步上游 Key 和模型数据。",
       "xlyraApiKey": "xLyra 下游 API Key",
       "xlyraApiKeyHint": "通过 /v1/models 获取该 Key 可用模型。",
+      "managementUrl": "管理接口地址",
+      "managementUrlPlaceholder": "留空则从站点地址推导 /v0/management",
+      "managementUrlHint": "只读请求 GET /auth-files；建议使用 HTTPS 或内网地址。",
+      "managementKey": "管理密钥",
+      "managementKeyPlaceholder": "CLIProxyAPI remote-management.secret-key",
+      "managementKeyHint": "密钥仅加密保存，不会回显，也不会进入站点元数据。",
+      "managementKeyConfigured": "已配置管理密钥；留空保持不变。",
+      "clearManagementKey": "清空已保存的管理密钥",
+      "clearManagementKeyDesc": "清空后将停止后台额度同步。",
       "routingPriority": "路由权重",
       "routingPriorityHint": "默认 1.0，可设置 1.0 - 5.0，权重越高优先路由。",
       "maxConcurrency": "最大并发请求数",
@@ -169,8 +196,9 @@
       "headerKeyPlaceholder": "Header 名",
       "headerValuePlaceholder": "Header 值",
       "quotaProbe": "上游程序类型（余额探测）",
-      "quotaProbeDesc": "选择该站点背后实际运行的程序，网关将按其接口定期探测各凭证的可用余额并展示。仅适用于 API Key 凭证的站点。",
-      "quotaProbeNone": "不探测"
+      "quotaProbeDesc": "选择该站点背后实际运行的程序；CLIProxyAPI 使用只读管理接口同步账号与额度，其余选项按对应接口定期探测余额。仅适用于 API Key 凭证的站点。",
+      "quotaProbeNone": "不探测",
+      "quotaProbeCLIProxyAPI": "CLIProxyAPI（管理同步）"
     },
     "categories": {
       "official": "官方接入",
@@ -180,6 +208,7 @@
     "providerSubtitles": {
       "opencode_go": "OpenCode Go 套餐 API Key 接入",
       "openai": "OpenAI 平台 API Key 接入",
+      "cliproxyapi": "自建 CLIProxyAPI 接入，可同步上游账号额度",
       "anthropic": "Anthropic Messages API Key 接入",
       "google_gemini": "Google AI Studio API Key 接入",
       "deepseek": "DeepSeek 平台 API Key 接入",
@@ -196,6 +225,7 @@
       "typeRequired": "请选择站点类型",
       "urlRequired": "请输入站点地址",
       "urlInvalid": "请输入有效的 URL",
+      "managementUrlInvalid": "请输入有效的管理接口 URL",
       "apiKeyRequired": "请输入上游 API Key",
       "priorityRequired": "请输入路由权重",
       "priorityFormat": "路由权重仅支持 1 位小数",

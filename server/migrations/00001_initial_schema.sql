@@ -129,6 +129,7 @@ CREATE TABLE sites (
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   routing_priority NUMERIC(2,1) NOT NULL DEFAULT 1.0 CHECK (routing_priority >= 1.0 AND routing_priority <= 5.0),
   meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+  encrypted_cli_proxy_api_management_key TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

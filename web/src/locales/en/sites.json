@@ -35,6 +35,23 @@
       "syncQueued": "Saved and syncing in the background"
     }
   },
+  "cliproxyapi": {
+    "title": "Upstream accounts & quota",
+    "observationHint": "Quota values are the upstream's latest observations, not real-time balances; the last successful snapshot is kept when sync fails.",
+    "refresh": "Sync upstream",
+    "managementUrl": "Management URL",
+    "lastSuccess": "Last success: {{time}}",
+    "lastFetched": "Last attempt: {{time}}",
+    "stale": "Stale data",
+    "unconfigured": "CLIProxyAPI management key is not configured",
+    "noSnapshot": "Sync failed; no successful snapshot",
+    "noAccounts": "No upstream accounts",
+    "status": {"ok": "Synced", "error": "Sync failed", "unconfigured": "Unconfigured", "never": "Never synced", "stale": "Last observation"},
+    "summary": {"total": "Total", "available": "Available", "disabled": "Disabled", "unavailable": "Unavailable"},
+    "account": {"available": "Available", "disabled": "Disabled", "unavailable": "Unavailable", "toggleQuota": "Toggle quota details", "showDetails": "Show account details", "hideDetails": "Hide account details", "showEmail": "Show full email", "hideEmail": "Hide full email", "success": "Success", "failed": "Failed", "lastRefresh": "Last refresh", "retry": "Retry", "quotaWindows": "Quota windows", "quotaNotObserved": "No quota observation", "fiveHour": "5 hours", "sevenDay": "7 days", "primaryWindow": "Primary window", "secondaryWindow": "Secondary window", "additionalWindow": "Additional", "codeReviewWindow": "Code Review", "usedPercent": "Used {{value}}", "remainingPercent": "Remaining {{value}}", "windowDuration": "Window {{value}}", "reset": "Reset {{value}}", "limitReached": "Limit reached", "allowed": "Allowed", "notAllowed": "Not allowed", "notObserved": "Not observed", "modelQuota": "Model quotas", "requestHistory": "Recent 200-minute request history", "noRequestHistory": "No request records", "totalRequests": "Total requests {{value}}", "legacyRequestCount": "Legacy format only provides total requests: {{value}}", "historySummary": "{{count}} time buckets, {{success}} successful and {{failed}} failed requests", "historyPoint": "{{time}}: {{success}} successful, {{failed}} failed", "time": "Time", "overallQuota": "Account quota", "observedAt": "Observed {{time}}", "noStandardQuota": "No standardized quota"},
+    "duration": {"seconds": "{{count}} sec", "minutes": "{{count}} min", "hours": "{{count}} hr", "days": "{{count}} days", "weeks": "{{count}} weeks"},
+    "toast": {"synced": "Upstream accounts and quota synced", "syncFailed": "Failed to sync upstream accounts and quota"}
+  },
   "table": {
     "headers": {
       "site": "Site",
@@ -100,6 +117,7 @@
       "basic": "Basic Info",
       "connection": "Connection",
       "auth": "Authentication",
+      "cliproxyapi": "CLIProxyAPI management",
       "grokAccounts": "Account Import",
       "groups": "Groups",
       "routing": "Routing",
@@ -125,6 +143,15 @@
       "xlyraAccessTokenHint": "Sync upstream keys and models through the xLyra admin API.",
       "xlyraApiKey": "xLyra downstream API key",
       "xlyraApiKeyHint": "Fetch models available to this key through /v1/models.",
+      "managementUrl": "Management URL",
+      "managementUrlPlaceholder": "Leave blank to derive /v0/management from the site URL",
+      "managementUrlHint": "Read-only GET /auth-files; HTTPS or an internal address is recommended.",
+      "managementKey": "Management key",
+      "managementKeyPlaceholder": "CLIProxyAPI remote-management.secret-key",
+      "managementKeyHint": "Stored encrypted only; never echoed or included in site metadata.",
+      "managementKeyConfigured": "Management key configured; leave blank to keep it.",
+      "clearManagementKey": "Clear saved management key",
+      "clearManagementKeyDesc": "Clearing it stops background quota synchronization.",
       "routingPriority": "Routing Weight",
       "routingPriorityHint": "Default 1.0, range 1.0 - 5.0. Higher weight means higher routing priority.",
       "maxConcurrency": "Maximum concurrent requests",
@@ -169,8 +196,9 @@
       "headerKeyPlaceholder": "Header name",
       "headerValuePlaceholder": "Header value",
       "quotaProbe": "Upstream software (balance probe)",
-      "quotaProbeDesc": "Select the software actually running behind this site; the gateway periodically probes each credential's available balance via its API. Applies to API-key credential sites only.",
-      "quotaProbeNone": "Disabled"
+      "quotaProbeDesc": "Select the software actually running behind this site. CLIProxyAPI uses its read-only management API to sync accounts and quota; other options probe balances through their APIs. Applies to API-key credential sites only.",
+      "quotaProbeNone": "Disabled",
+      "quotaProbeCLIProxyAPI": "CLIProxyAPI (management sync)"
     },
     "categories": {
       "official": "Official",
@@ -180,6 +208,7 @@
     "providerSubtitles": {
       "opencode_go": "Connect an OpenCode Go plan API key",
       "openai": "Connect with an OpenAI platform API key",
+      "cliproxyapi": "Connect a self-hosted CLIProxyAPI and sync upstream quota",
       "anthropic": "Connect with an Anthropic Messages API key",
       "google_gemini": "Connect with a Google AI Studio API key",
       "deepseek": "Connect with a DeepSeek platform API key",
@@ -198,6 +227,7 @@
       "typeRequired": "Please select a site type",
       "urlRequired": "Please enter a base URL",
       "urlInvalid": "Please enter a valid URL",
+      "managementUrlInvalid": "Please enter a valid management URL",
       "apiKeyRequired": "Please enter an upstream API key",
       "priorityRequired": "Please enter a routing weight",
       "priorityFormat": "Routing weight supports at most 1 decimal place",

@@ -147,6 +147,7 @@ var textSecretColumns = map[string][]string{
 	"api_keys":          {"encrypted_secret"},
 	"site_credentials":  {"encrypted_secret"},
 	"oauth_connections": {"encrypted_access_token", "encrypted_refresh_token", "encrypted_id_token"},
+	"sites":             {"encrypted_cli_proxy_api_management_key"},
 }
 
 func exportDatabase(ctx context.Context, db *gorm.DB, masterKey string, playgroundRoot string, zw *zip.Writer) (map[string]int, error) {

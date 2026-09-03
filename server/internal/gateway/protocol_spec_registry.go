@@ -566,7 +566,7 @@ func normalizeSpecKey(value string) string {
 
 func genericOpenAICompatibleSiteType(value string) bool {
 	switch normalizeSpecKey(value) {
-	case "openai-compatible", "newapi", "oneapi", "one_api", "xlyra":
+	case "openai-compatible", "newapi", "oneapi", "one_api", "xlyra", "cliproxyapi":
 		return true
 	default:
 		return false

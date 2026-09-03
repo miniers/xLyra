@@ -35,6 +35,23 @@
       "syncQueued": "保存しました。バックグラウンドで同期しています"
     }
   },
+  "cliproxyapi": {
+    "title": "上流アカウントと使用量",
+    "observationHint": "使用量は上流が最後に観測した値であり、リアルタイム残量ではありません。同期失敗時も最後の成功スナップショットを保持します。",
+    "refresh": "上流を同期",
+    "managementUrl": "管理 URL",
+    "lastSuccess": "最終成功: {{time}}",
+    "lastFetched": "最終試行: {{time}}",
+    "stale": "データが古い",
+    "unconfigured": "CLIProxyAPI 管理キーが未設定です",
+    "noSnapshot": "同期に失敗しました。成功したスナップショットはありません",
+    "noAccounts": "上流アカウントがありません",
+    "status": {"ok": "同期済み", "error": "同期失敗", "unconfigured": "未設定", "never": "未同期", "stale": "前回の観測"},
+    "summary": {"total": "合計", "available": "利用可能", "disabled": "無効", "unavailable": "利用不可"},
+    "account": {"available": "利用可能", "disabled": "無効", "unavailable": "利用不可", "toggleQuota": "使用量詳細を開閉", "showDetails": "アカウント詳細を開く", "hideDetails": "アカウント詳細を閉じる", "showEmail": "完全なメールアドレスを表示", "hideEmail": "メールアドレスを隠す", "success": "成功", "failed": "失敗", "lastRefresh": "最終更新", "retry": "再試行", "quotaWindows": "使用量ウィンドウ", "quotaNotObserved": "使用量の観測なし", "fiveHour": "5 時間", "sevenDay": "7 日間", "primaryWindow": "Primary ウィンドウ", "secondaryWindow": "Secondary ウィンドウ", "additionalWindow": "Additional", "codeReviewWindow": "Code Review", "usedPercent": "使用済み {{value}}", "remainingPercent": "残り {{value}}", "windowDuration": "ウィンドウ {{value}}", "reset": "リセット {{value}}", "limitReached": "上限到達", "allowed": "利用可能", "notAllowed": "利用不可", "notObserved": "未観測", "modelQuota": "モデル別使用量", "requestHistory": "最近 200 分のリクエスト履歴", "noRequestHistory": "リクエスト記録なし", "totalRequests": "合計リクエスト {{value}}", "legacyRequestCount": "旧形式では合計のみ：{{value}}", "historySummary": "{{count}} 個の時間帯、成功 {{success}}、失敗 {{failed}}", "historyPoint": "{{time}}：成功 {{success}}、失敗 {{failed}}", "time": "時間", "overallQuota": "アカウント使用量", "observedAt": "観測日時 {{time}}", "noStandardQuota": "標準化された使用量なし"},
+    "duration": {"seconds": "{{count}} 秒", "minutes": "{{count}} 分", "hours": "{{count}} 時間", "days": "{{count}} 日", "weeks": "{{count}} 週間"},
+    "toast": {"synced": "上流アカウントと使用量を同期しました", "syncFailed": "上流アカウントと使用量の同期に失敗しました"}
+  },
   "table": {
     "headers": {
       "site": "サイト",
@@ -100,6 +117,7 @@
       "basic": "基本情報",
       "connection": "接続",
       "auth": "認証",
+      "cliproxyapi": "CLIProxyAPI 管理接続",
       "grokAccounts": "アカウントのインポート",
       "groups": "グループ",
       "routing": "ルーティング",
@@ -125,6 +143,15 @@
       "xlyraAccessTokenHint": "xLyra 管理 API から上流キーとモデルデータを同期します。",
       "xlyraApiKey": "xLyra 下流 API キー",
       "xlyraApiKeyHint": "/v1/models からこのキーで利用可能なモデルを取得します。",
+      "managementUrl": "管理 URL",
+      "managementUrlPlaceholder": "空欄の場合はサイト URL から /v0/management を推測します",
+      "managementUrlHint": "読み取り専用 GET /auth-files。HTTPS または内部アドレスを推奨します。",
+      "managementKey": "管理キー",
+      "managementKeyPlaceholder": "CLIProxyAPI remote-management.secret-key",
+      "managementKeyHint": "暗号化して保存し、表示やサイトメタデータには含めません。",
+      "managementKeyConfigured": "管理キーは設定済みです。空欄で保持します。",
+      "clearManagementKey": "保存済み管理キーを削除",
+      "clearManagementKeyDesc": "削除するとバックグラウンド同期を停止します。",
       "routingPriority": "ルーティング重み",
       "routingPriorityHint": "デフォルト 1.0、範囲 1.0 - 5.0。重みが高いほど優先的にルーティングされます。",
       "maxConcurrency": "最大同時リクエスト数",
@@ -161,8 +188,9 @@
       "headerKeyPlaceholder": "ヘッダー名",
       "headerValuePlaceholder": "ヘッダー値",
       "quotaProbe": "上流ソフトウェア（残高プローブ）",
-      "quotaProbeDesc": "このサイトの背後で実際に動作しているソフトウェアを選択すると、ゲートウェイが各認証情報の利用可能残高を定期的に取得して表示します。API キー認証のサイトのみ対象です。",
-      "quotaProbeNone": "無効"
+      "quotaProbeDesc": "このサイトの背後で実際に動作しているソフトウェアを選択します。CLIProxyAPI は読み取り専用管理 API でアカウントと使用量を同期し、その他は各 API から残高を取得します。API キー認証のサイトのみ対象です。",
+      "quotaProbeNone": "無効",
+      "quotaProbeCLIProxyAPI": "CLIProxyAPI（管理同期）"
     },
     "categories": {
       "official": "公式",
@@ -172,6 +200,7 @@
     "providerSubtitles": {
       "opencode_go": "OpenCode Go プランの API キーを接続",
       "openai": "OpenAI プラットフォームの API キーで接続",
+      "cliproxyapi": "セルフホスト CLIProxyAPI に接続し、上流使用量を同期",
       "anthropic": "Anthropic Messages API キーで接続",
       "google_gemini": "Google AI Studio API キーで接続",
       "deepseek": "DeepSeek プラットフォームの API キーで接続",
@@ -190,6 +219,7 @@
       "typeRequired": "サイトタイプを選択してください",
       "urlRequired": "ベース URL を入力してください",
       "urlInvalid": "有効な URL を入力してください",
+      "managementUrlInvalid": "有効な管理 URL を入力してください",
       "apiKeyRequired": "上流 API キーを入力してください",
       "priorityRequired": "ルーティング重みを入力してください",
       "priorityFormat": "ルーティング重みは小数 1 桁まで対応します",

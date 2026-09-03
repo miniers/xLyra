@@ -47,7 +47,7 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 	if probeType == "" {
 		probeType = defaultQuotaProbeTypeForSite(item)
 	}
-	if probeType == "" {
+	if probeType == "" || probeType == QuotaProbeTypeCLIProxyAPI {
 		return item
 	}
 

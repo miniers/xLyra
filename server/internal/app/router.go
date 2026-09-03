@@ -217,6 +217,7 @@ func NewRouterWithGateway(cfg config.Config, logger *slog.Logger, db *store.Stor
 				protected.Put("/sites/{siteID}/enabled", adminHandler.UpdateSiteEnabled)
 				protected.Delete("/sites/{siteID}", adminHandler.DeleteSite)
 				protected.Post("/sites/{siteID}/refresh", adminHandler.RefreshSite)
+				protected.Post("/sites/{siteID}/cliproxyapi/sync", adminHandler.SyncCLIProxyAPISite)
 				protected.Post("/sites/{siteID}/validate", adminHandler.ValidateSite)
 				protected.Get("/sites/{siteID}/health", adminHandler.GetSiteHealth)
 				protected.Get("/sites/{siteID}/health/history", adminHandler.GetSiteHealthHistory)

@@ -45,6 +45,7 @@ export type Site = {
     email?: string
     plan_type?: string
   } | null
+  cliproxyapi?: SiteCLIProxyAPIConfig
   usage?: {
     request_count?: number
     success_count?: number
@@ -61,11 +62,60 @@ export type Site = {
   updated_at: string
 }
 
+export type CLIProxyAPIQuotaObservation = {
+  observed_at?: string
+  signals: Record<string, string>
+}
+
+export type CLIProxyAPIRecentRequestBucket = {
+  time: string
+  success: number
+  failed: number
+}
+
+export type CLIProxyAPIAccount = {
+  auth_index: string
+  provider: string
+  name?: string
+  label?: string
+  email?: string
+  account?: string
+  account_type?: string
+  plan_type?: string
+  status?: string
+  status_message?: string
+  disabled: boolean
+  unavailable: boolean
+  success: number
+  failed: number
+  recent_requests?: CLIProxyAPIRecentRequestBucket[]
+  recent_requests_total?: number
+  last_refresh?: string
+  next_retry_after?: string
+  quota?: CLIProxyAPIQuotaObservation
+  model_quotas?: Record<string, CLIProxyAPIQuotaObservation>
+}
+
+export type CLIProxyAPISyncSnapshot = {
+  status: 'never' | 'ok' | 'error' | 'unconfigured'
+  fetched_at?: string
+  last_success_at?: string
+  last_error?: string
+  account_count: number
+  accounts: CLIProxyAPIAccount[]
+}
+
+export type SiteCLIProxyAPIConfig = {
+  management_url?: string
+  management_key_configured: boolean
+  sync?: CLIProxyAPISyncSnapshot
+}
+
 export type ResponsesToolPolicy = 'passthrough' | 'compatibility'
 export type ResponsesHostedTool = 'image_generation'
 export type ResponsesImageGenerationPolicy =
   'passthrough' | 'strip_auto_tool' | 'disabled'
-export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi'
+export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'cliproxyapi'
 
 export type SiteQuotaProbeSummary = {
   status?: string
@@ -564,6 +614,11 @@ export type SiteUpsertInput = {
     quotaProbe?: QuotaProbeType
   }
   skipRefresh?: boolean
+  cliproxyapi?: {
+    managementUrl?: string
+    managementKey?: string
+    clearManagementKey?: boolean
+  }
 }
 
 export type SiteCreateAPIKeyInput = {
@@ -631,6 +686,13 @@ export type RefreshAllSitesResponse = {
     success_count?: number
     failure_count?: number
   }
+}
+
+export type SyncCLIProxyAPISiteResponse = {
+  ok: boolean
+  message?: string
+  site: Site
+  sync?: CLIProxyAPISyncSnapshot
 }
 
 export const sitesQueryKeys = {
@@ -705,6 +767,13 @@ export async function deleteSite(siteId: string) {
   })
 }
 
+export async function syncCLIProxyAPISite(siteId: string) {
+  return apiFetch<SyncCLIProxyAPISiteResponse>(
+    `/api/v1/sites/${siteId}/cliproxyapi/sync`,
+    { method: 'POST' },
+  )
+}
+
 function siteUpsertBody(input: SiteUpsertInput) {
   return {
     name: input.name,
@@ -753,6 +822,13 @@ function siteUpsertBody(input: SiteUpsertInput) {
           auth_mode: input.xlyra.authMode,
           access_token: input.xlyra.accessToken || undefined,
           api_key: input.xlyra.apiKey || undefined,
+        }
+      : undefined,
+    cliproxyapi: input.cliproxyapi
+      ? {
+          management_url: input.cliproxyapi.managementUrl,
+          management_key: input.cliproxyapi.managementKey || undefined,
+          clear_management_key: input.cliproxyapi.clearManagementKey || undefined,
         }
       : undefined,
   }

@@ -176,6 +176,7 @@ xLyra 在下游和上游协议格式之间透明转换。Failover 只允许发�
 | 类型 | 当前能力 |
 | --- | --- |
 | OpenAI Compatible / 官方 API Key 类站点 | 凭证校验、模型同步、协议转发 |
+| CLIProxyAPI | OpenAI-compatible 转发，并以只读方式同步上游 auth-files 账号/额度快照 |
 | Anthropic | Messages 协议转发，支持 Chat / Responses ↔ Messages 转换 |
 | Grok | OAuth CLI 通道、多账号管理、图片生成、按 tier 分档模型可用性 |
 | OpenCode Go | 订阅套餐模型与额度路由 |
@@ -198,6 +199,8 @@ xLyra 在下游和上游协议格式之间透明转换。Failover 只允许发�
 - Codex / Antigravity OAuth 账号导入
 - Codex 重置额度查询与兑换
 - 上游凭证余额探测：按凭证展示余额与已用量
+- CLIProxyAPI 管理同步：管理密钥独立加密保存，只读展示账号状态、请求统计和最近 Codex/Claude 额度观测；失败时保留旧快照并标记过期，不参与路由决策
+- 站点用量分账：输入、输出、缓存和总 Token、请求成功率、单日小时趋势、按模型/下游 API Key 分组，以及按币种分别展示的估算费用（不代表上游账单）
 
 ### 模型与价格
 

@@ -223,6 +223,11 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("ensure api_keys.key_kind column: %w", err)
 		}
 	}
+	if migrator.HasTable(&Site{}) && !migrator.HasColumn(&Site{}, "EncryptedCLIProxyAPIManagementKey") {
+		if err := migrator.AddColumn(&Site{}, "EncryptedCLIProxyAPIManagementKey"); err != nil {
+			return fmt.Errorf("ensure sites.encrypted_cli_proxy_api_management_key column: %w", err)
+		}
+	}
 	hadUpstreamCostMultiplier := migrator.HasColumn(&SiteCredential{}, "UpstreamCostMultiplier")
 	for _, field := range []string{"DisplayName", "RoutingPriority", "UpstreamCostMultiplier"} {
 		if migrator.HasColumn(&SiteCredential{}, field) {

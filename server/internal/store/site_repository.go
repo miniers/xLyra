@@ -14,42 +14,45 @@ import (
 )
 
 type Site struct {
-	ID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	Name            string
-	Slug            string
-	SiteType        string
-	BaseURL         string
-	Status          string
-	Enabled         bool
-	RoutingPriority float64
-	Meta            JSON `gorm:"type:jsonb"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                                uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	Name                              string
+	Slug                              string
+	SiteType                          string
+	BaseURL                           string
+	Status                            string
+	Enabled                           bool
+	RoutingPriority                   float64
+	Meta                              JSON   `gorm:"type:jsonb"`
+	EncryptedCLIProxyAPIManagementKey string `gorm:"not null;default:''" json:"-"`
+	CreatedAt                         time.Time
+	UpdatedAt                         time.Time
 }
 
 const SiteStatusDeleted = "deleted"
 
 type CreateSiteParams struct {
-	Name            string
-	Slug            string
-	SiteType        string
-	BaseURL         string
-	Status          string
-	Enabled         bool
-	RoutingPriority float64
-	Meta            JSON
+	Name                              string
+	Slug                              string
+	SiteType                          string
+	BaseURL                           string
+	Status                            string
+	Enabled                           bool
+	RoutingPriority                   float64
+	Meta                              JSON
+	EncryptedCLIProxyAPIManagementKey string
 }
 
 type UpdateSiteParams struct {
-	ID              uuid.UUID
-	Name            string
-	Slug            string
-	SiteType        string
-	BaseURL         string
-	Status          string
-	Enabled         bool
-	RoutingPriority float64
-	Meta            JSON
+	ID                                uuid.UUID
+	Name                              string
+	Slug                              string
+	SiteType                          string
+	BaseURL                           string
+	Status                            string
+	Enabled                           bool
+	RoutingPriority                   float64
+	Meta                              JSON
+	EncryptedCLIProxyAPIManagementKey string
 }
 
 type SiteRepository struct {
@@ -79,14 +82,15 @@ func SiteDeleted(site Site) bool {
 
 func (r SiteRepository) Create(ctx context.Context, params CreateSiteParams) (Site, error) {
 	site := Site{
-		Name:            params.Name,
-		Slug:            params.Slug,
-		SiteType:        params.SiteType,
-		BaseURL:         params.BaseURL,
-		Status:          params.Status,
-		Enabled:         params.Enabled,
-		RoutingPriority: params.RoutingPriority,
-		Meta:            jsonDefault(params.Meta, "{}"),
+		Name:                              params.Name,
+		Slug:                              params.Slug,
+		SiteType:                          params.SiteType,
+		BaseURL:                           params.BaseURL,
+		Status:                            params.Status,
+		Enabled:                           params.Enabled,
+		RoutingPriority:                   params.RoutingPriority,
+		Meta:                              jsonDefault(params.Meta, "{}"),
+		EncryptedCLIProxyAPIManagementKey: params.EncryptedCLIProxyAPIManagementKey,
 	}
 	if err := r.db.WithContext(ctx).Create(&site).Error; err != nil {
 		return Site{}, fmt.Errorf("create site: %w", err)
@@ -107,6 +111,7 @@ func (r SiteRepository) Update(ctx context.Context, params UpdateSiteParams) (Si
 	site.Enabled = params.Enabled
 	site.RoutingPriority = params.RoutingPriority
 	site.Meta = jsonDefault(params.Meta, "{}")
+	site.EncryptedCLIProxyAPIManagementKey = params.EncryptedCLIProxyAPIManagementKey
 	if err := r.db.WithContext(ctx).Save(&site).Error; err != nil {
 		return Site{}, fmt.Errorf("update site: %w", err)
 	}
