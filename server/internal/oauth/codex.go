@@ -115,7 +115,7 @@ func codexTokenErrorFromResponse(operation string, statusCode int, body []byte) 
 }
 
 func setCodexAuthHeaders(req *http.Request) {
-	userAgent := adapter.CodexUserAgent
+	userAgent := adapter.CodexUserAgent()
 	originator := userAgent
 	if index := strings.IndexByte(userAgent, '/'); index > 0 {
 		originator = userAgent[:index]

@@ -90,6 +90,7 @@ func (h Handler) serveEndpoint(
 	defer cancelRequest(nil)
 	requestControl := newGatewayRequestControl(cancelRequest)
 	ctx = withGatewayRequestControl(requestCtx, requestControl)
+	ctx = WithAPIKeyBillingMultiplier(ctx, apiKey.BillingMultiplier)
 	r = r.WithContext(ctx)
 
 	request, failure := endpoint.DecodeRequest(r)

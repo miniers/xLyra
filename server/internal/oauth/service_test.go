@@ -255,10 +255,10 @@ func TestRefreshCodexTokensClassifiesInvalidatedRefreshToken(t *testing.T) {
 
 func assertCodexAuthHeaders(t *testing.T, req *http.Request) {
 	t.Helper()
-	if req.Header.Get("User-Agent") != adapter.CodexUserAgent {
-		t.Fatalf("User-Agent = %q, want %q", req.Header.Get("User-Agent"), adapter.CodexUserAgent)
+	if req.Header.Get("User-Agent") != adapter.CodexUserAgent() {
+		t.Fatalf("User-Agent = %q, want %q", req.Header.Get("User-Agent"), adapter.CodexUserAgent())
 	}
-	wantOriginator := strings.SplitN(adapter.CodexUserAgent, "/", 2)[0]
+	wantOriginator := strings.SplitN(adapter.CodexUserAgent(), "/", 2)[0]
 	if req.Header.Get("originator") != wantOriginator {
 		t.Fatalf("originator = %q, want %q", req.Header.Get("originator"), wantOriginator)
 	}

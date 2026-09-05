@@ -345,6 +345,11 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("ensure api_keys.gateway_config column: %w", err)
 		}
 	}
+	if !migrator.HasColumn(&APIKey{}, "BillingMultiplier") {
+		if err := migrator.AddColumn(&APIKey{}, "BillingMultiplier"); err != nil {
+			return fmt.Errorf("ensure api_keys.billing_multiplier column: %w", err)
+		}
+	}
 	for _, field := range []string{
 		"QuotaTotalUsed",
 		"QuotaTotalResetAt",

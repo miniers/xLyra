@@ -113,6 +113,7 @@ type CreateAPIKeyInput struct {
 	ModelRules           []store.APIKeyModelRule
 	GatewayConfig        *store.APIKeyGatewayConfig
 	ImageToolBridge      *ImageToolBridgeInput
+	BillingMultiplier    *float64
 	QuotaLimit           *float64
 	QuotaUnlimited       bool
 	QuotaDailyLimit      *float64
@@ -134,6 +135,7 @@ type UpdateAPIKeyInput struct {
 	ModelRules           []store.APIKeyModelRule
 	GatewayConfig        *store.APIKeyGatewayConfig
 	ImageToolBridge      *ImageToolBridgeInput
+	BillingMultiplier    *float64
 	QuotaLimit           *float64
 	QuotaUnlimited       bool
 	QuotaDailyLimit      *float64
@@ -631,6 +633,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, input CreateAPIKeyInput, adm
 	if err := validateAPIKeyQuota("quota_weekly_limit", input.QuotaWeeklyLimit, weeklyUnlimited, 0); err != nil {
 		return CreateAPIKeyResult{}, err
 	}
+	billingMultiplier, err := validateAPIKeyBillingMultiplier(input.BillingMultiplier)
+	if err != nil {
+		return CreateAPIKeyResult{}, err
+	}
 
 	modelPolicy := normalizeModelPolicy(input.ModelPolicy)
 	siteModelIDs, err := s.normalizeExistingSiteModelIDs(ctx, input.SiteModelIDs)
@@ -682,6 +688,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, input CreateAPIKeyInput, adm
 			ModelMappings:        modelRules,
 			GatewayConfig:        gatewayConfig,
 			ImageToolBridge:      imageToolBridge,
+			BillingMultiplier:    billingMultiplier,
 			QuotaLimit:           nullableFloat(input.QuotaLimit),
 			QuotaUnlimited:       quotaUnlimited,
 			QuotaDailyLimit:      nullableFloat(input.QuotaDailyLimit),
@@ -925,6 +932,9 @@ func (s *Service) UpdateAPIKey(ctx context.Context, id uuid.UUID, input UpdateAP
 	if err := validateAPIKeyQuota("quota_weekly_limit", weeklyLimit, weeklyUnlimited, current.EffectiveWeeklyQuotaUsed(time.Now(), s.timeZone)); err != nil {
 		return store.APIKey{}, err
 	}
+	if _, err := validateAPIKeyBillingMultiplier(input.BillingMultiplier); err != nil {
+		return store.APIKey{}, err
+	}
 
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -1005,6 +1015,7 @@ func (s *Service) UpdateAPIKey(ctx context.Context, id uuid.UUID, input UpdateAP
 			ModelMappings:        modelRules,
 			GatewayConfig:        gatewayConfig,
 			ImageToolBridge:      imageToolBridge,
+			BillingMultiplier:    input.BillingMultiplier,
 			QuotaLimit:           nullableFloat(input.QuotaLimit),
 			QuotaUnlimited:       quotaUnlimited,
 			QuotaDailyLimit:      nullableFloat(dailyLimit),
@@ -1903,6 +1914,19 @@ func optionalBool(value *bool, fallback bool) bool {
 
 func zeroQuotaLimit(value *float64) bool {
 	return value != nil && *value == 0
+}
+
+func validateAPIKeyBillingMultiplier(value *float64) (float64, error) {
+	if value == nil {
+		return 1, nil
+	}
+	if math.IsNaN(*value) || math.IsInf(*value, 0) || *value <= 0 {
+		return 0, fmt.Errorf("billing_multiplier must be a finite number greater than 0")
+	}
+	if *value > 100 {
+		return 0, fmt.Errorf("billing_multiplier must be less than or equal to 100")
+	}
+	return *value, nil
 }
 
 func upsertAPIKeyRateLimit(ctx context.Context, tx *gorm.DB, apiKeyID uuid.UUID, input RateLimitInput) (store.GatewayRateLimit, error) {

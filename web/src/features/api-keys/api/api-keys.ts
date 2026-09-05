@@ -82,6 +82,7 @@ export type DownstreamAPIKey = {
   model_mappings?: ModelRule[] | null
   gateway_config?: APIKeyGatewayConfig | null
   image_tool_bridge?: ImageToolBridgeConfig | null
+  billing_multiplier?: number | null
   quota_limit?: number | null
   quota_total_used?: number
   quota_total_available?: number | null
@@ -122,6 +123,7 @@ export type APIKeyUpsertInput = {
   modelMappings?: ModelRule[]
   gatewayConfig?: APIKeyGatewayConfig | null
   imageToolBridge?: ImageToolBridgeConfig | null
+  billingMultiplier?: number | null
   quotaLimit?: number | null
   quotaUnlimited: boolean
   quotaDailyLimit?: number | null
@@ -278,6 +280,7 @@ function apiKeyUpsertBody(input: APIKeyUpsertInput) {
     model_mappings: input.modelMappings,
     gateway_config: input.gatewayConfig ?? {},
     image_tool_bridge: input.imageToolBridge ?? null,
+    billing_multiplier: input.billingMultiplier ?? null,
     quota_limit: input.quotaUnlimited ? null : input.quotaLimit,
     quota_unlimited: input.quotaUnlimited,
     quota_daily_limit: input.quotaDailyUnlimited ? null : input.quotaDailyLimit,

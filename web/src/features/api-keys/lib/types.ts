@@ -16,6 +16,7 @@ export type APIKeyFormValues = {
   imageBridgeEnabled: boolean
   imageBridgeModel: string
   imageBridgeSiteId: string
+  billingMultiplier: string
   quotaLimit: string
   quotaDailyLimit: string
   quotaWeeklyLimit: string
