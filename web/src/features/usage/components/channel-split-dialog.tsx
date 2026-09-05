@@ -456,7 +456,7 @@ function UsageTrend({
       </div>
       <div className="flex h-16 items-end gap-1" role="img" aria-label={points.map((point) => `${point.hour}: ${point.total_tokens} tokens`).join(', ')}>
         {points.map((point) => (
-          <div key={point.hour} className="min-w-0 flex-1" title={`${point.hour}: ${point.total_tokens} tokens`}>
+          <div key={point.hour} className="h-full min-w-0 flex-1" title={`${point.hour}: ${point.total_tokens} tokens`}>
             <div className="mx-auto w-full max-w-3 rounded-t bg-primary/80" style={{ height: `${Math.max(4, (point.total_tokens / maxTokens) * 100)}%` }} />
           </div>
         ))}
