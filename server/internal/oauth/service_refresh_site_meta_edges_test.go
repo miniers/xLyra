@@ -103,11 +103,7 @@ func TestEnsureCodexConnectionFreshRechecksExpiryAfterRefreshLockOffline(t *test
 			*item = []store.OAuthConnection{expired}
 		case *store.OAuthConnection:
 			byIDCalls++
-			if byIDCalls == 1 {
-				*item = expired
-			} else {
-				*item = fresh
-			}
+			*item = fresh
 		case *store.Site:
 			*item = store.Site{ID: siteID, Meta: store.JSON(`{}`)}
 		default:
@@ -146,7 +142,7 @@ func TestRefreshCodexConnectionRejectsUnsupportedProviderAndExpiredAccessOnlyOff
 		*item = connection
 		tx.Statement.RowsAffected = 1
 	}, func(tx *gorm.DB) {
-		tx.AddError(errors.New("refresh guard should not save"))
+		tx.Statement.RowsAffected = 1
 	})
 
 	if _, err := service.RefreshCodexConnection(context.Background(), connection.ID); err == nil || !strings.Contains(err.Error(), "is not supported") {

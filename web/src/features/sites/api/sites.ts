@@ -115,7 +115,7 @@ export type ResponsesToolPolicy = 'passthrough' | 'compatibility'
 export type ResponsesHostedTool = 'image_generation'
 export type ResponsesImageGenerationPolicy =
   'passthrough' | 'strip_auto_tool' | 'disabled'
-export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'cliproxyapi'
+export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'cliproxyapi'
 
 export type SiteQuotaProbeSummary = {
   status?: string
@@ -331,6 +331,8 @@ export type CanonicalModel = {
   routing_exploration?: RoutingExplorationConfig
   created_at: string
   updated_at: string
+  /** Gateway-declared reasoning effort spec (levels/mode/thinking_mandatory); absent when undeclared. */
+  reasoning_effort?: unknown
 }
 
 export type CanonicalModelAlias = {

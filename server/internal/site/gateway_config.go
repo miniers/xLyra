@@ -16,6 +16,7 @@ const (
 	QuotaProbeTypeNewAPI      = "newapi"
 	QuotaProbeTypeXLyra       = "xlyra"
 	QuotaProbeTypeKimi        = "kimi"
+	QuotaProbeTypeGLM         = "glm"
 	QuotaProbeTypeCLIProxyAPI = "cliproxyapi"
 )
 
@@ -57,6 +58,8 @@ func NormalizeQuotaProbeType(value string) (string, error) {
 		return QuotaProbeTypeKimi, nil
 	case QuotaProbeTypeCLIProxyAPI:
 		return QuotaProbeTypeCLIProxyAPI, nil
+	case QuotaProbeTypeGLM:
+		return QuotaProbeTypeGLM, nil
 	default:
 		return "", fmt.Errorf("unsupported quota_probe type %q", value)
 	}
