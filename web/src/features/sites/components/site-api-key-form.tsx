@@ -98,6 +98,58 @@ export function SiteAPIKeyFormFields({
           />
         </label>
       ) : null}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label className="block space-y-2">
+          <span className="block text-sm font-medium">
+            {t('apiKeys.rpmLimit')}
+          </span>
+          <Input
+            type="number"
+            min="0"
+            step="1"
+            placeholder={t('apiKeys.rpmLimitPlaceholder')}
+            value={draft.rpmLimit}
+            onChange={(event) =>
+              onChange({ ...draft, rpmLimit: event.target.value })
+            }
+          />
+        </label>
+        <label className="block space-y-2">
+          <span className="block text-sm font-medium">
+            {t('apiKeys.rpdLimit')}
+          </span>
+          <Input
+            type="number"
+            min="0"
+            step="1"
+            placeholder={t('apiKeys.rpdLimitPlaceholder')}
+            value={draft.rpdLimit}
+            onChange={(event) =>
+              onChange({ ...draft, rpdLimit: event.target.value })
+            }
+          />
+        </label>
+      </div>
+      <label className="block space-y-2">
+        <span className="block text-sm font-medium">
+          {t('apiKeys.resetTimezone')}
+        </span>
+        <Input
+          list="site-api-key-timezones"
+          placeholder="UTC (e.g. America/Los_Angeles)"
+          value={draft.resetTimezone}
+          onChange={(event) =>
+            onChange({ ...draft, resetTimezone: event.target.value })
+          }
+        />
+        <datalist id="site-api-key-timezones">
+          <option value="America/Los_Angeles" />
+          <option value="UTC" />
+          <option value="Asia/Shanghai" />
+          <option value="Asia/Tokyo" />
+          <option value="Europe/London" />
+        </datalist>
+      </label>
     </div>
   )
 }

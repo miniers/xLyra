@@ -51,6 +51,120 @@ type SiteCredentialRepository struct {
 	db *gorm.DB
 }
 
+type CredentialRateLimitConfig struct {
+	RPMLimit      *int64 `json:"rpm_limit,omitempty"`
+	RPDLimit      *int64 `json:"rpd_limit,omitempty"`
+	ResetTimezone string `json:"reset_timezone,omitempty"`
+}
+
+func SiteCredentialRateLimit(credential SiteCredential) *CredentialRateLimitConfig {
+	return SiteCredentialRateLimitFromMeta(credential.Meta)
+}
+
+func SiteCredentialRateLimitFromMeta(raw JSON) *CredentialRateLimitConfig {
+	if len(raw) == 0 {
+		return nil
+	}
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return nil
+	}
+	rateLimitRaw, ok := metadata["rate_limit"]
+	if !ok || len(rateLimitRaw) == 0 {
+		return nil
+	}
+	var cfg CredentialRateLimitConfig
+	if err := json.Unmarshal(rateLimitRaw, &cfg); err != nil {
+		return nil
+	}
+	if cfg.RPMLimit == nil && cfg.RPDLimit == nil {
+		return nil
+	}
+	return &cfg
+}
+
+func SetSiteCredentialRateLimitMeta(meta map[string]any, rpmLimit *int64, rpdLimit *int64, resetTimezone *string) {
+	if meta == nil {
+		return
+	}
+	var currentRpm *int64
+	var currentRpd *int64
+	currentTimezone := "UTC"
+
+	if existing, ok := meta["rate_limit"].(map[string]any); ok {
+		if v, ok := parseAnyInt64(existing["rpm_limit"]); ok && v > 0 {
+			currentRpm = &v
+		}
+		if v, ok := parseAnyInt64(existing["rpd_limit"]); ok && v > 0 {
+			currentRpd = &v
+		}
+		if tz, ok := existing["reset_timezone"].(string); ok && strings.TrimSpace(tz) != "" {
+			currentTimezone = strings.TrimSpace(tz)
+		}
+	}
+
+	if rpmLimit != nil {
+		if *rpmLimit > 0 {
+			currentRpm = rpmLimit
+		} else {
+			currentRpm = nil
+		}
+	}
+	if rpdLimit != nil {
+		if *rpdLimit > 0 {
+			currentRpd = rpdLimit
+		} else {
+			currentRpd = nil
+		}
+	}
+	if resetTimezone != nil {
+		trimmed := strings.TrimSpace(*resetTimezone)
+		if trimmed != "" {
+			currentTimezone = trimmed
+		}
+	}
+
+	if currentRpm == nil && currentRpd == nil {
+		delete(meta, "rate_limit")
+		return
+	}
+
+	data := map[string]any{}
+	if currentRpm != nil {
+		data["rpm_limit"] = *currentRpm
+	}
+	if currentRpd != nil {
+		data["rpd_limit"] = *currentRpd
+	}
+	if currentTimezone != "" {
+		data["reset_timezone"] = currentTimezone
+	}
+	meta["rate_limit"] = data
+}
+
+func parseAnyInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case float32:
+		return int64(v), true
+	case json.Number:
+		parsed, err := v.Int64()
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
 func SiteCredentialCacheDomain(credential SiteCredential) string {
 	var metadata map[string]any
 	if len(credential.Meta) == 0 || json.Unmarshal(credential.Meta, &metadata) != nil {

@@ -123,8 +123,8 @@ func TestEnsureCodexConnectionFreshRechecksExpiryAfterRefreshLockOffline(t *test
 	if err != nil {
 		t.Fatalf("EnsureCodexConnectionFresh returned error: %v", err)
 	}
-	if details.AccessToken != "fresh-access-token" || upstreamCalls != 0 {
-		t.Fatalf("details=%#v upstreamCalls=%d, want reread fresh connection without upstream call", details, upstreamCalls)
+	if details.AccessToken != "fresh-access-token" || upstreamCalls != 0 || byIDCalls != 1 {
+		t.Fatalf("details=%#v upstreamCalls=%d byIDCalls=%d, want reread fresh connection without upstream call", details, upstreamCalls, byIDCalls)
 	}
 }
 

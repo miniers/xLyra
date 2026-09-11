@@ -825,10 +825,27 @@ func (h Handler) ListSiteAPIKeys(w http.ResponseWriter, r *http.Request) {
 		statesByCredentialID[state.SiteCredentialID] = state
 	}
 
+	var cooldownsByCredentialID map[uuid.UUID]*store.RouteCooldown
+	if h.router != nil {
+		if activeCooldowns, err := h.router.ActiveCooldowns(r.Context()); err == nil {
+			cooldownsByCredentialID = make(map[uuid.UUID]*store.RouteCooldown)
+			for i := range activeCooldowns {
+				c := &activeCooldowns[i]
+				if c.SiteCredentialID.Valid && c.SiteID == siteID {
+					cooldownsByCredentialID[c.SiteCredentialID.UUID] = c
+				}
+			}
+		}
+	}
+
 	items := make([]map[string]any, 0, len(apiKeys))
 	for index, apiKey := range apiKeys {
 		models, _ := h.sites.APIKeyModels(r.Context(), apiKey.Credential.ID)
-		items = append(items, h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, siteAPIKeyDefaultName(index)))
+		var activeCooldown *store.RouteCooldown
+		if cooldownsByCredentialID != nil {
+			activeCooldown = cooldownsByCredentialID[apiKey.Credential.ID]
+		}
+		items = append(items, h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, siteAPIKeyDefaultName(index), activeCooldown))
 	}
 
 	h.writeItems(w, http.StatusOK, items, map[string]any{"count": len(items)})
@@ -883,6 +900,9 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
 		UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
 		CacheDomain                  string   `json:"cache_domain"`
+		RPMLimit                     *int64   `json:"rpm_limit"`
+		RPDLimit                     *int64   `json:"rpd_limit"`
+		ResetTimezone                *string  `json:"reset_timezone"`
 	}
 	if !h.decodeJSON(w, r, &payload) {
 		return
@@ -910,6 +930,9 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		UpstreamCostMultiplier:       payload.UpstreamCostMultiplier,
 		UpstreamCostMultiplierSource: payload.UpstreamCostMultiplierSource,
 		CacheDomain:                  payload.CacheDomain,
+		RPMLimit:                     payload.RPMLimit,
+		RPDLimit:                     payload.RPDLimit,
+		ResetTimezone:                payload.ResetTimezone,
 		QueueSync:                    true,
 	})
 	if err != nil {
@@ -1054,6 +1077,9 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
 		UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
 		CacheDomain                  *string  `json:"cache_domain"`
+		RPMLimit                     *int64   `json:"rpm_limit"`
+		RPDLimit                     *int64   `json:"rpd_limit"`
+		ResetTimezone                *string  `json:"reset_timezone"`
 	}
 	if !h.decodeJSON(w, r, &payload) {
 		return
@@ -1073,6 +1099,9 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		UpstreamCostMultiplier:       payload.UpstreamCostMultiplier,
 		UpstreamCostMultiplierSource: payload.UpstreamCostMultiplierSource,
 		CacheDomain:                  payload.CacheDomain,
+		RPMLimit:                     payload.RPMLimit,
+		RPDLimit:                     payload.RPDLimit,
+		ResetTimezone:                payload.ResetTimezone,
 	})
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "site_api_key_update_failed", err.Error())
@@ -1240,6 +1269,46 @@ func (h Handler) UpdateSiteAPIKeyModel(w http.ResponseWriter, r *http.Request) {
 	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
 }
 
+// ClearSiteAPIKeyCooldown clears active cooldown for a specific site API key.
+func (h Handler) ClearSiteAPIKeyCooldown(w http.ResponseWriter, r *http.Request) {
+	siteID, ok := siteIDParam(w, r)
+	if !ok {
+		return
+	}
+	apiKeyID, ok := apiKeyIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	item, err := h.sites.Get(r.Context(), siteID)
+	if err != nil {
+		h.writeError(w, r, http.StatusNotFound, "site_not_found", "site was not found")
+		return
+	}
+
+	apiKey, err := h.sites.APIKeyByCredentialID(r.Context(), siteID, apiKeyID)
+	if err != nil {
+		h.writeError(w, r, http.StatusNotFound, "site_api_key_not_found", "api key was not found")
+		return
+	}
+
+	if h.router != nil {
+		if err := h.router.ClearCooldown(r.Context(), siteID, nil, &apiKeyID, ""); err != nil {
+			h.writeError(w, r, http.StatusInternalServerError, "site_api_key_clear_cooldown_failed", err.Error())
+			return
+		}
+	}
+	h.invalidateGatewayModelsCache()
+
+	apiKeyStates, _ := h.sites.APIKeyStates(r.Context(), siteID)
+	statesByCredentialID := map[uuid.UUID]store.SiteAPIKeyState{}
+	for _, state := range apiKeyStates {
+		statesByCredentialID[state.SiteCredentialID] = state
+	}
+	models, _ := h.sites.APIKeyModels(r.Context(), apiKey.Credential.ID)
+	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKeyID)))
+}
+
 func (h Handler) siteSetupResponse(r *http.Request, item store.Site) map[string]any {
 	responseSite := item
 	response := map[string]any{
@@ -1327,10 +1396,20 @@ func (h Handler) resolveSiteCredentials(w http.ResponseWriter, r *http.Request, 
 					return nil, false
 				}
 				displayName := item.Name
+				meta := map[string]any{"enabled": true}
+				if item.RPMLimit != nil {
+					meta["rpm_limit"] = *item.RPMLimit
+				}
+				if item.RPDLimit != nil {
+					meta["rpd_limit"] = *item.RPDLimit
+				}
+				if item.ResetTimezone != nil {
+					meta["reset_timezone"] = *item.ResetTimezone
+				}
 				credentials = append(credentials, sitepkg.CredentialInput{
 					Type:                         "api_key",
 					Secret:                       apiKey,
-					Meta:                         map[string]any{"enabled": true},
+					Meta:                         meta,
 					DisplayName:                  &displayName,
 					RoutingPriority:              item.RoutingPriority,
 					UpstreamCostMultiplier:       item.UpstreamCostMultiplier,
@@ -1571,7 +1650,23 @@ func (h Handler) siteAPIKeyPayload(r *http.Request, item store.Site, apiKey site
 	return keyItem
 }
 
-func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIKeyCredential, state store.SiteAPIKeyState, models []store.SiteAPIKeyModel, fallbackName string) map[string]any {
+func (h Handler) credentialCooldown(ctx context.Context, siteID uuid.UUID, credentialID uuid.UUID) *store.RouteCooldown {
+	if h.router == nil || credentialID == uuid.Nil {
+		return nil
+	}
+	cooldowns, err := h.router.ActiveCooldowns(ctx)
+	if err != nil {
+		return nil
+	}
+	for _, c := range cooldowns {
+		if c.SiteID == siteID && c.SiteCredentialID.Valid && c.SiteCredentialID.UUID == credentialID {
+			return &c
+		}
+	}
+	return nil
+}
+
+func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIKeyCredential, state store.SiteAPIKeyState, models []store.SiteAPIKeyModel, fallbackName string, activeCooldown ...*store.RouteCooldown) map[string]any {
 	hasState := state.SiteCredentialID != uuid.Nil
 	upstreamID := apiKey.UpstreamID
 	if hasState && state.UpstreamID.Valid {
@@ -1660,6 +1755,37 @@ func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIK
 	}
 	if history := sitepkg.APIKeyCostMultiplierHistory(apiKey.Meta); len(history) > 0 {
 		keyItem["upstream_cost_multiplier_history"] = history
+	}
+
+	if rateLimit := store.SiteCredentialRateLimit(apiKey.Credential); rateLimit != nil {
+		if rateLimit.RPMLimit != nil {
+			keyItem["rpm_limit"] = *rateLimit.RPMLimit
+		}
+		if rateLimit.RPDLimit != nil {
+			keyItem["rpd_limit"] = *rateLimit.RPDLimit
+		}
+		if strings.TrimSpace(rateLimit.ResetTimezone) != "" {
+			keyItem["reset_timezone"] = rateLimit.ResetTimezone
+		}
+	}
+
+	var cooldown *store.RouteCooldown
+	if len(activeCooldown) > 0 && activeCooldown[0] != nil {
+		cooldown = activeCooldown[0]
+	} else {
+		cooldown = h.credentialCooldown(context.Background(), item.ID, apiKey.Credential.ID)
+	}
+	if cooldown != nil {
+		keyItem["cooling"] = true
+		keyItem["cooldown_reason"] = cooldown.Reason
+		keyItem["cooldown_active_until"] = cooldown.ActiveUntil.UTC().Format(time.RFC3339)
+		remaining := int64(time.Until(cooldown.ActiveUntil).Seconds())
+		if remaining < 0 {
+			remaining = 0
+		}
+		keyItem["cooldown_remaining_seconds"] = remaining
+	} else {
+		keyItem["cooling"] = false
 	}
 
 	return keyItem

@@ -173,7 +173,9 @@
     "site_unhealthy": "Site health check failed",
     "usage_limit_reached": "Account usage limit reached",
     "upstream_http_error": "Upstream request error",
-    "upstream_timeout": "Upstream request timeout"
+    "upstream_timeout": "Upstream request timeout",
+    "credential_rpm_limit_reached": "Rate limit reached (RPM)",
+    "credential_rpd_limit_reached": "Daily limit reached (RPD)"
   },
   "cooldownSources": {
     "site_health": "Health check",

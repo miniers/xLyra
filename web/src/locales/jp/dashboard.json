@@ -170,7 +170,9 @@
     "site_unhealthy": "サイトヘルスチェックに失敗しました",
     "usage_limit_reached": "アカウント使用上限に達しました",
     "upstream_http_error": "上流リクエストエラー",
-    "upstream_timeout": "上流リクエストタイムアウト"
+    "upstream_timeout": "上流リクエストタイムアウト",
+    "credential_rpm_limit_reached": "分あたりレート制限到達 (RPM)",
+    "credential_rpd_limit_reached": "日あたりレート制限到達 (RPD)"
   },
   "cooldownSources": {
     "site_health": "ヘルスチェック",

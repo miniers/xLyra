@@ -4,6 +4,9 @@ export const DEFAULT_API_KEY_FORM_DRAFT = {
   routingPriority: '1.0',
   upstreamCostMultiplier: '1.0',
   upstreamCostMultiplierSource: 'manual' as const,
+  rpmLimit: '',
+  rpdLimit: '',
+  resetTimezone: '',
 }
 
 export type APIKeyFormDraft = {
@@ -12,6 +15,9 @@ export type APIKeyFormDraft = {
   routingPriority: string
   upstreamCostMultiplier: string
   upstreamCostMultiplierSource: 'manual' | 'auto'
+  rpmLimit: string
+  rpdLimit: string
+  resetTimezone: string
 }
 
 export type ParsedAPIKeyForm = {
@@ -20,6 +26,9 @@ export type ParsedAPIKeyForm = {
   routingPriority?: number
   upstreamCostMultiplier?: number
   upstreamCostMultiplierSource?: 'auto'
+  rpmLimit?: number
+  rpdLimit?: number
+  resetTimezone?: string
 }
 
 export function parseSiteAPIKeyForm(
@@ -48,6 +57,26 @@ export function parseSiteAPIKeyForm(
     result.routingPriority = routingPriority
   }
   if (apiKey) result.apiKey = apiKey
+
+  const rpmStr = (draft.rpmLimit ?? '').trim()
+  if (rpmStr !== '') {
+    const rpm = Number(rpmStr)
+    if (!Number.isFinite(rpm) || !Number.isInteger(rpm) || rpm < 0) return null
+    result.rpmLimit = rpm
+  }
+
+  const rpdStr = (draft.rpdLimit ?? '').trim()
+  if (rpdStr !== '') {
+    const rpd = Number(rpdStr)
+    if (!Number.isFinite(rpd) || !Number.isInteger(rpd) || rpd < 0) return null
+    result.rpdLimit = rpd
+  }
+
+  const resetTimezone = (draft.resetTimezone ?? '').trim()
+  if (resetTimezone) {
+    result.resetTimezone = resetTimezone
+  }
+
   if (!options.includeCostMultiplier) return result
 
   if (draft.upstreamCostMultiplierSource === 'auto') {

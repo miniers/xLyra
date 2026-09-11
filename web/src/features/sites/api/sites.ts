@@ -422,6 +422,13 @@ export type SiteAPIKey = {
   model_items?: SiteAPIKeyModel[]
   usage?: SiteAPIKeyUsage
   quota_probe?: SiteQuotaProbeResult | null
+  rpm_limit?: number
+  rpd_limit?: number
+  reset_timezone?: string
+  cooling?: boolean
+  cooldown_reason?: string
+  cooldown_active_until?: string
+  cooldown_remaining_seconds?: number
   message?: string
 }
 
@@ -629,6 +636,9 @@ export type SiteCreateAPIKeyInput = {
   routingPriority: number
   upstreamCostMultiplier?: number
   upstreamCostMultiplierSource?: 'manual' | 'auto'
+  rpmLimit?: number
+  rpdLimit?: number
+  resetTimezone?: string
 }
 
 export type CreateSiteInput = SiteUpsertInput
@@ -947,6 +957,9 @@ export type SiteAPIKeyConfigInput = {
   routingPriority?: number
   upstreamCostMultiplier?: number
   upstreamCostMultiplierSource?: 'manual' | 'auto'
+  rpmLimit?: number
+  rpdLimit?: number
+  resetTimezone?: string
 }
 
 export async function createSiteAPIKey(
@@ -961,6 +974,9 @@ export async function createSiteAPIKey(
       routing_priority: input.routingPriority,
       upstream_cost_multiplier: input.upstreamCostMultiplier,
       upstream_cost_multiplier_source: input.upstreamCostMultiplierSource,
+      rpm_limit: input.rpmLimit,
+      rpd_limit: input.rpdLimit,
+      reset_timezone: input.resetTimezone,
     },
   })
 }
@@ -1109,7 +1125,19 @@ export async function updateSiteAPIKeyConfig(
         routing_priority: input.routingPriority,
         upstream_cost_multiplier: input.upstreamCostMultiplier,
         upstream_cost_multiplier_source: input.upstreamCostMultiplierSource,
+        rpm_limit: input.rpmLimit,
+        rpd_limit: input.rpdLimit,
+        reset_timezone: input.resetTimezone,
       },
+    },
+  )
+}
+
+export async function clearSiteAPIKeyCooldown(siteId: string, apiKeyId: string) {
+  return apiFetch<{ api_key: SiteAPIKey }>(
+    `/api/v1/sites/${siteId}/api-keys/${apiKeyId}/clear-cooldown`,
+    {
+      method: 'POST',
     },
   )
 }

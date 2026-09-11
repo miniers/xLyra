@@ -293,6 +293,30 @@ func (h Handler) forwardGatewayRequest(
 			)
 		}
 
+		if h.credentialRateLimiter != nil && !request.Diagnostic {
+			allowed, cooldown := h.credentialRateLimiter.CheckAndAcquire(ctx, candidate.Site.ID, selectedCredential.Credential, startedAt)
+			if !allowed && cooldown != nil {
+				if _, err := h.router.ActivateCooldown(ctx, *cooldown); err != nil && h.logger != nil {
+					h.logger.WarnContext(ctx, "failed to activate credential rate limit cooldown", "site_id", candidate.Site.ID, "credential_id", selectedCredential.Credential.ID, "reason", cooldown.Reason, "error", err)
+				}
+				result.statusCode = http.StatusTooManyRequests
+				result.errorType = "credential_rate_limited"
+				result.errorMessage = "credential rate limit exceeded"
+				result.cooldownReason = cooldown.Reason
+				result.cooldownDuration = cooldown.Duration
+				result.latencyMS = time.Since(startedAt).Milliseconds()
+				result = recordCredentialAttempt(result, nil, true)
+				lastResult = result
+				if result.credentialDecision.ShouldTryNextCredential {
+					if releaseCredentialSelection != nil {
+						releaseCredentialSelection()
+					}
+					continue
+				}
+				return result
+			}
+		}
+
 		selectedPricing := h.gatewayPricing(ctx, candidate, selectedCredential.GroupName.String)
 		result.currency = selectedPricing.Currency
 		result.pricingGroup = selectedPricing.GroupName

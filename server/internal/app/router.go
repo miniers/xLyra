@@ -238,6 +238,7 @@ func NewRouterWithGatewayWithOAuth(cfg config.Config, logger *slog.Logger, db *s
 				protected.Put("/sites/{siteID}/api-keys/{apiKeyID}/secret", adminHandler.UpdateSiteAPIKeySecret)
 				protected.Put("/sites/{siteID}/api-keys/{apiKeyID}/models", adminHandler.UpdateSiteAPIKeyModel)
 				protected.Post("/sites/{siteID}/api-keys/{apiKeyID}/refresh", adminHandler.RefreshSiteAPIKey)
+				protected.Post("/sites/{siteID}/api-keys/{apiKeyID}/clear-cooldown", adminHandler.ClearSiteAPIKeyCooldown)
 				protected.Get("/sites/{siteID}/grok/accounts", adminHandler.ListGrokAccounts)
 				protected.Post("/sites/{siteID}/grok/device/start", adminHandler.StartGrokDeviceLogin)
 				protected.Post("/sites/{siteID}/grok/device/poll", adminHandler.PollGrokDeviceLogin)

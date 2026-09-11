@@ -173,7 +173,9 @@
     "site_unhealthy": "站点健康检查异常",
     "usage_limit_reached": "账号额度达到限制",
     "upstream_http_error": "上游请求异常",
-    "upstream_timeout": "上游请求超时"
+    "upstream_timeout": "上游请求超时",
+    "credential_rpm_limit_reached": "每分钟速率达到限制 (RPM)",
+    "credential_rpd_limit_reached": "每日速率达到限制 (RPD)"
   },
   "cooldownSources": {
     "site_health": "健康检查",

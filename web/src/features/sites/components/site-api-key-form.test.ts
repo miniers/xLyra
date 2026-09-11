@@ -73,4 +73,49 @@ describe('parseSiteAPIKeyForm', () => {
       ),
     ).toEqual({ upstreamCostMultiplierSource: 'auto' })
   })
+
+  it('parses RPM, RPD limits and reset timezone correctly', () => {
+    expect(
+      parseSiteAPIKeyForm(
+        {
+          ...DEFAULT_API_KEY_FORM_DRAFT,
+          apiKey: 'test-key',
+          rpmLimit: '60',
+          rpdLimit: '1500',
+          resetTimezone: 'America/Los_Angeles',
+        },
+        { includeCostMultiplier: false, requireAPIKey: true },
+      ),
+    ).toEqual({
+      name: '',
+      apiKey: 'test-key',
+      routingPriority: 1,
+      rpmLimit: 60,
+      rpdLimit: 1500,
+      resetTimezone: 'America/Los_Angeles',
+    })
+
+    // Invalid negative or non-integer rate limits should be rejected
+    expect(
+      parseSiteAPIKeyForm(
+        {
+          ...DEFAULT_API_KEY_FORM_DRAFT,
+          apiKey: 'test-key',
+          rpmLimit: '-5',
+        },
+        { includeCostMultiplier: false, requireAPIKey: true },
+      ),
+    ).toBeNull()
+
+    expect(
+      parseSiteAPIKeyForm(
+        {
+          ...DEFAULT_API_KEY_FORM_DRAFT,
+          apiKey: 'test-key',
+          rpdLimit: '12.5',
+        },
+        { includeCostMultiplier: false, requireAPIKey: true },
+      ),
+    ).toBeNull()
+  })
 })

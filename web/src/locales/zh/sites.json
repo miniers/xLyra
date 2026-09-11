@@ -274,6 +274,14 @@
     "multiplierProbeUnknown": "未知",
     "editConfig": "编辑 Key 配置",
     "editConfigLabel": "编辑 {{name}} 的配置",
+    "rpmLimit": "RPM 限制（每分钟请求数）",
+    "rpmLimitPlaceholder": "留空表示不限制",
+    "rpdLimit": "RPD 限制（每日请求数）",
+    "rpdLimitPlaceholder": "留空表示不限制",
+    "resetTimezone": "配额重置时区",
+    "cooling": "冷却中",
+    "clearCooldown": "解除冷却",
+    "clearCooldownLabel": "解除 {{name}} 的冷却状态",
     "noKey": "暂无 Key",
     "complete": "补全",
     "refresh": "刷新",
@@ -298,7 +306,9 @@
       "updated": "已更新",
       "modelToggleFailed": "模型开关更新失败",
       "refreshed": "Key 状态已刷新",
-      "refreshFailed": "Key 刷新失败"
+      "refreshFailed": "Key 刷新失败",
+      "cooldownCleared": "已解除冷却",
+      "clearCooldownFailed": "解除冷却失败"
     },
     "deleteDialog": {
       "title": "删除 Apikey",

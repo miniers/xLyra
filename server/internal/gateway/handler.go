@@ -33,8 +33,9 @@ type Handler struct {
 	modelsCache         *modelsCache
 	noRoutes            *noRouteSuppressionCache
 	userBalanceThrottle *userBalanceThrottle
-	credentialSelector  *credentialWindowSelector
-	confFile            *config.ConfigFile
+	credentialSelector    *credentialWindowSelector
+	credentialRateLimiter *CredentialRateLimiter
+	confFile              *config.ConfigFile
 	usage               *usage.Service
 	timeZone            config.TimeZone
 	exposeRouteSite     bool
@@ -76,7 +77,7 @@ func newHandlerWithTimeZone(logger *slog.Logger, authService *auth.Service, rout
 		logger: logger, auth: authService, router: routerService, db: db, credentials: credential.NewService(masterKey),
 		httpClient: defaultClient, clients: clientManager, limits: newUpstreamConcurrencyCache(), recorder: NewRecorder(db, logger, timeZone),
 		oauth: oauthService, rateLimits: ratelimit.NewService(db), modelsCache: newModelsCache(), noRoutes: newNoRouteSuppressionCache(),
-		userBalanceThrottle: newUserBalanceThrottle(), credentialSelector: newCredentialWindowSelector(time.Minute), confFile: confFile,
+		userBalanceThrottle: newUserBalanceThrottle(), credentialSelector: newCredentialWindowSelector(time.Minute), credentialRateLimiter: NewCredentialRateLimiter(), confFile: confFile,
 		usage: usageService, timeZone: timeZone, cacheObservationKey: cacheObservationKey(masterKey),
 	}
 }

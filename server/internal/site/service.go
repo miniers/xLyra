@@ -957,6 +957,9 @@ type CreateAPIKeyInput struct {
 	UpstreamCostMultiplierSource *string
 	CacheDomain                  string
 	QueueSync                    bool
+	RPMLimit                     *int64
+	RPDLimit                     *int64
+	ResetTimezone                *string
 }
 
 type UpdateAPIKeyInput struct {
@@ -966,6 +969,9 @@ type UpdateAPIKeyInput struct {
 	UpstreamCostMultiplier       *float64
 	UpstreamCostMultiplierSource *string
 	CacheDomain                  *string
+	RPMLimit                     *int64
+	RPDLimit                     *int64
+	ResetTimezone                *string
 }
 
 func (s *Service) CreateAPIKey(ctx context.Context, siteID uuid.UUID, input CreateAPIKeyInput) (APIKeyCredential, error) {
@@ -1033,14 +1039,16 @@ func (s *Service) CreateAPIKey(ctx context.Context, siteID uuid.UUID, input Crea
 				return err
 			}
 		}
+		meta := map[string]any{
+			"enabled":                           true,
+			"cache_domain":                      cacheDomain,
+			upstreamCostMultiplierSourceMetaKey: costMultiplierSource,
+		}
+		store.SetSiteCredentialRateLimitMeta(meta, input.RPMLimit, input.RPDLimit, input.ResetTimezone)
 		credential, err := s.saveCredentialInput(ctx, credentialRepo, siteID, CredentialInput{
 			Type:   scopedAPIKeyCredentialType(),
 			Secret: apiKey,
-			Meta: map[string]any{
-				"enabled":                           true,
-				"cache_domain":                      cacheDomain,
-				upstreamCostMultiplierSourceMetaKey: costMultiplierSource,
-			},
+			Meta:   meta,
 		})
 		if err != nil {
 			return err
@@ -1939,7 +1947,11 @@ func (s *Service) UpdateAPIKey(ctx context.Context, siteID uuid.UUID, credential
 				meta["cache_domain"] = *input.CacheDomain
 			}
 		}
-		if input.Enabled != nil || input.CacheDomain != nil || sourceSpecified {
+		rateLimitSpecified := input.RPMLimit != nil || input.RPDLimit != nil || input.ResetTimezone != nil
+		if rateLimitSpecified {
+			store.SetSiteCredentialRateLimitMeta(meta, input.RPMLimit, input.RPDLimit, input.ResetTimezone)
+		}
+		if input.Enabled != nil || input.CacheDomain != nil || sourceSpecified || rateLimitSpecified {
 			credential, err = repo.UpdateMeta(ctx, credential.ID, store.JSON(jsonBytes(meta)))
 			if err != nil {
 				return err

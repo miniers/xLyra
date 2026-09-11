@@ -248,6 +248,9 @@ func classifyGatewayUpstreamErrorWithTimeZone(candidate routeengine.Candidate, r
 	if isAntigravitySite(candidate.Site.SiteType) {
 		classified, ok = classifyAntigravityUpstreamError(result.upstreamStatusCode, body, now)
 	}
+	if isGoogleSite(candidate.Site.SiteType) {
+		classified, ok = classifyGoogleUpstreamError(result.upstreamStatusCode, body, now)
+	}
 	if !ok {
 		failure := upstream.ClassifyResponseAt(result.upstreamStatusCode, nil, body, now)
 		if failure.SubscriptionLimited() {

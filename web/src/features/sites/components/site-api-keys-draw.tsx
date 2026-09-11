@@ -5,7 +5,9 @@ import {
   PencilLine,
   Plus,
   RefreshCw,
+  RotateCcw,
   Settings2,
+  Snowflake,
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -37,6 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/lib/toast'
 import {
+  clearSiteAPIKeyCooldown,
   createSiteAPIKey,
   deleteSiteAPIKey,
   listSiteAPIKeys,
@@ -50,6 +53,7 @@ import {
   type Site,
   type SiteAPIKey,
 } from '@/features/sites/api/sites'
+import { formatRemainingSeconds } from '@/features/dashboard/lib/dashboard-utils'
 import { routeQueryKeys } from '@/features/routes/api/routes'
 import {
   apiKeyModels,
@@ -111,7 +115,7 @@ export function SiteAPIKeysDraw({
     site?.supports_api_key_cost_multiplier === true
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    const timer = window.setInterval(() => setNow(Date.now()), 10_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -138,13 +142,18 @@ export function SiteAPIKeysDraw({
     ])
   }
   const createAPIKeyMutation = useMutation({
-    mutationFn: (input: {
-      apiKey: string
-      name?: string
-      routingPriority?: number
-      upstreamCostMultiplier?: number
-      upstreamCostMultiplierSource?: 'manual' | 'auto'
-    }) => {
+    mutationFn: (
+      input: {
+        apiKey: string
+        name?: string
+        routingPriority?: number
+        upstreamCostMultiplier?: number
+        upstreamCostMultiplierSource?: 'manual' | 'auto'
+        rpmLimit?: number
+        rpdLimit?: number
+        resetTimezone?: string
+      },
+    ) => {
       if (!site) throw new Error('site required')
       return createSiteAPIKey(site.id, input)
     },
@@ -156,7 +165,6 @@ export function SiteAPIKeysDraw({
       )
       setAddingAPIKey(false)
       setNewAPIKeyDraft(DEFAULT_API_KEY_FORM_DRAFT)
-      onOpenChange(false)
       if (site) {
         await queryClient.invalidateQueries({
           queryKey: sitesQueryKeys.models(site.id),
@@ -223,6 +231,9 @@ export function SiteAPIKeysDraw({
       routingPriority?: number
       upstreamCostMultiplier?: number
       upstreamCostMultiplierSource?: 'manual' | 'auto'
+      rpmLimit?: number
+      rpdLimit?: number
+      resetTimezone?: string
     }) => {
       if (!site) throw new Error('site required')
       return updateSiteAPIKeyConfig(site.id, input.apiKeyId, input)
@@ -237,13 +248,32 @@ export function SiteAPIKeysDraw({
         current?.id === result.api_key.id ? result.api_key : current,
       )
       setConfiguringAPIKey(null)
-      onOpenChange(false)
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
       await invalidatePricingViews()
       toast.success(t('apiKeys.toast.updated'))
     },
     onError: (error) =>
       toast.error(t('apiKeys.toast.updateFailed'), {
+        description: error.message,
+      }),
+  })
+  const clearCooldownMutation = useMutation({
+    mutationFn: (apiKeyId: string) => {
+      if (!site) throw new Error('site required')
+      return clearSiteAPIKeyCooldown(site.id, apiKeyId)
+    },
+    onSuccess: async (result) => {
+      queryClient.setQueryData(
+        queryKey,
+        (current: { items: SiteAPIKey[] } | undefined) =>
+          replaceAPIKey(current, result.api_key),
+      )
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      toast.success(t('apiKeys.toast.cooldownCleared'))
+    },
+    onError: (error) =>
+      toast.error(t('apiKeys.toast.clearCooldownFailed'), {
         description: error.message,
       }),
   })
@@ -269,7 +299,6 @@ export function SiteAPIKeysDraw({
       )
       setEditingAPIKey(null)
       setSecretInput('')
-      onOpenChange(false)
       await queryClient.invalidateQueries({
         queryKey: [...sitesQueryKeys.all, 'canonical-models'],
       })
@@ -617,6 +646,43 @@ export function SiteAPIKeysDraw({
                               : t('apiKeys.multiplierManual')}
                           </Badge>
                         ) : null}
+                        {Boolean(item.rpm_limit || item.rpd_limit) && (
+                          <Badge variant="neutral">
+                            {item.rpm_limit ? `${item.rpm_limit} RPM` : null}
+                            {item.rpm_limit && item.rpd_limit ? ' · ' : null}
+                            {item.rpd_limit ? `${item.rpd_limit} RPD` : null}
+                          </Badge>
+                        )}
+                        {item.cooling ? (
+                          <Badge
+                            variant="warning"
+                            className="flex items-center gap-1 font-medium"
+                            title={item.cooldown_reason}
+                          >
+                            <Snowflake className="h-3 w-3" />
+                            <span>{t('apiKeys.cooling')}</span>
+                            {item.cooldown_remaining_seconds || item.cooldown_active_until ? (
+                              <span>
+                                (
+                                {formatRemainingSeconds(
+                                  item.cooldown_active_until
+                                    ? Math.max(
+                                        0,
+                                        Math.ceil(
+                                          (new Date(
+                                            item.cooldown_active_until,
+                                          ).getTime() -
+                                            now) /
+                                            1000,
+                                        ),
+                                      )
+                                    : (item.cooldown_remaining_seconds ?? 0),
+                                )}
+                                )
+                              </span>
+                            ) : null}
+                          </Badge>
+                        ) : null}
                         {item.upstream_name &&
                         item.upstream_name !== item.name ? (
                           <span className="truncate">
@@ -747,36 +813,63 @@ export function SiteAPIKeysDraw({
                               {t('apiKeys.complete')}
                             </Button>
                           ) : null}
-                          {site?.supports_multiple_api_keys || supportsCostMultiplier ? (
+                          {item.cooling ? (
                             <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7"
-                              title={t('apiKeys.editConfig')}
-                              aria-label={t('apiKeys.editConfigLabel', {
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-amber-500/50 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
+                              disabled={
+                                clearCooldownMutation.isPending &&
+                                clearCooldownMutation.variables === item.id
+                              }
+                              title={item.cooldown_reason || t('apiKeys.clearCooldown')}
+                              aria-label={t('apiKeys.clearCooldownLabel', {
                                 name: item.name || t('apiKeys.defaultKey'),
                               })}
-                              onClick={() => {
-                                setConfiguringAPIKey(item)
-                                setConfigDraft({
-                                  name: item.display_name ?? item.name ?? '',
-                                  apiKey: '',
-                                  routingPriority: String(
-                                    item.routing_priority ?? 1,
-                                  ),
-                                  upstreamCostMultiplier: String(
-                                    item.upstream_cost_multiplier ?? 1,
-                                  ),
-                                  upstreamCostMultiplierSource:
-                                    item.upstream_cost_multiplier_source === 'auto'
-                                      ? 'auto'
-                                      : 'manual',
-                                })
-                              }}
+                              onClick={() =>
+                                clearCooldownMutation.mutate(item.id)
+                              }
                             >
-                              <Settings2 className="h-3.5 w-3.5" />
+                              {clearCooldownMutation.isPending &&
+                              clearCooldownMutation.variables === item.id ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                              )}
+                              {t('apiKeys.clearCooldown')}
                             </Button>
                           ) : null}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            title={t('apiKeys.editConfig')}
+                            aria-label={t('apiKeys.editConfigLabel', {
+                              name: item.name || t('apiKeys.defaultKey'),
+                            })}
+                            onClick={() => {
+                              setConfiguringAPIKey(item)
+                              setConfigDraft({
+                                name: item.display_name ?? item.name ?? '',
+                                apiKey: '',
+                                routingPriority: String(
+                                  item.routing_priority ?? 1,
+                                ),
+                                upstreamCostMultiplier: String(
+                                  item.upstream_cost_multiplier ?? 1,
+                                ),
+                                upstreamCostMultiplierSource:
+                                  item.upstream_cost_multiplier_source === 'auto'
+                                    ? 'auto'
+                                    : 'manual',
+                                rpmLimit: item.rpm_limit ? String(item.rpm_limit) : '',
+                                rpdLimit: item.rpd_limit ? String(item.rpd_limit) : '',
+                                resetTimezone: item.reset_timezone ?? '',
+                              })
+                            }}
+                          >
+                            <Settings2 className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             size="icon"
                             variant="ghost"
@@ -932,6 +1025,9 @@ export function SiteAPIKeysDraw({
                 updateConfigMutation.mutate({
                   apiKeyId: configuringAPIKey.id,
                   ...values,
+                  rpmLimit: values.rpmLimit ?? 0,
+                  rpdLimit: values.rpdLimit ?? 0,
+                  resetTimezone: values.resetTimezone ?? '',
                 })
               }}
               disabled={

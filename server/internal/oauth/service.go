@@ -1429,8 +1429,14 @@ func (s *Service) disableSiteOnPermanentError(ctx context.Context, tx *gorm.DB, 
 	if !isPermanentAuthError(errMsg) {
 		return
 	}
-	if connection.SiteID == nil || s.db == nil || s.db.DB() == nil {
+	if connection.SiteID == nil {
 		return
+	}
+	if tx == nil {
+		if s.db == nil || s.db.DB() == nil {
+			return
+		}
+		tx = s.db.DB()
 	}
 	siteRepo := store.NewSiteRepository(tx)
 	existing, err := siteRepo.GetByID(ctx, *connection.SiteID)

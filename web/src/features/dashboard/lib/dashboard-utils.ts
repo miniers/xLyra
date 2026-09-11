@@ -287,7 +287,7 @@ function normalizeCooldownScope(item: DashboardCooldownAPIItem): CooldownItem['s
   return 'site'
 }
 
-function formatRemainingSeconds(seconds: number) {
+export function formatRemainingSeconds(seconds: number) {
   if (seconds <= 0) return '0m'
   const minutes = Math.ceil(seconds / 60)
   if (minutes < 60) return `${minutes}m`
@@ -302,6 +302,8 @@ function formatCooldownReason(reason: string, source: string, t?: TFunction) {
     usage_limit_reached: t ? t('cooldownReasons.usage_limit_reached') : '账号额度达到限制',
     upstream_http_error: t ? t('cooldownReasons.upstream_http_error') : '上游请求异常',
     upstream_timeout: t ? t('cooldownReasons.upstream_timeout') : '上游请求超时',
+    credential_rpm_limit_reached: t ? t('cooldownReasons.credential_rpm_limit_reached') : '每分钟速率达到限制',
+    credential_rpd_limit_reached: t ? t('cooldownReasons.credential_rpd_limit_reached') : '每日速率达到限制',
   }
   const sourceMap: Record<string, string> = {
     site_health: t ? t('cooldownSources.site_health') : '健康检查',

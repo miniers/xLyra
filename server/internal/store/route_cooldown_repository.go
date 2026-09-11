@@ -44,7 +44,9 @@ const (
 	// CooldownReasonCodingPlanQuotaExhausted marks a cooldown created by a Kimi/GLM
 	// Coding Plan quota probe that observed an exhausted 5-hour or weekly window
 	// with a known reset time, so the credential is skipped until the window resets.
-	CooldownReasonCodingPlanQuotaExhausted = "coding_plan_quota_exhausted"
+	CooldownReasonCodingPlanQuotaExhausted  = "coding_plan_quota_exhausted"
+	CooldownReasonCredentialRPMLimitReached = "credential_rpm_limit_reached"
+	CooldownReasonCredentialRPDLimitReached = "credential_rpd_limit_reached"
 )
 
 func TransientRouteCooldown(item RouteCooldown) bool {
