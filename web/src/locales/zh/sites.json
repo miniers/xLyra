@@ -279,6 +279,7 @@
     "rpdLimit": "RPD 限制（每日请求数）",
     "rpdLimitPlaceholder": "留空表示不限制",
     "resetTimezone": "配额重置时区",
+    "rateLimitUsageTitle": "速率限流实时用量：RPM {{rpm}}，RPD {{rpd}}",
     "cooling": "冷却中",
     "clearCooldown": "解除冷却",
     "clearCooldownLabel": "解除 {{name}} 的冷却状态",

@@ -129,4 +129,12 @@ func TestCredentialRateLimiter_RPDLimit(t *testing.T) {
 	if minuteCount4 != 0 || dayCount4 != 3 {
 		t.Fatalf("CurrentUsage at 10:04 = minute %d, day %d; want 0 and 3", minuteCount4, dayCount4)
 	}
+
+	// Resetting the limiter state for this credential allows immediate acquisition
+	limiter.Reset(credID)
+	allowedAfterReset, cooldownAfterReset := limiter.CheckAndAcquire(context.Background(), siteID, cred, now.Add(4*time.Minute))
+	if !allowedAfterReset || cooldownAfterReset != nil {
+		t.Fatalf("request after Reset should be allowed, got %v, %v", allowedAfterReset, cooldownAfterReset)
+	}
 }
+

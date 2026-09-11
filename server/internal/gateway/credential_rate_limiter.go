@@ -178,6 +178,16 @@ func (l *CredentialRateLimiter) CurrentUsage(credentialID uuid.UUID, timezone st
 	return minuteCount, dayCount
 }
 
+// Reset clears any in-memory rate limit state for the specified credential.
+func (l *CredentialRateLimiter) Reset(credentialID uuid.UUID) {
+	if l == nil || credentialID == uuid.Nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.states, credentialID)
+}
+
 func (l *CredentialRateLimiter) sweepLocked(now time.Time) {
 	if now.Sub(l.lastSweep) < 5*time.Minute {
 		return

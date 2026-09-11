@@ -424,6 +424,8 @@ export type SiteAPIKey = {
   quota_probe?: SiteQuotaProbeResult | null
   rpm_limit?: number
   rpd_limit?: number
+  rpm_used?: number
+  rpd_used?: number
   reset_timezone?: string
   cooling?: boolean
   cooldown_reason?: string
@@ -822,6 +824,9 @@ function siteUpsertBody(input: SiteUpsertInput) {
       routing_priority: apiKey.routingPriority,
       upstream_cost_multiplier: apiKey.upstreamCostMultiplier,
       upstream_cost_multiplier_source: apiKey.upstreamCostMultiplierSource,
+      rpm_limit: apiKey.rpmLimit,
+      rpd_limit: apiKey.rpdLimit,
+      reset_timezone: apiKey.resetTimezone,
     })),
     newapi: input.newapi
       ? {

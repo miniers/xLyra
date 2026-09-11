@@ -272,6 +272,7 @@
     "rpdLimit": "RPD 制限（日あたりリクエスト数）",
     "rpdLimitPlaceholder": "空欄で無制限",
     "resetTimezone": "リセットタイムゾーン",
+    "rateLimitUsageTitle": "レート制限のリアルタイム使用量：RPM {{rpm}}、RPD {{rpd}}",
     "cooling": "冷却中",
     "clearCooldown": "冷却を解除",
     "clearCooldownLabel": "{{name}} の冷却状態を解除",

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"xlyra/server/internal/auth"
 	"xlyra/server/internal/config"
 	"xlyra/server/internal/credential"
@@ -81,3 +83,19 @@ func newHandlerWithTimeZone(logger *slog.Logger, authService *auth.Service, rout
 		usage: usageService, timeZone: timeZone, cacheObservationKey: cacheObservationKey(masterKey),
 	}
 }
+
+// ResetCredentialRateLimit resets in-memory rate limit state for the given credential.
+func (h Handler) ResetCredentialRateLimit(credentialID uuid.UUID) {
+	if h.credentialRateLimiter != nil {
+		h.credentialRateLimiter.Reset(credentialID)
+	}
+}
+
+// CredentialRateLimitUsage returns current minute count and day count for the given credential.
+func (h Handler) CredentialRateLimitUsage(credentialID uuid.UUID, timezone string) (int64, int64) {
+	if h.credentialRateLimiter == nil {
+		return 0, 0
+	}
+	return h.credentialRateLimiter.CurrentUsage(credentialID, timezone, time.Now())
+}
+

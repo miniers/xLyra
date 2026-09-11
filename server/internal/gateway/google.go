@@ -106,8 +106,8 @@ func googleDailyResetDuration(now time.Time) time.Duration {
 	nowInLoc := now.In(loc)
 	nextMidnight := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day()+1, 0, 0, 5, 0, loc)
 	duration := nextMidnight.Sub(now)
-	if duration <= 5*time.Minute {
-		duration = 24 * time.Hour
+	if duration < 10*time.Minute {
+		duration = 10 * time.Minute
 	}
 	return duration
 }

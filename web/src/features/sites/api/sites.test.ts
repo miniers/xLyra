@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { updateSite } from './sites'
+import { createSite, updateSite } from './sites'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -57,4 +57,46 @@ describe('updateSite', () => {
       clear_max_concurrency: false,
     })
   })
+
+  it('includes rpm_limit, rpd_limit, and reset_timezone when creating site with api_keys', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ site: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createSite({
+      name: 'Example',
+      slug: 'example',
+      siteType: 'openai',
+      baseUrl: 'https://example.com',
+      enabled: true,
+      routingPriority: 1,
+      apiKeys: [
+        {
+          name: 'Primary Key',
+          apiKey: 'sk-test',
+          routingPriority: 1,
+          rpmLimit: 60,
+          rpdLimit: 1500,
+          resetTimezone: 'America/Los_Angeles',
+        },
+      ],
+    })
+
+    const [, request] = fetchMock.mock.calls[0]
+    expect(JSON.parse(request.body).api_keys).toEqual([
+      {
+        api_key: 'sk-test',
+        name: 'Primary Key',
+        routing_priority: 1,
+        rpm_limit: 60,
+        rpd_limit: 1500,
+        reset_timezone: 'America/Los_Angeles',
+      },
+    ])
+  })
 })
+

@@ -281,6 +281,7 @@
     "rpdLimit": "RPD Limit (Requests / Day)",
     "rpdLimitPlaceholder": "Leave empty for unlimited",
     "resetTimezone": "Quota Reset Timezone",
+    "rateLimitUsageTitle": "Real-time rate limit usage: RPM {{rpm}}, RPD {{rpd}}",
     "cooling": "Cooling",
     "clearCooldown": "Clear Cooldown",
     "clearCooldownLabel": "Clear cooldown status for {{name}}",

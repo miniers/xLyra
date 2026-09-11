@@ -203,8 +203,8 @@ type siteAPIKeyRequest struct {
 	RoutingPriority              *float64 `json:"routing_priority"`
 	UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
 	UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
-	RPMLimit                     *int     `json:"rpm_limit"`
-	RPDLimit                     *int     `json:"rpd_limit"`
+	RPMLimit                     *int64   `json:"rpm_limit"`
+	RPDLimit                     *int64   `json:"rpd_limit"`
 	ResetTimezone                *string  `json:"reset_timezone"`
 }
 

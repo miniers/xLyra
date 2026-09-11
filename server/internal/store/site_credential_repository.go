@@ -71,6 +71,18 @@ func SiteCredentialRateLimitFromMeta(raw JSON) *CredentialRateLimitConfig {
 	}
 	rateLimitRaw, ok := metadata["rate_limit"]
 	if !ok || len(rateLimitRaw) == 0 {
+		var fallback struct {
+			RPMLimit      *int64 `json:"rpm_limit,omitempty"`
+			RPDLimit      *int64 `json:"rpd_limit,omitempty"`
+			ResetTimezone string `json:"reset_timezone,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &fallback); err == nil && (fallback.RPMLimit != nil || fallback.RPDLimit != nil) {
+			return &CredentialRateLimitConfig{
+				RPMLimit:      fallback.RPMLimit,
+				RPDLimit:      fallback.RPDLimit,
+				ResetTimezone: fallback.ResetTimezone,
+			}
+		}
 		return nil
 	}
 	var cfg CredentialRateLimitConfig
@@ -101,7 +113,20 @@ func SetSiteCredentialRateLimitMeta(meta map[string]any, rpmLimit *int64, rpdLim
 		if tz, ok := existing["reset_timezone"].(string); ok && strings.TrimSpace(tz) != "" {
 			currentTimezone = strings.TrimSpace(tz)
 		}
+	} else {
+		if v, ok := parseAnyInt64(meta["rpm_limit"]); ok && v > 0 {
+			currentRpm = &v
+		}
+		if v, ok := parseAnyInt64(meta["rpd_limit"]); ok && v > 0 {
+			currentRpd = &v
+		}
+		if tz, ok := meta["reset_timezone"].(string); ok && strings.TrimSpace(tz) != "" {
+			currentTimezone = strings.TrimSpace(tz)
+		}
 	}
+	delete(meta, "rpm_limit")
+	delete(meta, "rpd_limit")
+	delete(meta, "reset_timezone")
 
 	if rpmLimit != nil {
 		if *rpmLimit > 0 {

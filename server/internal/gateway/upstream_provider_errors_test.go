@@ -73,6 +73,18 @@ func TestClassifyGoogleUpstreamErrorHandlesRateLimitAndServerErrors(t *testing.T
 		t.Fatalf("expected long cooldown duration for daily limit, got %s", dailyLimited.CooldownDuration)
 	}
 
+	loc, _ := time.LoadLocation("America/Los_Angeles")
+	nearMidnight := time.Date(2026, 9, 11, 23, 56, 0, 0, loc)
+	nearMidnightLimited, ok := classifyGoogleUpstreamError(http.StatusTooManyRequests, []byte(`{
+		"error": {
+			"message": "requests per day limit exceeded",
+			"status": "RESOURCE_EXHAUSTED"
+		}
+	}`), nearMidnight)
+	if !ok || nearMidnightLimited.CooldownDuration != 10*time.Minute {
+		t.Fatalf("near midnight cooldown duration = %s, want minimum floor 10m (not 24h)", nearMidnightLimited.CooldownDuration)
+	}
+
 	defaultRetry, ok := classifyGoogleUpstreamError(http.StatusTooManyRequests, []byte(`{}`), time.Now())
 	if !ok {
 		t.Fatal("expected Google 429 without retryDelay to be classified")

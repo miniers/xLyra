@@ -845,7 +845,7 @@ func (h Handler) ListSiteAPIKeys(w http.ResponseWriter, r *http.Request) {
 		if cooldownsByCredentialID != nil {
 			activeCooldown = cooldownsByCredentialID[apiKey.Credential.ID]
 		}
-		items = append(items, h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, siteAPIKeyDefaultName(index), activeCooldown))
+		items = append(items, h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, siteAPIKeyDefaultName(index), activeCooldown))
 	}
 
 	h.writeItems(w, http.StatusOK, items, map[string]any{"count": len(items)})
@@ -908,6 +908,13 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if payload.ResetTimezone != nil && strings.TrimSpace(*payload.ResetTimezone) != "" {
+		if _, err := time.LoadLocation(strings.TrimSpace(*payload.ResetTimezone)); err != nil {
+			h.writeError(w, r, http.StatusBadRequest, "invalid_reset_timezone", "invalid reset_timezone")
+			return
+		}
+	}
+
 	secret := strings.TrimSpace(payload.APIKey)
 	if secret == "" {
 		secret = strings.TrimSpace(payload.Secret)
@@ -957,7 +964,7 @@ func (h Handler) CreateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		"cache_domain":                    apiKey.CacheDomain,
 		"enabled":                         apiKey.Enabled,
 	})
-	h.writeResource(w, http.StatusAccepted, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
+	h.writeResource(w, http.StatusAccepted, "api_key", h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
 }
 
 func (h Handler) DeleteSiteAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -1085,6 +1092,13 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if payload.ResetTimezone != nil && strings.TrimSpace(*payload.ResetTimezone) != "" {
+		if _, err := time.LoadLocation(strings.TrimSpace(*payload.ResetTimezone)); err != nil {
+			h.writeError(w, r, http.StatusBadRequest, "invalid_reset_timezone", "invalid reset_timezone")
+			return
+		}
+	}
+
 	item, err := h.sites.Get(r.Context(), siteID)
 	if err != nil {
 		h.writeError(w, r, http.StatusNotFound, "site_not_found", "site was not found")
@@ -1106,6 +1120,10 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeError(w, r, http.StatusBadRequest, "site_api_key_update_failed", err.Error())
 		return
+	}
+
+	if (payload.RPMLimit != nil || payload.RPDLimit != nil || payload.ResetTimezone != nil) && h.gateway != nil {
+		h.gateway.ResetCredentialRateLimit(apiKeyID)
 	}
 
 	apiKeyStates, _ := h.sites.APIKeyStates(r.Context(), siteID)
@@ -1135,7 +1153,7 @@ func (h Handler) UpdateSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 			"enabled":                         apiKey.Enabled,
 		},
 	})
-	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
+	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
 }
 
 func (h Handler) RefreshSiteAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -1167,7 +1185,7 @@ func (h Handler) RefreshSiteAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.invalidateGatewayModelsCache()
-	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, result.State, result.Models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKeyID)))
+	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, result.State, result.Models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKeyID)))
 }
 
 func (h Handler) UpdateSiteAPIKeySecret(w http.ResponseWriter, r *http.Request) {
@@ -1220,7 +1238,7 @@ func (h Handler) UpdateSiteAPIKeySecret(w http.ResponseWriter, r *http.Request) 
 	h.recordAudit(r, currentAdminActor(r), "site_api_key.secret_update", "site_api_key", apiKeyID.String(), true, "", map[string]any{
 		"site_id": siteID.String(),
 	})
-	h.writeResource(w, http.StatusAccepted, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
+	h.writeResource(w, http.StatusAccepted, "api_key", h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
 }
 
 func (h Handler) UpdateSiteAPIKeyModel(w http.ResponseWriter, r *http.Request) {
@@ -1266,7 +1284,7 @@ func (h Handler) UpdateSiteAPIKeyModel(w http.ResponseWriter, r *http.Request) {
 		"model":   strings.TrimSpace(payload.Model),
 		"enabled": payload.Enabled,
 	})
-	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
+	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKey.Credential.ID)))
 }
 
 // ClearSiteAPIKeyCooldown clears active cooldown for a specific site API key.
@@ -1298,6 +1316,9 @@ func (h Handler) ClearSiteAPIKeyCooldown(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	if h.gateway != nil {
+		h.gateway.ResetCredentialRateLimit(apiKeyID)
+	}
 	h.invalidateGatewayModelsCache()
 
 	apiKeyStates, _ := h.sites.APIKeyStates(r.Context(), siteID)
@@ -1306,7 +1327,7 @@ func (h Handler) ClearSiteAPIKeyCooldown(w http.ResponseWriter, r *http.Request)
 		statesByCredentialID[state.SiteCredentialID] = state
 	}
 	models, _ := h.sites.APIKeyModels(r.Context(), apiKey.Credential.ID)
-	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromState(item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKeyID)))
+	h.writeResource(w, http.StatusOK, "api_key", h.siteAPIKeyPayloadFromStateWithContext(r.Context(), item, apiKey, statesByCredentialID[apiKey.Credential.ID], models, h.siteAPIKeyDefaultName(r.Context(), siteID, apiKeyID)))
 }
 
 func (h Handler) siteSetupResponse(r *http.Request, item store.Site) map[string]any {
@@ -1395,17 +1416,15 @@ func (h Handler) resolveSiteCredentials(w http.ResponseWriter, r *http.Request, 
 					h.writeError(w, r, http.StatusBadRequest, "invalid_api_key", fmt.Sprintf("api_keys[%d].api_key is required", index))
 					return nil, false
 				}
+				if item.ResetTimezone != nil && strings.TrimSpace(*item.ResetTimezone) != "" {
+					if _, err := time.LoadLocation(strings.TrimSpace(*item.ResetTimezone)); err != nil {
+						h.writeError(w, r, http.StatusBadRequest, "invalid_reset_timezone", fmt.Sprintf("invalid reset_timezone for api_keys[%d]", index))
+						return nil, false
+					}
+				}
 				displayName := item.Name
 				meta := map[string]any{"enabled": true}
-				if item.RPMLimit != nil {
-					meta["rpm_limit"] = *item.RPMLimit
-				}
-				if item.RPDLimit != nil {
-					meta["rpd_limit"] = *item.RPDLimit
-				}
-				if item.ResetTimezone != nil {
-					meta["reset_timezone"] = *item.ResetTimezone
-				}
+				store.SetSiteCredentialRateLimitMeta(meta, item.RPMLimit, item.RPDLimit, item.ResetTimezone)
 				credentials = append(credentials, sitepkg.CredentialInput{
 					Type:                         "api_key",
 					Secret:                       apiKey,
@@ -1667,6 +1686,10 @@ func (h Handler) credentialCooldown(ctx context.Context, siteID uuid.UUID, crede
 }
 
 func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIKeyCredential, state store.SiteAPIKeyState, models []store.SiteAPIKeyModel, fallbackName string, activeCooldown ...*store.RouteCooldown) map[string]any {
+	return h.siteAPIKeyPayloadFromStateWithContext(context.Background(), item, apiKey, state, models, fallbackName, activeCooldown...)
+}
+
+func (h Handler) siteAPIKeyPayloadFromStateWithContext(ctx context.Context, item store.Site, apiKey sitepkg.APIKeyCredential, state store.SiteAPIKeyState, models []store.SiteAPIKeyModel, fallbackName string, activeCooldown ...*store.RouteCooldown) map[string]any {
 	hasState := state.SiteCredentialID != uuid.Nil
 	upstreamID := apiKey.UpstreamID
 	if hasState && state.UpstreamID.Valid {
@@ -1767,13 +1790,22 @@ func (h Handler) siteAPIKeyPayloadFromState(item store.Site, apiKey sitepkg.APIK
 		if strings.TrimSpace(rateLimit.ResetTimezone) != "" {
 			keyItem["reset_timezone"] = rateLimit.ResetTimezone
 		}
+		if h.gateway != nil && (rateLimit.RPMLimit != nil || rateLimit.RPDLimit != nil) {
+			minuteUsed, dayUsed := h.gateway.CredentialRateLimitUsage(apiKey.Credential.ID, rateLimit.ResetTimezone)
+			if rateLimit.RPMLimit != nil {
+				keyItem["rpm_used"] = minuteUsed
+			}
+			if rateLimit.RPDLimit != nil {
+				keyItem["rpd_used"] = dayUsed
+			}
+		}
 	}
 
 	var cooldown *store.RouteCooldown
 	if len(activeCooldown) > 0 && activeCooldown[0] != nil {
 		cooldown = activeCooldown[0]
 	} else {
-		cooldown = h.credentialCooldown(context.Background(), item.ID, apiKey.Credential.ID)
+		cooldown = h.credentialCooldown(ctx, item.ID, apiKey.Credential.ID)
 	}
 	if cooldown != nil {
 		keyItem["cooling"] = true

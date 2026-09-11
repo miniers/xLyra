@@ -647,10 +647,16 @@ export function SiteAPIKeysDraw({
                           </Badge>
                         ) : null}
                         {Boolean(item.rpm_limit || item.rpd_limit) && (
-                          <Badge variant="neutral">
-                            {item.rpm_limit ? `${item.rpm_limit} RPM` : null}
+                          <Badge
+                            variant="neutral"
+                            title={t('apiKeys.rateLimitUsageTitle', {
+                              rpm: item.rpm_limit ? `${item.rpm_used ?? 0}/${item.rpm_limit}` : '-',
+                              rpd: item.rpd_limit ? `${item.rpd_used ?? 0}/${item.rpd_limit}` : '-',
+                            })}
+                          >
+                            {item.rpm_limit ? `${item.rpm_used ?? 0}/${item.rpm_limit} RPM` : null}
                             {item.rpm_limit && item.rpd_limit ? ' · ' : null}
-                            {item.rpd_limit ? `${item.rpd_limit} RPD` : null}
+                            {item.rpd_limit ? `${item.rpd_used ?? 0}/${item.rpd_limit} RPD` : null}
                           </Badge>
                         )}
                         {item.cooling ? (
