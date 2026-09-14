@@ -250,6 +250,8 @@ func TestDevPostgresOAuthRefreshLeaseDoesNotHoldRowLockDuringRefresh(t *testing.
 		MaskedRefreshToken:    "refresh",
 		EncryptedIDToken:      "id",
 		MaskedIDToken:         "id",
+		RawProfile:            store.JSON(`{}`),
+		Metadata:              store.JSON(`{}`),
 		RefreshLeaseID:        "lease-1",
 		RefreshLeaseUntil:     sql.NullTime{Time: time.Now().Add(time.Minute), Valid: true},
 	}
