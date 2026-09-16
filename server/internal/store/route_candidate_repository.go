@@ -68,6 +68,7 @@ type RouteCandidateRow struct {
 	PricingPerRequestValue             sql.NullFloat64
 	PricingBillingType                 sql.NullString
 	PricingQuotaType                   sql.NullInt64
+	PricingVariants                    JSON
 	SupportedEndpointTypes             []string
 	AutomaticAnomaly                   RouteAnomaly
 	ManualScoreAdjustment              float64
@@ -101,6 +102,7 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	var keyStates []SiteAPIKeyState
 	var pricings []SiteModelPricing
 	var oauthConnections []OAuthConnection
+	var overrides []SiteModelEndpointOverride
 	if err := r.db.WithContext(ctx).Find(&sites).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
@@ -136,6 +138,13 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	scoreAdjustments, err := NewRouteScoreAdjustmentRepository(r.db).ListActiveByCanonicalModel(ctx, canonicalModelID, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Find(&overrides).Error; err != nil {
+		return nil, fmt.Errorf("list route candidates: %w", err)
+	}
+	overrideByModel := map[uuid.UUID]SiteModelEndpointOverride{}
+	for _, override := range overrides {
+		overrideByModel[override.SiteModelID] = override
 	}
 	cooldowns, err := NewRouteCooldownRepository(r.db).ListActive(ctx, time.Now())
 	if err != nil {
@@ -193,6 +202,7 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 			CanonicalModelID:           canonical.ID,
 			CanonicalModelKey:          canonical.ModelKey,
 			CanonicalDisplayName:       canonical.DisplayName,
+			PricingVariants:            canonical.PricingVariants,
 			SiteID:                     site.ID,
 			SiteName:                   site.Name,
 			SiteSlug:                   site.Slug,
@@ -232,7 +242,7 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 		fillRouteKeyCounts(&row, apiKeyModels, credentialsByID, keyStatesByCredentialID, cooldowns)
 		fillRouteSiteCredentialCount(&row, credentials, keyStatesByCredentialID, cooldowns)
 		fillRoutePricing(&row, pricings)
-		row.SupportedEndpointTypes = collectSupportedEndpointTypes(model)
+		row.SupportedEndpointTypes = effectiveSupportedEndpointTypes(canonical, model, overrideByModel[model.ID])
 		items = append(items, row)
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -403,6 +413,18 @@ func fillModelCacheStats(row *RouteCandidateRow, stats RouteModelCacheStats) {
 		rate = 1
 	}
 	row.ModelCacheHitRate = sql.NullFloat64{Float64: rate, Valid: true}
+}
+
+func effectiveSupportedEndpointTypes(canonical CanonicalModel, model SiteModel, override SiteModelEndpointOverride) []string {
+	return siteModelEndpointPolicy(canonical, model, override).SupportedEndpointTypes
+}
+
+func collectCanonicalEndpointTypes(model CanonicalModel) []string {
+	var values []string
+	if json.Unmarshal(model.SupportedEndpointTypes, &values) != nil {
+		return nil
+	}
+	return values
 }
 
 func defaultHealthStatus(value string) string {

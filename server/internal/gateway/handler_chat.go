@@ -374,7 +374,7 @@ func (h Handler) serveEndpoint(
 				}
 			}
 
-			result := h.forwardGatewayRequest(ctx, w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, attemptRequest, reservation, protocol)
+			result := h.forwardGatewayRequest(withCredentialProtocolResolver(ctx, resolver), w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, attemptRequest, reservation, protocol)
 			if errors.Is(context.Cause(ctx), context.Canceled) {
 				flowPhase = inflight.PhaseCancelled
 				return

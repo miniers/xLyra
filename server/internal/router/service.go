@@ -122,6 +122,7 @@ type CandidateModel struct {
 	MatchSource            string
 	MatchConfidence        int
 	SupportedEndpointTypes []string
+	PricingVariants        store.JSON
 }
 
 type CandidateHealth struct {
@@ -341,6 +342,7 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 				MatchSource:            row.MatchSource,
 				MatchConfidence:        row.MatchConfidence,
 				SupportedEndpointTypes: append([]string(nil), row.SupportedEndpointTypes...),
+				PricingVariants:        row.PricingVariants,
 			},
 			Health: CandidateHealth{
 				Status:                     row.SiteHealthStatus,
