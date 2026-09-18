@@ -1328,6 +1328,7 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 
 	activeModelNames := map[string]struct{}{}
 	rawCapabilitiesByModel := map[string]store.JSON{}
+	displayNamesByModel := map[string]string{}
 	for _, akm := range allAPIKeyModels {
 		if !akm.Available || !akm.Enabled {
 			continue
@@ -1339,6 +1340,9 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 		activeModelNames[akm.UpstreamModelName] = struct{}{}
 		if _, exists := rawCapabilitiesByModel[akm.UpstreamModelName]; !exists {
 			rawCapabilitiesByModel[akm.UpstreamModelName] = akm.Raw
+		}
+		if _, exists := displayNamesByModel[akm.UpstreamModelName]; !exists && strings.TrimSpace(akm.DisplayName) != "" {
+			displayNamesByModel[akm.UpstreamModelName] = akm.DisplayName
 		}
 	}
 
@@ -1363,11 +1367,19 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 			if marshalErr != nil {
 				return nil, fmt.Errorf("marshal site model capabilities: %w", marshalErr)
 			}
+		} else if strings.EqualFold(strings.TrimSpace(siteType), "nvidia") {
+			if len(rawCapabilitiesByModel[name]) > 0 {
+				capabilities = rawCapabilitiesByModel[name]
+			}
+		}
+		displayName := name
+		if strings.EqualFold(strings.TrimSpace(siteType), "nvidia") {
+			displayName = defaultString(displayNamesByModel[name], name)
 		}
 		siteModel, err := siteModelRepo.Upsert(ctx, store.UpsertSiteModelParams{
 			SiteID:       siteID,
 			UpstreamName: name,
-			DisplayName:  name,
+			DisplayName:  displayName,
 			Capabilities: capabilities,
 			Status:       "active",
 		})

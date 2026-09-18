@@ -106,7 +106,7 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 			result = preserveQuotaProbeResult(credential.Meta, result)
 		}
 		// 只对本次新鲜成功的探测同步冷却；失败时保留的旧数据不用于冷却判断
-		if freshOK && (probeType == QuotaProbeTypeKimi || probeType == QuotaProbeTypeGLM) {
+		if freshOK && (probeType == QuotaProbeTypeKimi || probeType == QuotaProbeTypeGLM || probeType == QuotaProbeTypeCommandCode) {
 			s.syncCodingPlanQuotaCooldown(ctx, item.ID, credential.ID, result)
 		}
 		if result.Status == "ok" {
@@ -372,6 +372,10 @@ func defaultQuotaProbeTypeForSite(item store.Site) string {
 		if quotaProbeBaseURLOfficial(item.BaseURL, "open.bigmodel.cn", "api.z.ai") {
 			return QuotaProbeTypeGLM
 		}
+	case "command_code":
+		if quotaProbeBaseURLOfficial(item.BaseURL, "api.commandcode.ai") {
+			return QuotaProbeTypeCommandCode
+		}
 	}
 	return ""
 }
@@ -551,6 +555,8 @@ func probeQuota(ctx context.Context, client *http.Client, probeType string, base
 		kind, entries, result.Plan, err = probeKimiQuota(ctx, client, baseURL, secret)
 	case QuotaProbeTypeGLM:
 		kind, entries, result.Plan, err = probeGLMQuota(ctx, client, baseURL, secret)
+	case QuotaProbeTypeCommandCode:
+		kind, entries, result.Plan, result.ExpiresAt, err = probeCommandCodeQuota(ctx, client, baseURL, secret)
 	default:
 		err = fmt.Errorf("unsupported quota probe type %q", probeType)
 	}
@@ -1142,4 +1148,355 @@ func quotaProbeFloat(value any) *float64 {
 		}
 	}
 	return nil
+}
+
+func probeCommandCodeQuota(ctx context.Context, client *http.Client, baseURL string, secret string) (string, []QuotaProbeEntry, string, *string, error) {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = "https://api.commandcode.ai"
+	}
+
+	// 1. /alpha/whoami - verify credential validity and get orgId if present
+	var orgID string
+	whoamiPayload, err := quotaProbeCommandCodeGetJSON(ctx, client, base+"/alpha/whoami", secret)
+	if err != nil {
+		if httpErr, ok := err.(*quotaProbeHTTPError); ok && (httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden) {
+			return "", nil, "", nil, err
+		}
+	} else {
+		if org, ok := whoamiPayload["org"].(map[string]any); ok {
+			orgID = strings.TrimSpace(anyString(org["id"]))
+		}
+	}
+
+	// 2. /alpha/billing/credits - windowLimits (fiveHour, weekly) & monthly/purchased/free credits
+	creditsPayload, err := quotaProbeCommandCodeGetJSON(ctx, client, base+"/alpha/billing/credits", secret)
+	if err != nil {
+		return "", nil, "", nil, err
+	}
+
+	creditsMap, _ := creditsPayload["credits"].(map[string]any)
+	if creditsMap == nil {
+		if dataMap, ok := creditsPayload["data"].(map[string]any); ok {
+			creditsMap, _ = dataMap["credits"].(map[string]any)
+		}
+	}
+	windowLimitsMap, _ := creditsPayload["windowLimits"].(map[string]any)
+	if windowLimitsMap == nil {
+		if dataMap, ok := creditsPayload["data"].(map[string]any); ok {
+			windowLimitsMap, _ = dataMap["windowLimits"].(map[string]any)
+		}
+	}
+
+	var planID string
+	if creditsMap != nil {
+		planID = strings.TrimSpace(anyString(creditsMap["planId"]))
+		if planID == "" {
+			planID = strings.TrimSpace(anyString(creditsMap["plan_id"]))
+		}
+	}
+
+	// 3. /alpha/billing/subscriptions - active plan & period end
+	var expiresAt *string
+	subURL := base + "/alpha/billing/subscriptions"
+	if orgID != "" {
+		subURL += "?orgId=" + url.QueryEscape(orgID)
+	}
+	subPayload, subErr := quotaProbeCommandCodeGetJSON(ctx, client, subURL, secret)
+	if subErr == nil {
+		subData, _ := subPayload["data"].(map[string]any)
+		if subData == nil {
+			subData, _ = subPayload["subscription"].(map[string]any)
+		}
+		if subData != nil {
+			if subPlanID := strings.TrimSpace(anyString(subData["planId"])); subPlanID != "" {
+				planID = subPlanID
+			} else if subPlanID := strings.TrimSpace(anyString(subData["plan_id"])); subPlanID != "" {
+				planID = subPlanID
+			}
+			if endRaw := subData["currentPeriodEnd"]; endRaw != nil {
+				expiresAt = parseCommandCodeTimestamp(endRaw)
+			} else if endRaw := subData["current_period_end"]; endRaw != nil {
+				expiresAt = parseCommandCodeTimestamp(endRaw)
+			}
+		}
+	}
+
+	planName := commandCodePlanName(planID)
+	entries := make([]QuotaProbeEntry, 0, 3)
+
+	// 5-hour and weekly windows
+	if windowLimitsMap != nil {
+		if fiveHourRaw, ok := pickCommandCodeWindow(windowLimitsMap, "fiveHour", "five_hour", "rolling5h", "5h"); ok {
+			entry := normalizeCommandCodeWindowEntry("five_hour", fiveHourRaw)
+			entries = append(entries, entry)
+		}
+		if weeklyRaw, ok := pickCommandCodeWindow(windowLimitsMap, "weekly", "week"); ok {
+			entry := normalizeCommandCodeWindowEntry("weekly", weeklyRaw)
+			entries = append(entries, entry)
+		}
+	}
+
+	// balance (monthly + purchased + free credits)
+	if creditsMap != nil {
+		monthly := quotaProbeFloat(creditsMap["monthlyCredits"])
+		if monthly == nil {
+			monthly = quotaProbeFloat(creditsMap["monthly_credits"])
+		}
+		purchased := quotaProbeFloat(creditsMap["purchasedCredits"])
+		if purchased == nil {
+			purchased = quotaProbeFloat(creditsMap["purchased_credits"])
+		}
+		free := quotaProbeFloat(creditsMap["freeCredits"])
+		if free == nil {
+			free = quotaProbeFloat(creditsMap["free_credits"])
+		}
+
+		if monthly != nil || purchased != nil || free != nil {
+			var total float64
+			if monthly != nil {
+				total += *monthly
+			}
+			if purchased != nil {
+				total += *purchased
+			}
+			if free != nil {
+				total += *free
+			}
+			entry := QuotaProbeEntry{
+				Label:     "balance",
+				Unit:      "credits",
+				Remaining: &total,
+			}
+			if planCredits := commandCodePlanMonthlyCredits(planID); planCredits > 0 {
+				entry.Limit = &planCredits
+				used := planCredits - total
+				if used < 0 {
+					used = 0
+				}
+				entry.Used = &used
+			}
+			if expiresAt != nil {
+				entry.ResetAt = expiresAt
+			}
+			entries = append(entries, entry)
+		}
+	}
+
+	if len(entries) == 0 {
+		return "", nil, planName, expiresAt, fmt.Errorf("command code billing endpoints did not contain quota data")
+	}
+
+	return "token_plan", entries, planName, expiresAt, nil
+}
+
+func quotaProbeCommandCodeGetJSON(ctx context.Context, client *http.Client, url string, secret string) (map[string]any, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+secret)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "cli")
+	req.Header.Set("x-command-code-version", "1.53.1")
+	req.Header.Set("x-cli-environment", "production")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, quotaProbeBodyLimit))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message := strings.TrimSpace(string(body))
+		if len(message) > 256 {
+			message = message[:256]
+		}
+		return nil, &quotaProbeHTTPError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("HTTP %d: %s", resp.StatusCode, message),
+		}
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON response")
+	}
+	return payload, nil
+}
+
+func pickCommandCodeWindow(wl map[string]any, names ...string) (map[string]any, bool) {
+	for _, n := range names {
+		if v, ok := wl[n].(map[string]any); ok {
+			return v, true
+		}
+	}
+	return nil, false
+}
+
+func normalizeCommandCodeWindowEntry(label string, raw map[string]any) QuotaProbeEntry {
+	entry := QuotaProbeEntry{Label: label, Unit: "credits"}
+	used := quotaProbeFloat(raw["used"])
+	if used == nil {
+		used = quotaProbeFloat(raw["usage"])
+	}
+	if used == nil {
+		used = quotaProbeFloat(raw["usedCredits"])
+	}
+	if used == nil {
+		used = quotaProbeFloat(raw["used_credits"])
+	}
+
+	capVal := quotaProbeFloat(raw["cap"])
+	if capVal == nil {
+		capVal = quotaProbeFloat(raw["limit"])
+	}
+	if capVal == nil {
+		capVal = quotaProbeFloat(raw["capCredits"])
+	}
+
+	entry.Used = used
+	entry.Limit = capVal
+
+	exceeded, _ := raw["exceeded"].(bool)
+	if !exceeded {
+		if excStr, ok := raw["exceeded"].(string); ok && strings.EqualFold(excStr, "true") {
+			exceeded = true
+		}
+	}
+	if !exceeded && used != nil && capVal != nil && *capVal > 0 && *used >= *capVal {
+		exceeded = true
+	}
+
+	if capVal != nil && used != nil {
+		remaining := *capVal - *used
+		if exceeded || remaining < 0 {
+			remaining = 0
+		}
+		entry.Remaining = &remaining
+	} else if exceeded {
+		zero := 0.0
+		entry.Remaining = &zero
+	}
+
+	if resetAt := parseCommandCodeTimestamp(raw["resetAt"]); resetAt != nil {
+		entry.ResetAt = resetAt
+	} else if resetAt := parseCommandCodeTimestamp(raw["reset_at"]); resetAt != nil {
+		entry.ResetAt = resetAt
+	} else if resetAt := parseCommandCodeTimestamp(raw["resetsAt"]); resetAt != nil {
+		entry.ResetAt = resetAt
+	}
+
+	return entry
+}
+
+func parseCommandCodeTimestamp(val any) *string {
+	if val == nil {
+		return nil
+	}
+	switch typed := val.(type) {
+	case float64:
+		if typed <= 0 {
+			return nil
+		}
+		var t time.Time
+		if typed > 1e11 {
+			t = time.UnixMilli(int64(typed)).UTC()
+		} else {
+			t = time.Unix(int64(typed), 0).UTC()
+		}
+		str := t.Format(time.RFC3339)
+		return &str
+	case int64:
+		if typed <= 0 {
+			return nil
+		}
+		var t time.Time
+		if typed > 1e11 {
+			t = time.UnixMilli(typed).UTC()
+		} else {
+			t = time.Unix(typed, 0).UTC()
+		}
+		str := t.Format(time.RFC3339)
+		return &str
+	case int:
+		return parseCommandCodeTimestamp(int64(typed))
+	case json.Number:
+		if n, err := typed.Int64(); err == nil {
+			return parseCommandCodeTimestamp(n)
+		}
+		if f, err := typed.Float64(); err == nil {
+			return parseCommandCodeTimestamp(f)
+		}
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return nil
+		}
+		var f float64
+		if _, err := fmt.Sscanf(trimmed, "%f", &f); err == nil && f > 0 {
+			return parseCommandCodeTimestamp(f)
+		}
+		if t, err := time.Parse(time.RFC3339, trimmed); err == nil {
+			str := t.UTC().Format(time.RFC3339)
+			return &str
+		}
+		if t, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+			str := t.UTC().Format(time.RFC3339)
+			return &str
+		}
+	}
+	return nil
+}
+
+func commandCodePlanName(planID string) string {
+	switch strings.ToLower(strings.TrimSpace(planID)) {
+	case "individual-go":
+		return "Go"
+	case "individual-goat":
+		return "GOAT"
+	case "individual-pro", "individual-pro-v1":
+		return "Pro"
+	case "individual-provider":
+		return "Provider"
+	case "individual-max":
+		return "Max"
+	case "individual-ultra":
+		return "Ultra"
+	case "teams-pro":
+		return "Teams Pro"
+	default:
+		name := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(planID), "individual-"), "teams-")
+		if name == "" {
+			return ""
+		}
+		return strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
+	}
+}
+
+func commandCodePlanMonthlyCredits(planID string) float64 {
+	switch strings.ToLower(strings.TrimSpace(planID)) {
+	case "individual-go":
+		return 10
+	case "individual-goat":
+		return 70
+	case "individual-pro":
+		return 30
+	case "individual-pro-v1":
+		return 80
+	case "individual-provider":
+		return 15
+	case "individual-max":
+		return 150
+	case "individual-ultra":
+		return 300
+	case "teams-pro":
+		return 40
+	default:
+		return 0
+	}
 }

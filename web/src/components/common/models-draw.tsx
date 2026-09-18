@@ -17,6 +17,7 @@ import { copyToClipboard } from '@/components/common/copy-to-clipboard'
 export type ModelsDrawItem = {
   id: string
   displayName: string
+  copyName?: string
   upstreamName?: string
   enabled: boolean
   toggleDisabled?: boolean
@@ -95,8 +96,8 @@ export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPen
             <table className="w-full table-fixed border-collapse text-left text-sm">
               <thead className="bg-[hsl(var(--surface-subtle))] text-faint text-xs uppercase tracking-[0.16em]">
                 <tr>
-                  <th className="w-[65%] px-4 py-3 font-medium">{t('modelsDraw.headers.model')}</th>
-                  <th className="w-[35%] px-4 py-3 font-medium text-right">{t('modelsDraw.headers.enabled')}</th>
+                  <th className="w-[55%] px-4 py-3 font-medium">{t('modelsDraw.headers.model')}</th>
+                  <th className="w-[45%] px-4 py-3 font-medium text-right">{t('modelsDraw.headers.enabled')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,7 +121,7 @@ export function ModelsDraw({ open, title, items, loading, pendingItemId, bulkPen
                               />
                             ) : null}
                             <div className="min-w-0">
-                              <button type="button" className="block max-w-full cursor-pointer truncate text-left font-medium text-foreground" title={t('modelsDraw.copyName')} onClick={() => copyToClipboard(item.displayName, t('modelsDraw.copied'), t('modelsDraw.copyFailed'))}>
+                              <button type="button" className="block max-w-full cursor-pointer truncate text-left font-medium text-foreground" title={t('modelsDraw.copyName')} onClick={() => copyToClipboard(item.copyName ?? item.displayName, t('modelsDraw.copied'), t('modelsDraw.copyFailed'))}>
                                 {item.displayName}
                               </button>
                               {item.protocols?.length ? (

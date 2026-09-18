@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RequestLogDetail } from '@/features/requests/api/requests'
 import {
   formatLatency,
+  formatTPS,
   requestCostFormula,
   requestCredentialMultiplier,
   requestDownstreamTransportLabel,
@@ -18,6 +19,7 @@ import {
   requestIsInProgress,
   requestLogDisplayTimestamp,
   requestReasoningEffort,
+  requestTPS,
   requestTotalLatencyTone,
 } from '@/features/requests/lib/request-utils'
 
@@ -341,6 +343,102 @@ describe('request log display helpers', () => {
     failed.success = false
     expect(requestHasBillingDetails(failed)).toBe(false)
     expect(requestHasBillingDetails(requestDetail())).toBe(true)
+  })
+})
+
+describe('requestTPS and formatTPS', () => {
+  it('calculates generation TPS for streaming requests by subtracting first byte latency', () => {
+    const item = requestDetail()
+    item.stream = true
+    item.latency_ms = 3000
+    item.first_byte_latency_ms = 1000
+    item.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(item)).toBe(25)
+    expect(formatTPS(requestTPS(item))).toBe('25.0 t/s')
+  })
+
+  it('falls back to total latency when request is non-streaming or first byte latency is missing', () => {
+    const nonStream = requestDetail()
+    nonStream.stream = false
+    nonStream.latency_ms = 2000
+    nonStream.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(nonStream)).toBe(25)
+
+    const streamWithoutFirstByte = requestDetail()
+    streamWithoutFirstByte.stream = true
+    streamWithoutFirstByte.latency_ms = 2000
+    streamWithoutFirstByte.first_byte_latency_ms = null
+    streamWithoutFirstByte.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(streamWithoutFirstByte)).toBe(25)
+  })
+
+  it('falls back to total latency if first byte latency is greater than or equal to total latency', () => {
+    const item = requestDetail()
+    item.stream = true
+    item.latency_ms = 1000
+    item.first_byte_latency_ms = 1200
+    item.usage = { completion_tokens: 20 }
+
+    expect(requestTPS(item)).toBe(20)
+  })
+
+  it('returns 0 when completion tokens is 0 on a successful request with valid latency', () => {
+    const item = requestDetail()
+    item.latency_ms = 1500
+    item.usage = { completion_tokens: 0 }
+
+    expect(requestTPS(item)).toBe(0)
+    expect(formatTPS(requestTPS(item))).toBe('0.0 t/s')
+  })
+
+  it('returns null for failed requests', () => {
+    const item = requestDetail()
+    item.success = false
+    item.latency_ms = 2000
+    item.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(item)).toBeNull()
+    expect(formatTPS(requestTPS(item))).toBe('—')
+  })
+
+  it('returns null for in-progress requests', () => {
+    const liveItem = requestDetail()
+    liveItem.is_live = true
+    liveItem.latency_ms = 2000
+    liveItem.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(liveItem)).toBeNull()
+
+    const inProgressItem = requestDetail()
+    inProgressItem.state = 'in_progress'
+    inProgressItem.latency_ms = 2000
+    inProgressItem.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(inProgressItem)).toBeNull()
+    expect(formatTPS(requestTPS(inProgressItem))).toBe('—')
+  })
+
+  it('returns null when latency is missing or invalid', () => {
+    const noLatency = requestDetail()
+    noLatency.latency_ms = null
+    noLatency.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(noLatency)).toBeNull()
+
+    const zeroLatency = requestDetail()
+    zeroLatency.latency_ms = 0
+    zeroLatency.usage = { completion_tokens: 50 }
+
+    expect(requestTPS(zeroLatency)).toBeNull()
+  })
+
+  it('supports fallback parameter in formatTPS', () => {
+    expect(formatTPS(null, '-')).toBe('-')
+    expect(formatTPS(undefined, 'N/A')).toBe('N/A')
+    expect(formatTPS(Number.NaN)).toBe('—')
   })
 })
 

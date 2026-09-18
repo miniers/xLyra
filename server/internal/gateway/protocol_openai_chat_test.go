@@ -47,6 +47,36 @@ func TestOpenAIChatProtocolBuildsPayloadPathAndStreamOptions(t *testing.T) {
 	}
 }
 
+func TestNVIDIAChatProtocolUsesNIMPathAndTokenParameter(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "nvidia", BaseURL: "https://integrate.api.nvidia.com/v1"},
+		Model: routeengine.CandidateModel{UpstreamName: "nvidia/nemotron-3.5-lightning-30b-a3b"},
+	}
+	protocol := newOpenAIChatProtocolAdapter(gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+	payload, err := protocol.BuildUpstreamPayload(gatewayRequest{
+		DownstreamPath: gatewayEndpointChatCompletions,
+		Payload: map[string]any{
+			"model":                 "alias",
+			"messages":              []any{map[string]any{"role": "user", "content": "hello"}},
+			"max_completion_tokens": 64,
+		},
+	}, candidate)
+	if err != nil {
+		t.Fatalf("BuildUpstreamPayload returned error: %v", err)
+	}
+	if payload["model"] != candidate.Model.UpstreamName || payload["max_tokens"] != 64 {
+		t.Fatalf("NVIDIA payload = %#v", payload)
+	}
+	if _, ok := payload["max_completion_tokens"]; ok {
+		t.Fatalf("NVIDIA payload retained max_completion_tokens: %#v", payload)
+	}
+	if got := protocol.UpstreamPath(candidate.Site.BaseURL); got != "https://integrate.api.nvidia.com/v1/chat/completions" {
+		t.Fatalf("NVIDIA UpstreamPath = %q", got)
+	}
+}
+
 func TestMiMoV25TTSChatProtocolForcesUpstreamStream(t *testing.T) {
 	t.Parallel()
 

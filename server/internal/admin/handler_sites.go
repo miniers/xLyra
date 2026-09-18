@@ -2667,6 +2667,8 @@ func intFromAny(value any) int {
 
 func siteTypeIconURL(siteType string) string {
 	switch strings.TrimSpace(strings.ToLower(siteType)) {
+	case "nvidia":
+		return "/brand-icons/nvidia.png"
 	case "openai":
 		return "/brand-icons/openai.png"
 	case "opencode_go":
@@ -2685,6 +2687,8 @@ func siteTypeIconURL(siteType string) string {
 		return "/brand-icons/moonshot.png"
 	case "kimi_code":
 		return "/brand-icons/moonshot.png"
+	case "command_code":
+		return "/brand-icons/commandcode.svg"
 	case "newapi":
 		return "/brand-icons/newapi.png"
 	case "xlyra":

@@ -17,6 +17,7 @@ type openAIChatProtocolAdapter struct {
 	path               string
 	mimoTTS            bool
 	mimoTTSFormat      string
+	nvidia             bool
 }
 
 func (a openAIChatProtocolAdapter) ProtocolName() string {
@@ -64,10 +65,19 @@ func newOpenAIChatProtocolAdapter(request gatewayRequest, candidate routeengine.
 		path:               spec.Path,
 		mimoTTS:            isMiMoV25TTSModel(candidate.Model.UpstreamName),
 		mimoTTSFormat:      strings.ToLower(stringFromMapAny(audio, "format")),
+		nvidia:             normalizeSpecKey(candidate.Site.SiteType) == "nvidia",
 	}
 }
 
 func (a openAIChatProtocolAdapter) applyUpstreamPolicy(payload map[string]any, candidate routeengine.Candidate) map[string]any {
+	if a.nvidia {
+		if value, ok := payload["max_completion_tokens"]; ok {
+			if _, exists := payload["max_tokens"]; !exists {
+				payload["max_tokens"] = value
+			}
+			delete(payload, "max_completion_tokens")
+		}
+	}
 	if a.mimoTTS {
 		payload["stream"] = true
 		audio, _ := payload["audio"].(map[string]any)
@@ -85,6 +95,9 @@ func (a openAIChatProtocolAdapter) applyUpstreamPolicy(payload map[string]any, c
 }
 
 func (a openAIChatProtocolAdapter) UpstreamPath(baseURL string) string {
+	if a.nvidia {
+		baseURL = strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(baseURL), "/"), "/v1")
+	}
 	return upstreamPathFromSpec(baseURL, resolvedProtocolSpec{
 		OfficialBaseURL: a.baseURL,
 		BasePath:        a.basePath,
@@ -93,6 +106,9 @@ func (a openAIChatProtocolAdapter) UpstreamPath(baseURL string) string {
 }
 
 func (a openAIChatProtocolAdapter) TransformBufferedResponse(statusCode int, headers http.Header, body []byte) (gatewayBufferedResponse, error) {
+	if a.nvidia && statusCode == http.StatusAccepted {
+		return gatewayBufferedResponse{}, fmt.Errorf("NVIDIA returned an asynchronous response; pending responses are not supported")
+	}
 	contentType := strings.TrimSpace(headers.Get("Content-Type"))
 	if a.mimoTTS && statusCode >= 200 && statusCode < 300 && (isEventStreamContentType(contentType) || looksLikeSSEBody(body)) {
 		convertedBody, usage, err := bufferMiMoTTSChatStream(body, a.mimoTTSFormat)

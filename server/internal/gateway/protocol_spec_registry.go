@@ -184,6 +184,11 @@ func effectiveProtocolSpec(protocol canonicalProtocol, candidate routeengine.Can
 	model := strings.TrimSpace(candidate.Model.UpstreamName)
 	modelPattern, modelDef := matchModelSpec(config.Models, model)
 	providerKey := normalizeSpecKey(candidate.Site.SiteType)
+	// NVIDIA hosts other publishers' models through its own Chat API. Do not
+	// inherit original-vendor paths, parameter defaults or reasoning policies.
+	if providerKey == "nvidia" {
+		modelPattern, modelDef = "", modelSpecDefinition{}
+	}
 	if providerKey == "" || genericOpenAICompatibleSiteType(providerKey) {
 		providerKey = normalizeSpecKey(modelDef.Provider)
 	}

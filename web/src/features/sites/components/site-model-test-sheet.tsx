@@ -1,3 +1,4 @@
+import { compareSiteModels, siteModelDisplayName } from '@/features/sites/lib/site-model-items'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
@@ -121,7 +122,7 @@ export function SiteModelTestSheet({
   const availableModels = useMemo(
     () => [...(modelsQuery.data?.items ?? EMPTY_MODELS)]
       .filter((model) => !modelId || model.id === modelId)
-      .sort((a, b) => a.upstream_model_name.localeCompare(b.upstream_model_name)),
+      .sort(compareSiteModels),
     [modelId, modelsQuery.data?.items],
   )
   const keyword = search.trim().toLowerCase()
@@ -247,7 +248,7 @@ export function SiteModelTestSheet({
                                 size="sm"
                               />
                               <div className="truncate text-sm font-medium text-foreground" title={model.upstream_model_name}>
-                                {model.upstream_model_name}
+                                {siteModelDisplayName(model)}
                               </div>
                             </div>
                           </td>

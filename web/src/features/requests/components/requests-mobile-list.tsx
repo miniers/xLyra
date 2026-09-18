@@ -16,6 +16,7 @@ import {
   formatDateTime,
   formatInteger,
   formatTokenCompact,
+  formatTPS,
   requestReasoningEffort,
   requestCacheTokens,
   requestCacheWriteTokens,
@@ -25,6 +26,7 @@ import {
   requestPhaseLabel,
   requestResponseModeLabel,
   requestResponseModeVariant,
+  requestTPS,
 } from '@/features/requests/lib/request-utils'
 import { requestLogDisplayKey, type RequestLogDisplayItem } from '@/features/requests/lib/request-live'
 import { useRequestListAnimation } from '@/hooks/use-request-list-animation'
@@ -72,6 +74,7 @@ export function RequestsMobileList({
         const statusCode = item.upstream_status_code ?? item.status_code ?? '-'
         const reasoningEffort = requestReasoningEffort(item)
         const inProgress = requestIsInProgress(item)
+        const tps = requestTPS(item)
 
         return (
           <Card
@@ -146,10 +149,17 @@ export function RequestsMobileList({
                     {t('mobile.statusCode', { code: statusCode })}
                   </Badge>
                   <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">
-                    {t('mobile.tokens', {
-                      input: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.prompt_tokens)}`,
-                      output: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.completion_tokens)}`,
-                    })}
+                    {tps != null
+                      ? t('mobile.tokensWithTps', {
+                          input: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.prompt_tokens)}`,
+                          output: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.completion_tokens)}`,
+                          tps: formatTPS(tps),
+                        })
+                      : t('mobile.tokens', {
+                          input: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.prompt_tokens)}`,
+                          output: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.completion_tokens)}`,
+                        })
+                    }
                   </Badge>
                   {(hasCacheRead || hasCacheWrite) ? (
                     <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">

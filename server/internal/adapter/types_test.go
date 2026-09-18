@@ -105,6 +105,14 @@ func TestRegistryRegistersDefaultModulesBySiteType(t *testing.T) {
 			wantType:         "adapter.OpenCodeGo",
 			wantCapabilities: []Capability{CapabilityHealthProbe, CapabilityListModels},
 		},
+		"nvidia": {
+			wantType:         "*adapter.NVIDIA",
+			wantCapabilities: []Capability{CapabilityHealthProbe, CapabilityListModels},
+		},
+		"command_code": {
+			wantType:         "adapter.CommandCode",
+			wantCapabilities: []Capability{CapabilityValidateCredential, CapabilityListModels, CapabilityHealthProbe},
+		},
 	}
 
 	for siteType, tt := range cases {
@@ -134,8 +142,8 @@ func TestRegistryRegistersDefaultModulesBySiteType(t *testing.T) {
 	}
 
 	modules := registry.Modules()
-	if len(modules) != 12 {
-		t.Fatalf("default module count = %d, want 12", len(modules))
+	if len(modules) != 14 {
+		t.Fatalf("default module count = %d, want 14", len(modules))
 	}
 	modules[0] = nil
 	fresh := registry.Modules()

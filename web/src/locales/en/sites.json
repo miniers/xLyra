@@ -218,6 +218,7 @@
       "kimi_code": "Connect with a Kimi coding model API key",
       "zhipu": "Connect with a Zhipu GLM general API key",
       "glm_code": "Connect with a GLM Coding Plan API key",
+      "command_code": "Connect with a Command Code API key (anti-detection & quota-aware)",
       "newapi": "Use a system token for a self-hosted or third-party panel",
       "xlyra": "Connect an xLyra gateway with an access token or one downstream API key",
       "grok": "Connect Grok via xAI account device authorization (multi-account)"

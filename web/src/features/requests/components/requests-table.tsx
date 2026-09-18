@@ -25,6 +25,7 @@ import {
   formatDateTime,
   formatInteger,
   formatTokenCompact,
+  formatTPS,
   requestReasoningEffort,
   requestCacheTokens,
   requestCacheWriteTokens,
@@ -34,6 +35,7 @@ import {
   requestPhaseLabel,
   requestResponseModeLabel,
   requestResponseModeVariant,
+  requestTPS,
 } from '@/features/requests/lib/request-utils'
 import { requestLogDisplayKey, type RequestLogDisplayItem } from '@/features/requests/lib/request-live'
 import { useRequestListAnimation } from '@/hooks/use-request-list-animation'
@@ -315,7 +317,10 @@ export function RequestsTable({
                         ) : null}
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
-                        {item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.completion_tokens)}
+                        <div>{item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.completion_tokens)}</div>
+                        <div className="text-muted-soft whitespace-nowrap text-xs">
+                          {formatTPS(requestTPS(item))}
+                        </div>
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
                         {formatCurrency(item.usage.estimated_cost, item.usage.currency)}

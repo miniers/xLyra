@@ -723,6 +723,8 @@ func providerIconURL(provider string) string {
 		return "/brand-icons/nvidia.png"
 	case "kimi_code":
 		return "/brand-icons/moonshot.png"
+	case "command_code":
+		return "/brand-icons/commandcode.svg"
 	case "bytedance":
 		return "/brand-icons/bytedance-dark.png"
 	case "vidu":

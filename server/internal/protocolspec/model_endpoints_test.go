@@ -46,6 +46,22 @@ func TestResolveOpenCodeGoModelEndpointTypes(t *testing.T) {
 	}
 }
 
+func TestResolveCommandCodeModelEndpointTypes(t *testing.T) {
+	t.Parallel()
+
+	endpoints, ok, err := ResolveModelEndpointTypes("command_code", "claude-sonnet-4-6")
+	if err != nil {
+		t.Fatalf("ResolveModelEndpointTypes error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected match for claude-sonnet-4-6")
+	}
+	want := []string{"openai", "anthropic-messages", "openai-response"}
+	if !reflect.DeepEqual(endpoints, want) {
+		t.Fatalf("got endpoints %v, want %v", endpoints, want)
+	}
+}
+
 func TestProtocolSpecDataIsDefensivelyCopied(t *testing.T) {
 	t.Parallel()
 

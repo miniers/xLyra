@@ -622,6 +622,15 @@
     }
   },
   "providers": {
+    "nvidia": {
+      "protocol": "openai_chat",
+      "official_base_url": "https://integrate.api.nvidia.com",
+      "path": "/v1/chat/completions",
+      "documentation": ["https://docs.api.nvidia.com/nim/reference/llm-apis"],
+      "request_params": {
+        "unsupported": ["metadata", "store", "service_tier"]
+      }
+    },
     "openai": {
       "protocol": "openai_responses",
       "official_base_url": "https://api.openai.com",
@@ -633,6 +642,55 @@
         "default": "metadata",
         "reasoning_summary": "passthrough"
       }
+    },
+    "command_code": {
+      "protocol": "command_code",
+      "official_base_url": "https://api.commandcode.ai",
+      "documentation": [
+        "https://commandcode.ai/"
+      ],
+      "paths": {
+        "command_code": {
+          "path": "/alpha/generate"
+        },
+        "openai_chat": {
+          "path": "/alpha/generate"
+        },
+        "openai_responses": {
+          "path": "/alpha/generate"
+        },
+        "anthropic_messages": {
+          "path": "/alpha/generate"
+        }
+      },
+      "protocol_request_params": {
+        "anthropic_messages": {
+          "defaults": {
+            "max_tokens": 64000
+          }
+        }
+      },
+      "model_endpoint_types": [
+        {
+          "prefixes": [
+            "claude-",
+            "gpt-",
+            "deepseek",
+            "moonshot",
+            "zai-org",
+            "minimax",
+            "qwen",
+            "stepfun",
+            "xiaomi",
+            "google"
+          ],
+          "supported_endpoint_types": [
+            "openai",
+            "anthropic-messages",
+            "openai-response"
+          ]
+        }
+      ]
     },
     "opencode_go": {
       "protocol": "openai_chat",

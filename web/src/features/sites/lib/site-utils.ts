@@ -93,6 +93,7 @@ export function formatSiteTypeLabel(siteType: string, siteTypes?: SiteTypeInfo[]
   if (t === 'anthropic') return 'Anthropic Claude'
   if (t === 'google_gemini') return 'Google Gemini'
   if (t === 'deepseek') return 'DeepSeek'
+  if (t === 'nvidia') return 'NVIDIA NIM'
   if (t === 'minimax') return 'MiniMax'
   if (t === 'xiaomi_mimo') return 'Xiaomi MiMo'
   if (t === 'moonshot') return 'Moonshot'
@@ -229,7 +230,7 @@ export function formatProbeAmount(value: number) {
   }).format(value)
 }
 
-function quotaProbeCurrency(unit?: string) {
+export function quotaProbeCurrency(unit?: string) {
   const normalized = (unit ?? 'usd').trim().toUpperCase()
   if (normalized === '' || normalized === 'USD') return { prefix: '$', suffix: '' }
   if (normalized === 'CNY' || normalized === 'RMB') return { prefix: '¥', suffix: '' }
@@ -370,7 +371,7 @@ function fiveHourWeeklyQuotaDetails(probe: SiteQuotaProbeSummary, language?: str
 
 export function sub2APIKeyQuotaDetails(probe: SiteQuotaProbeResult | null | undefined, language?: string): SiteBalanceDetail[] {
   if (!probe?.entries?.length) return []
-  const order = ['balance', 'daily', 'weekly', 'monthly']
+  const order = ['balance', 'five_hour', 'daily', 'weekly', 'monthly']
   const entries = [...probe.entries].sort((left, right) => {
     const leftIndex = order.indexOf(left.label)
     const rightIndex = order.indexOf(right.label)
@@ -378,6 +379,7 @@ export function sub2APIKeyQuotaDetails(probe: SiteQuotaProbeResult | null | unde
   })
   const labels: Record<string, SiteBalanceDetailLabel> = {
     balance: 'accountBalance',
+    five_hour: 'fiveHourQuota',
     daily: 'dailyQuota',
     weekly: 'weeklyQuota',
     monthly: 'monthlyQuota',

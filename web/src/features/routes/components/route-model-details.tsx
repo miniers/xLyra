@@ -39,7 +39,7 @@ import {
   routeCooldownTargetLabel,
 } from '@/features/routes/lib/route-format'
 import { formatRouteScore, routeModelScore, routeSiteScore } from '@/features/routes/lib/route-score'
-import type { PendingChannelState, RouteChannelRow } from '@/features/routes/lib/types'
+import type { PendingChannelState, RouteChannelRow, RouteSiteModelGroup } from '@/features/routes/lib/types'
 
 const EMPTY_TRACES: RouteTrace[] = []
 
@@ -79,6 +79,8 @@ export function RouteModelDetails({
   onRoutingExplorationReset,
   onRoutingExplorationResetSite,
   routingExplorationPending = false,
+  togglingSiteModelId,
+  onToggleSiteModel,
   compact = false,
 }: {
   item?: RouteOverviewItem
@@ -112,6 +114,8 @@ export function RouteModelDetails({
   onRoutingExplorationReset?: () => void
   onRoutingExplorationResetSite?: (siteModelId: string) => void
   routingExplorationPending?: boolean
+  togglingSiteModelId?: string
+  onToggleSiteModel?: (group: RouteSiteModelGroup, enabled: boolean) => void
   compact?: boolean
 }) {
   const { t } = useTranslation('routes')
@@ -203,6 +207,8 @@ export function RouteModelDetails({
                 const model = site ? modelsMap[site.id]?.find((item) => item.id === group.siteModelId) : undefined
                 if (site && model) setTestTarget({ site, model })
               }}
+              togglingSiteModelId={togglingSiteModelId}
+              onToggleSiteModel={onToggleSiteModel}
               compact={compact}
             />
           </div>

@@ -210,6 +210,7 @@
       "kimi_code": "Kimi コーディングモデル API キーで接続",
       "zhipu": "Zhipu GLM 汎用 API キーで接続",
       "glm_code": "GLM Coding Plan API キーで接続",
+      "command_code": "Command Code API キーで接続（アンチ検出・クォータ感知）",
       "newapi": "自ホストまたはサードパーティパネルにはシステムトークンを使用",
       "xlyra": "アクセストークンまたは単一の下流 API キーで xLyra ゲートウェイに接続",
       "grok": "xAI アカウントのデバイス認証で Grok に接続（複数アカウント対応）"

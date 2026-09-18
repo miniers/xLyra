@@ -262,6 +262,22 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     },
   })
 
+  const toggleSiteModelMutation = useMutation({
+    mutationFn: async ({ siteId, siteModelId, enabled }: { siteId: string; siteModelId: string; enabled: boolean }) => {
+      return updateSiteModelStatus(siteId, siteModelId, { enabled })
+    },
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: sitesQueryKeys.models(variables.siteId) })
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'routes-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('details.table.toggleSuccess'))
+    },
+    onError: (error) => {
+      toast.error(t('details.table.toggleFailed'), { description: error.message })
+    },
+  })
+
   const clearAnomalyMutation = useMutation({
     mutationFn: clearRouteAnomaly,
     onSuccess: async () => {
@@ -502,6 +518,14 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
         onRoutingExplorationResetSite={(siteModelId) => {
           const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
           if (modelId) routingExplorationResetMutation.mutate({ modelId, siteModelId })
+        }}
+        togglingSiteModelId={toggleSiteModelMutation.isPending ? toggleSiteModelMutation.variables?.siteModelId : undefined}
+        onToggleSiteModel={(group, enabled) => {
+          toggleSiteModelMutation.mutate({
+            siteId: group.siteId,
+            siteModelId: group.siteModelId,
+            enabled,
+          })
         }}
       />
     )

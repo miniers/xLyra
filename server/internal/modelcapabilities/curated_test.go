@@ -113,7 +113,7 @@ func TestUsesModelNameEndpointInferencePreservesSpecializedChannels(t *testing.T
 	t.Parallel()
 
 	for _, siteType := range []string{
-		"newapi", "codex", "antigravity", "deepseek", "minimax", "xiaomi_mimo",
+		"newapi", "codex", "antigravity", "command_code", "deepseek", "minimax", "xiaomi_mimo",
 		"moonshot", "kimi_code", "google", "google_gemini", "zhipu", "glm_code",
 	} {
 		if UsesModelNameEndpointInference(siteType) {

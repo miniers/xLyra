@@ -2,6 +2,8 @@ import { Fragment, useMemo, useState, type ComponentType, type ReactNode } from 
 import * as PopoverPrimitive from '@radix-ui/react-popover'
 import { useTranslation } from 'react-i18next'
 import {
+  Ban,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Ellipsis,
@@ -82,6 +84,8 @@ type RouteSiteModelTableProps = {
   onRoutingLockChannel?: (siteModelId: string) => void
   onRoutingLockDelete?: () => void
   onTestSiteModel?: (group: RouteSiteModelGroup) => void
+  togglingSiteModelId?: string
+  onToggleSiteModel?: (group: RouteSiteModelGroup, enabled: boolean) => void
   compact?: boolean
 }
 
@@ -113,6 +117,8 @@ export function RouteSiteModelTable({
   onRoutingLockChannel,
   onRoutingLockDelete,
   onTestSiteModel,
+  togglingSiteModelId,
+  onToggleSiteModel,
   compact = false,
 }: RouteSiteModelTableProps) {
   const { t } = useTranslation('routes')
@@ -186,6 +192,8 @@ export function RouteSiteModelTable({
                 onQuickLock={onRoutingLockChannel ? () => onRoutingLockChannel(group.siteModelId) : undefined}
                 onDeleteLock={onRoutingLockDelete}
                 onTest={onTestSiteModel}
+                togglingSiteModelId={togglingSiteModelId}
+                onToggleSiteModel={onToggleSiteModel}
                 onAdjustScore={onAdjustScore}
                 scoreAdjustingSiteModelId={scoreAdjustingSiteModelId}
                 scoreAdjustingDirection={scoreAdjustingDirection}
@@ -332,6 +340,8 @@ export function RouteSiteModelTable({
                           onQuickLock={onRoutingLockChannel ? () => onRoutingLockChannel(group.siteModelId) : undefined}
                           onDeleteLock={onRoutingLockDelete}
                           onTest={onTestSiteModel}
+                          togglingSiteModelId={togglingSiteModelId}
+                          onToggleSiteModel={onToggleSiteModel}
                           onAdjustScore={onAdjustScore}
                           scoreAdjustingSiteModelId={scoreAdjustingSiteModelId}
                           scoreAdjustingDirection={scoreAdjustingDirection}
@@ -541,6 +551,8 @@ function SiteModelActions({
   onClearAutomaticAnomaly,
   onResetSite,
   explorationPending,
+  togglingSiteModelId,
+  onToggleSiteModel,
   t,
 }: {
   group: RouteSiteModelGroup
@@ -557,6 +569,8 @@ function SiteModelActions({
   onClearAutomaticAnomaly: (candidate: RouteCandidateItem) => void
   onResetSite?: (siteModelId: string) => void
   explorationPending: boolean
+  togglingSiteModelId?: string
+  onToggleSiteModel?: (group: RouteSiteModelGroup, enabled: boolean) => void
   t: TFunction
 }) {
   const scoreAdjusting = scoreAdjustingSiteModelId === group.siteModelId
@@ -588,6 +602,8 @@ function SiteModelActions({
         onOpenLock={onOpenLock}
         onDeleteLock={onDeleteLock}
         onTest={onTest}
+        toggling={togglingSiteModelId === group.siteModelId}
+        onToggleSiteModel={onToggleSiteModel}
         onAdjustScore={onAdjustScore}
         scoreAdjusting={scoreAdjusting}
         scoreAdjustingDirection={scoreAdjustingDirection}
@@ -609,6 +625,8 @@ function SiteModelActionsMenu({
   onOpenLock,
   onDeleteLock,
   onTest,
+  toggling,
+  onToggleSiteModel,
   onAdjustScore,
   scoreAdjusting,
   scoreAdjustingDirection,
@@ -625,6 +643,8 @@ function SiteModelActionsMenu({
   onOpenLock: () => void
   onDeleteLock?: () => void
   onTest?: (group: RouteSiteModelGroup) => void
+  toggling?: boolean
+  onToggleSiteModel?: (group: RouteSiteModelGroup, enabled: boolean) => void
   onAdjustScore: (candidate: RouteCandidateItem, direction: RouteScoreAdjustmentDirection) => void
   scoreAdjusting: boolean
   scoreAdjustingDirection?: RouteScoreAdjustmentDirection
@@ -667,6 +687,13 @@ function SiteModelActionsMenu({
             label={t('details.table.test')}
             disabled={!onTest}
             onClick={() => run(() => onTest?.(group))}
+          />
+          <ActionItem
+            icon={toggling ? LoaderCircle : (group.siteModelEnabled ? Ban : CheckCircle2)}
+            label={group.siteModelEnabled ? t('details.table.disableModel') : t('details.table.enableModel')}
+            disabled={!onToggleSiteModel || toggling}
+            busy={toggling}
+            onClick={() => run(() => onToggleSiteModel?.(group, !group.siteModelEnabled))}
           />
           {candidate ? (
             <>
@@ -768,6 +795,8 @@ function MobileSiteModelRow({
   onClearAutomaticAnomaly,
   onResetSite,
   explorationPending,
+  togglingSiteModelId,
+  onToggleSiteModel,
   t,
   children,
 }: {
@@ -788,6 +817,8 @@ function MobileSiteModelRow({
   onClearAutomaticAnomaly: (candidate: RouteCandidateItem) => void
   onResetSite?: (siteModelId: string) => void
   explorationPending: boolean
+  togglingSiteModelId?: string
+  onToggleSiteModel?: (group: RouteSiteModelGroup, enabled: boolean) => void
   t: TFunction
   children: ReactNode
 }) {
@@ -858,6 +889,8 @@ function MobileSiteModelRow({
             onQuickLock={onQuickLock}
             onDeleteLock={onDeleteLock}
             onTest={onTest}
+            togglingSiteModelId={togglingSiteModelId}
+            onToggleSiteModel={onToggleSiteModel}
             onAdjustScore={onAdjustScore}
             scoreAdjustingSiteModelId={scoreAdjustingSiteModelId}
             scoreAdjustingDirection={scoreAdjustingDirection}

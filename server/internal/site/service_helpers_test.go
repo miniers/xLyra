@@ -629,6 +629,7 @@ func TestCapabilityProviderForSiteMapsSupportedAdapters(t *testing.T) {
 		{siteType: "xiaomi_mimo", want: "xiaomi_mimo"},
 		{siteType: "moonshot", want: "openai"},
 		{siteType: "kimi_code", want: "openai"},
+		{siteType: "command_code", want: "command_code"},
 		{siteType: "zhipu", want: "zhipuai"},
 		{siteType: "glm_code", want: "zhipuai"},
 		{siteType: "codex", want: "openai"},

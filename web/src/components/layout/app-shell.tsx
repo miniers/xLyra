@@ -8,6 +8,8 @@ import { MobileAppShell } from '@/components/layout/mobile-app-shell'
 import { SystemVersionText } from '@/components/layout/system-version-text'
 import { Button } from '@/components/ui/button'
 import { useMobileLayout } from '@/hooks/use-media-query'
+import { cn } from '@/lib/utils'
+import { useSidebarStore } from '@/stores/sidebar-store'
 
 export function AppShell({ children }: PropsWithChildren) {
   const isMobile = useMobileLayout()
@@ -22,14 +24,20 @@ export function AppShell({ children }: PropsWithChildren) {
 function DesktopAppShell({ children }: PropsWithChildren) {
   const { t } = useTranslation('components')
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const isCollapsed = useSidebarStore((s) => s.isCollapsed)
 
   return (
     <div className="app-viewport">
       <div className="ambient-background" />
       <div className="noise-overlay" />
       <div className="flex h-full w-full relative z-0">
-        <aside className="hidden h-[calc(100vh-2rem)] my-4 ml-4 w-[280px] shrink-0 lg:block rounded-[24px] overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.12)] border border-[hsl(var(--glass-border))] z-20">
-          <AppSidebar className="border-none rounded-none" />
+        <aside
+          className={cn(
+            'hidden h-[calc(100vh-2rem)] my-4 ml-4 shrink-0 lg:block rounded-[24px] overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.12)] border border-[hsl(var(--glass-border))] z-20 transition-[width] duration-300 ease-in-out',
+            isCollapsed ? 'w-[68px]' : 'w-[280px]',
+          )}
+        >
+          <AppSidebar className="border-none rounded-none" collapsible />
         </aside>
 
         <div className="relative flex min-w-0 flex-1 flex-col z-10">

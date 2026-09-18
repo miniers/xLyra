@@ -14,6 +14,7 @@ import {
   formatPerRequestPrice,
   formatPrice,
   formatTokenMetric,
+  formatTPS,
   requestCachePrice,
   requestCacheRatio,
   requestCacheTokens,
@@ -37,6 +38,7 @@ import {
   requestMappedModel,
   requestModelName,
   requestResponseModeLabel,
+  requestTPS,
 } from '@/features/requests/lib/request-utils'
 
 export function RequestDetailRow({ item }: { item: RequestLogItem }) {
@@ -104,6 +106,7 @@ export function RequestDetailContent({ item }: { item: RequestLogItem }) {
   const cacheWriteTokens = requestCacheWriteTokens(detail)
   const cachePrice = requestCachePrice(detail)
   const costFormula = requestCostFormula(detail, t)
+  const tps = requestTPS(detail)
   const currency = detail.cost_calculation?.currency ?? detail.usage.currency ?? detail.pricing?.currency
   const totalCost = detail.cost_calculation?.estimated_cost ?? detail.usage.estimated_cost
   const groupName = requestGroupName(detail)
@@ -151,6 +154,9 @@ export function RequestDetailContent({ item }: { item: RequestLogItem }) {
           <DetailRow label={t('detail.usage')}>
             <InlineItem label={t('detail.input')} value={formatTokenMetric(detail.cost_calculation?.prompt_tokens ?? detail.usage.prompt_tokens)} tone="badge" />
             <InlineItem label={t('detail.output')} value={formatTokenMetric(detail.cost_calculation?.completion_tokens ?? detail.usage.completion_tokens)} tone="badge" />
+            {tps != null ? (
+              <InlineItem label={t('detail.tps')} value={formatTPS(tps)} tone="badge" />
+            ) : null}
             <InlineItem label={t('detail.cache')} value={formatTokenMetric(cacheTokens)} tone="badge" />
             {typeof cacheWriteTokens === 'number' && cacheWriteTokens > 0 ? (
               <InlineItem label={t('detail.cacheWrite')} value={formatTokenMetric(cacheWriteTokens)} tone="badge" />

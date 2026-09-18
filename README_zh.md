@@ -26,6 +26,7 @@ xLyra 支持：
 - Chat Completions、Responses 和 Messages 协议转换
 - OAuth 账号编排与 Token 刷新
 - 多站点、多账号模型路由
+- NVIDIA NIM 模型同步与 Build 目录缓存；免费模型展示为 `[free]` 并默认排在前面
 - 基于健康状态的故障转移与冷却机制
 - API Key 配额与模型权限
 - 用量与成本统计
@@ -176,10 +177,12 @@ xLyra 在下游和上游协议格式之间透明转换。Failover 只允许发�
 | 类型 | 当前能力 |
 | --- | --- |
 | OpenAI Compatible / 官方 API Key 类站点 | 凭证校验、模型同步、协议转发 |
+| NVIDIA NIM | OpenAI-compatible Chat 转发；缓存 Build 目录元数据，免费模型标记 `[free]` 并优先展示 |
 | CLIProxyAPI | OpenAI-compatible 转发，并以只读方式同步上游 auth-files 账号/额度快照 |
 | Anthropic | Messages 协议转发，支持 Chat / Responses ↔ Messages 转换 |
 | Grok | OAuth CLI 通道、多账号管理、图片生成、按 tier 分档模型可用性 |
 | OpenCode Go | 订阅套餐模型与额度路由 |
+| Command Code | 原生直连官方上游，CLI 1.53.1 硬件指纹与反检测伪装，5h/周滚动窗口与月度额度感知自动冷却，粘性调度提升 KV 缓存命中率，支持 Chat / Messages / Responses 多协议双向转换 |
 | DeepSeek / Minimax / Moonshot / Kimi Code / 小米 MiMo / Google Gemini | 按站型适配凭证、模型同步或兼容协议转发 |
 | GLM / GLM Code（智谱） | 通用 API 与 Coding Plan 凭证校验、模型同步、兼容协议转发 |
 | xLyra | 级联中转：带 ETag 缓存的模型同步、下游 API Key 清单与摘要、管理员用户摘要 |

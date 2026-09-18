@@ -216,6 +216,7 @@
       "xiaomi_mimo": "小米 MiMo API Key 接入",
       "moonshot": "月之暗面平台 API Key 接入",
       "kimi_code": "Kimi 编程模型 API Key 接入",
+      "command_code": "Command Code 平台 API Key 接入（含反检测与额度感知）",
       "newapi": "自建或第三方面板，使用系统令牌",
       "xlyra": "xLyra 网关接入，可使用访问令牌或单个下游 API Key",
       "grok": "通过 xAI 账号设备授权接入 Grok，支持多账号"

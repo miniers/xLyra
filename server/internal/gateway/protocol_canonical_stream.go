@@ -122,6 +122,9 @@ func buildStreamProtocolSpecs() map[canonicalProtocol]streamProtocolSpec {
 				return newAnthropicMessagesStreamEncoder(options, w, capture)
 			},
 		},
+		canonicalProtocolCommandCode: {
+			NewDecoder: func() canonicalStreamDecoder { return newCommandCodeStreamDecoder() },
+		},
 	}
 }
 

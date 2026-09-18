@@ -2771,6 +2771,8 @@ func capabilityProviderForSite(siteType string) string {
 		return "openai"
 	case "kimi_code":
 		return "openai"
+	case "command_code":
+		return "command_code"
 	case "zhipu", "glm_code":
 		return "zhipuai"
 	case "codex":

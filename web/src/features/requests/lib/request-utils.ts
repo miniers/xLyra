@@ -43,6 +43,40 @@ export function requestFirstByteLatency(item: RequestLogItem) {
   return item.first_byte_latency_ms
 }
 
+export function requestTPS(
+  item: Pick<RequestLogItem, 'stream' | 'response_mode' | 'success' | 'state' | 'is_live' | 'latency_ms' | 'first_byte_latency_ms'> & {
+    usage?: { completion_tokens?: number | null } | null
+    cost_calculation?: { completion_tokens?: number | null } | null
+    output_tokens?: number | null
+  },
+): number | null {
+  if (requestIsInProgress(item)) return null
+  if (!item.success) return null
+
+  const completionTokens = firstNumber(
+    item.cost_calculation?.completion_tokens,
+    item.usage?.completion_tokens,
+    item.output_tokens,
+  )
+
+  if (!isNonNegativeFiniteNumber(completionTokens)) return null
+
+  const totalLatency = item.latency_ms
+  if (!isPositiveFiniteNumber(totalLatency)) return null
+
+  if (completionTokens === 0) return 0
+
+  const isStream = item.stream === true || item.response_mode === 'stream'
+  const firstByte = isStream && isPositiveFiniteNumber(item.first_byte_latency_ms) ? item.first_byte_latency_ms : null
+
+  if (firstByte != null && totalLatency > firstByte) {
+    const generationMs = totalLatency - firstByte
+    return (completionTokens / generationMs) * 1000
+  }
+
+  return (completionTokens / totalLatency) * 1000
+}
+
 export function requestCredentialName(detail: RequestLogDetail | RequestLogItem) {
   const value = detail.credential?.name
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -556,6 +590,11 @@ export function formatTokenCompact(value?: number | null): string | null {
   if (value >= 1_000_000) return `${+(value / 1_000_000).toFixed(1)}M`
   if (value >= 1_000) return `${+(value / 1_000).toFixed(1)}K`
   return String(value)
+}
+
+export function formatTPS(value?: number | null, fallback = '—'): string {
+  if (!isNonNegativeFiniteNumber(value)) return fallback
+  return `${new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)} t/s`
 }
 
 export function compactJoin(parts: Array<string | null | undefined>, separator = ' / ') {

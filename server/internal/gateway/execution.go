@@ -145,6 +145,9 @@ func (h Handler) forwardGatewayRequest(
 			}
 		}
 	}
+	if err == nil && isCommandCodeSite(candidate.Site.SiteType) {
+		credentials = orderCommandCodeStickyCredentials(candidate.Site.ID, credentials)
+	}
 	if err != nil {
 		startedAt := time.Now()
 		result := gatewayAttemptResult{
@@ -628,11 +631,17 @@ func (h Handler) forwardGatewayRequest(
 			result.credentialDecisionSet = true
 			h.logGatewayCredentialDecision(ctx, requestID, candidate, request, result, decision)
 			if decision.ShouldTryNextCredential {
+				if isCommandCodeSite(candidate.Site.SiteType) {
+					recordCommandCodeCredentialFailure(candidate.Site.ID, selectedCredential.Credential.ID)
+				}
 				if !request.Diagnostic && result.statusCode != http.StatusNotFound {
 					h.cooldownAfterFailure(ctx, candidate, result)
 				}
 				lastResult = result
 				continue
+			}
+			if isCommandCodeSite(candidate.Site.SiteType) && result.success {
+				recordCommandCodeCredentialSuccess(candidate.Site.ID, selectedCredential.Credential.ID)
 			}
 			return result
 		}
@@ -656,11 +665,17 @@ func (h Handler) forwardGatewayRequest(
 			releaseCredentialSelection()
 		}
 		if result.success {
+			if isCommandCodeSite(candidate.Site.SiteType) {
+				recordCommandCodeCredentialSuccess(candidate.Site.ID, selectedCredential.Credential.ID)
+			}
 			decision := credentialDecisionForResult(result, false)
 			result.credentialDecision = decision
 			result.credentialDecisionSet = true
 			h.logGatewayCredentialDecision(ctx, requestID, candidate, request, result, decision)
 			return result
+		}
+		if isCommandCodeSite(candidate.Site.SiteType) {
+			recordCommandCodeCredentialFailure(candidate.Site.ID, selectedCredential.Credential.ID)
 		}
 		lastResult = result
 		decision := credentialDecisionForResult(result, false)

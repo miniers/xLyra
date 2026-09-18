@@ -24,6 +24,7 @@ const (
 	canonicalProtocolGoogleGemini      canonicalProtocol = "google_gemini"
 	canonicalProtocolAnthropicMessages canonicalProtocol = "anthropic_messages"
 	canonicalProtocolGrok              canonicalProtocol = "grok"
+	canonicalProtocolCommandCode       canonicalProtocol = "command_code"
 )
 
 type canonicalRequest struct {

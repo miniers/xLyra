@@ -1,3 +1,4 @@
+import { isNVIDIAFreeModel, siteModelDisplayName } from '@/features/sites/lib/site-model-items'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -67,6 +68,7 @@ import {
   formatDateTime,
   formatProbeAmount,
   isNewAPISite,
+  quotaProbeCurrency,
   siteAPIKeyGroupBadgeVariant,
 } from '@/features/sites/lib/site-utils'
 import {
@@ -582,13 +584,14 @@ export function SiteAPIKeysDraw({
                         (entry) => entry.label === 'balance',
                       ) ?? probe.entries[0])
                     : undefined
+                  const probeCurrency = probeEntry ? quotaProbeCurrency(probeEntry.unit) : { prefix: '$', suffix: '' }
                   const probeText = probeEntry
                     ? probeEntry.unlimited
                       ? probeEntry.used != null
-                        ? `$${formatProbeAmount(probeEntry.used)} / ∞`
+                        ? `${probeCurrency.prefix}${formatProbeAmount(probeEntry.used)} / ∞${probeCurrency.suffix}`
                         : '∞'
                       : probeEntry.remaining != null
-                        ? `$${formatProbeAmount(probeEntry.remaining)}${probeEntry.limit != null ? ' / $' + formatProbeAmount(probeEntry.limit) : ''}`
+                        ? `${probeCurrency.prefix}${formatProbeAmount(probeEntry.remaining)}${probeEntry.limit != null ? ' / ' + probeCurrency.prefix + formatProbeAmount(probeEntry.limit) : ''}${probeCurrency.suffix}`
                         : null
                     : null
                   const probeFailed = Boolean(probe && probe.status !== 'ok')
@@ -1375,18 +1378,30 @@ function canAddOfficialAPIKey(site: Site): boolean {
 
 function buildAPIKeyModelItems(apiKey: SiteAPIKey | null, siteModels: SiteModel[], onConfigure: (model: SiteAPIKeyModel) => void): ModelsDrawItem[] {
   if (!apiKey) return []
-  const models = apiKeyModels(apiKey)
+  const siteModelByKey = new Map<string, SiteModel>()
+  for (const siteModel of siteModels) {
+    siteModelByKey.set(siteModel.id, siteModel)
+    siteModelByKey.set(siteModel.upstream_model_name, siteModel)
+  }
+  const modelForAPIKeyModel = (model: SiteAPIKeyModel) => siteModelByKey.get(model.site_model_id ?? '') ?? siteModelByKey.get(model.name.trim())
+  const models = [...apiKeyModels(apiKey)].sort((a, b) => {
+    const left = modelForAPIKeyModel(a)
+    const right = modelForAPIKeyModel(b)
+    return Number(isNVIDIAFreeModel(right)) - Number(isNVIDIAFreeModel(left))
+      || (left ? siteModelDisplayName(left) : a.name).localeCompare(right ? siteModelDisplayName(right) : b.name)
+  })
   if (!models.length) return []
   return models.map((model) => {
     const name = model.name.trim()
-    const siteModel = siteModels.find((item) => item.id === model.site_model_id)
+    const siteModel = modelForAPIKeyModel(model)
     const siteTypes = endpointTypesFromCapabilities(siteModel?.capabilities)
     const endpointTypes = (model.supported_endpoint_types ?? []).filter((value) => siteTypes.length === 0 || siteTypes.includes(value))
     const effectiveTypes = model.effective_endpoint_types ?? endpointTypes
     const protocolTypes = endpointTypes.length ? endpointTypes : effectiveTypes
     return {
       id: name,
-      displayName: name,
+      displayName: siteModel ? siteModelDisplayName(siteModel) : name,
+      copyName: name,
       upstreamName: protocolTypes.join(' '),
       protocols: protocolTypes.map((endpointType) => ({ label: formatEndpointTypeLabel(endpointType), enabled: effectiveTypes.includes(endpointType) })),
       enabled: model.enabled,

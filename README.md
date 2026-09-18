@@ -26,6 +26,7 @@ xLyra supports:
 - Chat Completions, Responses, and Messages protocol conversion
 - OAuth account orchestration and token refresh
 - Multi-site and multi-account model routing
+- NVIDIA NIM model synchronization with cached Build catalog metadata; free models are labeled `[free]` and sorted first
 - Health-aware failover and cooldown
 - API key quotas and model permissions
 - Usage and cost tracking
@@ -176,10 +177,12 @@ Concurrency queue timeouts (`upstream_concurrency_wait_timeout`) never trigger a
 | Type | Current capability |
 | --- | --- |
 | OpenAI Compatible / official API-key sites | Credential validation, model sync, and protocol forwarding |
+| NVIDIA NIM | OpenAI-compatible Chat forwarding; cached Build catalog metadata marks `[free]` models and sorts them first |
 | CLIProxyAPI | OpenAI-compatible forwarding plus read-only upstream auth-file account/quota snapshots |
 | Anthropic | Messages forwarding, plus Chat / Responses ↔ Messages conversion |
 | Grok | OAuth CLI channel, multi-account management, image generation, tier-based model availability |
 | OpenCode Go | Subscription plan models and quota-based routing |
+| Command Code | Native upstream connection, CLI 1.53.1 hardware fingerprinting & anti-detection, rolling window & monthly quota probing with auto-cooldown, sticky cache scheduling, and Chat / Messages / Responses protocol conversion |
 | DeepSeek / Minimax / Moonshot / Kimi Code / Xiaomi MiMo / Google Gemini | Credential, model sync, or compatible protocol forwarding depending on site type |
 | GLM / GLM Code (Zhipu) | General API and Coding Plan credential validation, model sync, and compatible protocol forwarding |
 | xLyra | Cascade relay: model sync with ETag caching, downstream API key list and summary, admin user summary |

@@ -292,6 +292,7 @@ export function DownstreamAPIKeysWorkspace() {
       <APIKeyModelsDraw
         apiKey={modelsKey}
         canonicalModels={canonicalModels}
+        sites={sites}
         onOpenChange={(open) => {
           if (!open) setModelsKey(null)
         }}

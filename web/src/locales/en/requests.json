@@ -105,6 +105,7 @@
     "usage": "Usage",
     "input": "Input",
     "output": "Output",
+    "tps": "TPS",
     "cache": "Cache",
     "cacheWrite": "Cache write",
     "ratio": "Ratio",
@@ -207,7 +208,8 @@
     "filters": "Filters",
     "done": "Done",
     "statusCode": "Status {{code}}",
-    "tokens": "In {{input}} / Out {{output}}"
+    "tokens": "In {{input}} / Out {{output}}",
+    "tokensWithTps": "In {{input}} / Out {{output}} ({{tps}})"
   },
   "page": {
     "loadFailed": "Failed to load request logs",

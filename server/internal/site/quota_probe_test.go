@@ -2,8 +2,10 @@ package site
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -23,6 +25,7 @@ func TestNormalizeQuotaProbeType(t *testing.T) {
 		"xlyra":       QuotaProbeTypeXLyra,
 		"kimi":        QuotaProbeTypeKimi,
 		"glm":         QuotaProbeTypeGLM,
+		"command_code": QuotaProbeTypeCommandCode,
 		"cliproxyapi": QuotaProbeTypeCLIProxyAPI,
 	} {
 		value, err := NormalizeQuotaProbeType(input)
@@ -874,6 +877,9 @@ func TestDefaultQuotaProbeTypeForSite(t *testing.T) {
 	if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: "glm_code"}); got != QuotaProbeTypeGLM {
 		t.Fatalf("glm_code default probe = %q, want %q", got, QuotaProbeTypeGLM)
 	}
+	if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: "command_code"}); got != QuotaProbeTypeCommandCode {
+		t.Fatalf("command_code default probe = %q, want %q", got, QuotaProbeTypeCommandCode)
+	}
 
 	official := []struct {
 		siteType string
@@ -884,6 +890,7 @@ func TestDefaultQuotaProbeTypeForSite(t *testing.T) {
 		{"kimi_code", "https://api.kimi.com/coding/v1", QuotaProbeTypeKimi},
 		{"glm_code", "https://open.bigmodel.cn/api/coding/paas/v4", QuotaProbeTypeGLM},
 		{"glm_code", "https://api.z.ai/api/coding/paas/v4", QuotaProbeTypeGLM},
+		{"command_code", "https://api.commandcode.ai", QuotaProbeTypeCommandCode},
 	}
 	for _, tc := range official {
 		if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: tc.siteType, BaseURL: tc.baseURL}); got != tc.want {
@@ -900,6 +907,7 @@ func TestDefaultQuotaProbeTypeForSite(t *testing.T) {
 		{"glm_code", "https://relay.example.com/api/coding/paas/v4"},
 		{"glm_code", "https://bigmodel.cn.evil.example.com/api/coding/paas/v4"},
 		{"glm_code", "not a url"},
+		{"command_code", "https://relay.example.com"},
 	}
 	for _, tc := range thirdParty {
 		if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: tc.siteType, BaseURL: tc.baseURL}); got != "" {
@@ -1200,5 +1208,187 @@ func TestSyncCodingPlanQuotaCooldownSkipsFailedProbe(t *testing.T) {
 	service.syncCodingPlanQuotaCooldown(context.Background(), uuid.New(), uuid.New(), QuotaProbeResult{Status: "error"})
 	if updates != 0 {
 		t.Fatalf("cooldown writes = %d, want 0 for failed probe", updates)
+	}
+}
+
+func TestProbeCommandCodeQuotaSuccess(t *testing.T) {
+	t.Parallel()
+
+	resetTimeMs := time.Now().Add(2 * time.Hour).UnixMilli()
+	subEndMs := time.Now().Add(15 * 24 * time.Hour).UnixMilli()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer cc-test-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("User-Agent") != "cli" || r.Header.Get("x-command-code-version") != "1.53.1" {
+			t.Errorf("missing or incorrect CLI headers: UA=%s, version=%s", r.Header.Get("User-Agent"), r.Header.Get("x-command-code-version"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/alpha/whoami":
+			_, _ = w.Write([]byte(`{
+				"user": {"id": "u_42", "name": "Alice", "userName": "alice"},
+				"org": {"id": "org_99"}
+			}`))
+		case "/alpha/billing/credits":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"credits": {
+					"monthlyCredits": 18.5,
+					"purchasedCredits": 5.0,
+					"freeCredits": 2.0,
+					"planId": "individual-goat",
+					"belowThreshold": false
+				},
+				"windowLimits": {
+					"limited": false,
+					"exceeded": null,
+					"fiveHour": {
+						"used": 1.23,
+						"cap": 5.0,
+						"exceeded": false,
+						"resetAt": %d
+					},
+					"weekly": {
+						"used": 12.5,
+						"cap": 40.0,
+						"exceeded": false,
+						"resetAt": %d
+					}
+				}
+			}`, resetTimeMs, resetTimeMs)))
+		case "/alpha/billing/subscriptions":
+			if r.URL.Query().Get("orgId") != "org_99" {
+				t.Errorf("expected orgId=org_99 in subscriptions query, got %q", r.URL.Query().Get("orgId"))
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"success": true,
+				"data": {
+					"planId": "individual-goat",
+					"status": "active",
+					"currentPeriodEnd": %d
+				}
+			}`, subEndMs)))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeCommandCode, server.URL, "cc-test-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok, got error: %s", result.Error)
+	}
+	if result.Plan != "GOAT" {
+		t.Fatalf("plan = %q, want GOAT", result.Plan)
+	}
+	if result.ExpiresAt == nil {
+		t.Fatal("expected non-nil ExpiresAt")
+	}
+
+	if len(result.Entries) != 3 {
+		t.Fatalf("len(entries) = %d, want 3", len(result.Entries))
+	}
+
+	var fiveHour, weekly, balance *QuotaProbeEntry
+	for i := range result.Entries {
+		e := &result.Entries[i]
+		switch e.Label {
+		case "five_hour":
+			fiveHour = e
+		case "weekly":
+			weekly = e
+		case "balance":
+			balance = e
+		}
+	}
+
+	if fiveHour == nil || fiveHour.Remaining == nil || *fiveHour.Remaining != 3.77 {
+		t.Fatalf("fiveHour = %+v, want remaining=3.77", fiveHour)
+	}
+	if weekly == nil || weekly.Remaining == nil || *weekly.Remaining != 27.5 {
+		t.Fatalf("weekly = %+v, want remaining=27.5", weekly)
+	}
+	if balance == nil || balance.Remaining == nil || *balance.Remaining != 25.5 {
+		t.Fatalf("balance = %+v, want remaining=25.5", balance)
+	}
+	if balance.Limit == nil || *balance.Limit != 70 {
+		t.Fatalf("balance limit = %+v, want 70", balance.Limit)
+	}
+}
+
+func TestProbeCommandCodeQuotaExhaustedWindow(t *testing.T) {
+	t.Parallel()
+
+	futureReset := time.Now().Add(45 * time.Minute)
+	resetTimeMs := futureReset.UnixMilli()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/alpha/whoami":
+			_, _ = w.Write([]byte(`{"user": {"id": "u_1"}}`))
+		case "/alpha/billing/credits":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"credits": {
+					"monthlyCredits": 10.0,
+					"purchasedCredits": 0,
+					"freeCredits": 0,
+					"planId": "individual-pro"
+				},
+				"windowLimits": {
+					"limited": true,
+					"exceeded": "fiveHour",
+					"fiveHour": {
+						"used": 5.0,
+						"cap": 5.0,
+						"exceeded": true,
+						"resetAt": %d
+					},
+					"weekly": {
+						"used": 10.0,
+						"cap": 30.0,
+						"exceeded": false,
+						"resetAt": %d
+					}
+				}
+			}`, resetTimeMs, resetTimeMs)))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeCommandCode, server.URL, "cc-test-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok, got %v", result)
+	}
+
+	deadline, exhaustedWindows := codingPlanQuotaCooldownDeadline(result, time.Now())
+	if len(exhaustedWindows) != 1 || exhaustedWindows[0] != "five_hour" {
+		t.Fatalf("exhausted windows = %v, want [five_hour]", exhaustedWindows)
+	}
+	if deadline.Sub(futureReset).Abs() > 2*time.Second {
+		t.Fatalf("deadline = %v, want ~%v", deadline, futureReset)
+	}
+}
+
+func TestProbeCommandCodeQuotaAuthFailure(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": "invalid_api_key"}`))
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeCommandCode, server.URL, "bad-key")
+	if result.Status != "error" {
+		t.Fatalf("status = %q, want error", result.Status)
+	}
+	if !strings.Contains(result.Error, "401") {
+		t.Fatalf("error = %q, want 401 mention", result.Error)
 	}
 }
