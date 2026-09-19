@@ -18,15 +18,15 @@ import (
 
 func TestNormalizeQuotaProbeType(t *testing.T) {
 	for input, expected := range map[string]string{
-		"":            "",
-		"none":        "",
-		"sub2api":     QuotaProbeTypeSub2API,
-		"newapi":      QuotaProbeTypeNewAPI,
-		"xlyra":       QuotaProbeTypeXLyra,
-		"kimi":        QuotaProbeTypeKimi,
-		"glm":         QuotaProbeTypeGLM,
+		"":             "",
+		"none":         "",
+		"sub2api":      QuotaProbeTypeSub2API,
+		"newapi":       QuotaProbeTypeNewAPI,
+		"xlyra":        QuotaProbeTypeXLyra,
+		"kimi":         QuotaProbeTypeKimi,
+		"glm":          QuotaProbeTypeGLM,
 		"command_code": QuotaProbeTypeCommandCode,
-		"cliproxyapi": QuotaProbeTypeCLIProxyAPI,
+		"cliproxyapi":  QuotaProbeTypeCLIProxyAPI,
 	} {
 		value, err := NormalizeQuotaProbeType(input)
 		if err != nil || value != expected {
@@ -1316,6 +1316,22 @@ func TestProbeCommandCodeQuotaSuccess(t *testing.T) {
 	}
 	if balance.Limit == nil || *balance.Limit != 70 {
 		t.Fatalf("balance limit = %+v, want 70", balance.Limit)
+	}
+	if result.Kind != "token_plan" || fiveHour.Unit != "credits" || weekly.Unit != "credits" {
+		t.Fatalf("quota units/kind: %+v", result)
+	}
+	if fiveHour.Limit == nil || *fiveHour.Limit != 5 || weekly.Limit == nil || *weekly.Limit != 40 {
+		t.Fatalf("window limits missing: %+v / %+v", fiveHour, weekly)
+	}
+	if fiveHour.ResetAt == nil || weekly.ResetAt == nil {
+		t.Fatal("window reset times missing")
+	}
+}
+
+func TestParseCommandCodeTimestampPreservesRFC3339Strings(t *testing.T) {
+	got := parseCommandCodeTimestamp("2026-09-25T00:33:00Z")
+	if got == nil || *got != "2026-09-25T00:33:00Z" {
+		t.Fatalf("timestamp = %v, want RFC3339 value", got)
 	}
 }
 

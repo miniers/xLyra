@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -62,6 +61,7 @@ type commandCodeProtocolAdapter struct {
 	request            gatewayRequest
 	candidate          routeengine.Candidate
 	downstreamProtocol canonicalProtocol
+	sessionID          string
 }
 
 func newCommandCodeProtocolAdapter(request gatewayRequest, candidate routeengine.Candidate) *commandCodeProtocolAdapter {
@@ -74,7 +74,19 @@ func newCommandCodeProtocolAdapter(request gatewayRequest, candidate routeengine
 }
 
 func (a *commandCodeProtocolAdapter) ProtocolName() string {
+	switch a.downstreamProtocol {
+	case canonicalProtocolOpenAIChat:
+		return "command_code_to_chat_completions"
+	case canonicalProtocolOpenAIResponses:
+		return "command_code_to_responses"
+	case canonicalProtocolAnthropicMessages:
+		return "command_code_to_anthropic_messages"
+	}
 	return "command_code"
+}
+
+func (a *commandCodeProtocolAdapter) usesRawBufferedResponse() bool {
+	return true
 }
 
 func (a *commandCodeProtocolAdapter) UpstreamPath(baseURL string) string {
@@ -109,10 +121,11 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 	}
 
 	maxTokens := 64000
-	if mt, ok := request.Payload["max_tokens"].(float64); ok && mt > 0 {
-		maxTokens = int(mt)
-	} else if mt, ok := request.Payload["max_completion_tokens"].(float64); ok && mt > 0 {
-		maxTokens = int(mt)
+	for _, name := range []string{"max_output_tokens", "max_completion_tokens", "max_tokens"} {
+		if mt, ok := intFromAny(request.Payload[name]); ok && mt > 0 {
+			maxTokens = mt
+			break
+		}
 	}
 	if maxTokens > 200000 {
 		maxTokens = 200000
@@ -123,6 +136,12 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 	ccMessages := []map[string]any{}
 
 	if request.Canonical != nil {
+		toolNames := make(map[string]string)
+		for _, msg := range request.Canonical.Messages {
+			for _, call := range msg.ToolCalls {
+				toolNames[call.ID] = call.Name
+			}
+		}
 		if strings.TrimSpace(request.Canonical.Instructions) != "" {
 			systemBlocks = append(systemBlocks, map[string]any{
 				"type": "text",
@@ -147,13 +166,23 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 				parts := []map[string]any{}
 				for _, part := range msg.Content {
 					if part.Type == "image" || part.ImageURL != "" {
+						mediaType := nonEmptyString(part.MimeType, "image/jpeg")
+						imageRef := strings.TrimSpace(part.ImageURL)
+						if imageRef == "" {
+							imageRef = strings.TrimSpace(part.FileData)
+						}
+						if strings.HasPrefix(imageRef, "data:") {
+							chunks := strings.SplitN(strings.TrimPrefix(imageRef, "data:"), ";base64,", 2)
+							if len(chunks) == 2 {
+								if strings.TrimSpace(chunks[0]) != "" {
+									mediaType = strings.TrimSpace(chunks[0])
+								}
+							}
+						} else if imageRef != "" && !strings.HasPrefix(imageRef, "http://") && !strings.HasPrefix(imageRef, "https://") {
+							imageRef = "data:" + mediaType + ";base64," + imageRef
+						}
 						parts = append(parts, map[string]any{
-							"type": "image",
-							"image": map[string]any{
-								"type":       "base64",
-								"media_type": nonEmptyString(part.MimeType, "image/jpeg"),
-								"data":       part.FileData,
-							},
+							"type": "image", "image": imageRef, "mimeType": mediaType,
 						})
 					} else {
 						parts = append(parts, map[string]any{
@@ -171,6 +200,11 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 				})
 			} else if strings.EqualFold(msg.Role, "assistant") {
 				parts := []map[string]any{}
+				for _, thinking := range msg.Thinking {
+					if thinking.Thinking != "" {
+						parts = append(parts, map[string]any{"type": "reasoning", "text": thinking.Thinking})
+					}
+				}
 				for _, part := range msg.Content {
 					parts = append(parts, map[string]any{
 						"type": "text",
@@ -208,7 +242,7 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 						{
 							"type":       "tool-result",
 							"toolCallId": msg.ToolCallID,
-							"toolName":   mapCCToolName(msg.Name),
+							"toolName":   mapCCToolName(nonEmptyString(toolNames[msg.ToolCallID], msg.Name)),
 							"output": map[string]any{
 								"type":  "text",
 								"value": val,
@@ -278,7 +312,7 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 
 	body := map[string]any{
 		"config":         cfg,
-		"memory":         nil,
+		"memory":         "",
 		"taste":          nil,
 		"skills":         nil,
 		"permissionMode": "standard",
@@ -288,8 +322,7 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 
 	// Session / threadId
 	sessID := a.resolveSessionID(request, "")
-	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	if uuidRegex.MatchString(sessID) {
+	if _, err := uuid.Parse(sessID); err == nil {
 		body["threadId"] = sessID
 	}
 
@@ -297,6 +330,9 @@ func (a *commandCodeProtocolAdapter) BuildUpstreamPayload(request gatewayRequest
 }
 
 func (a *commandCodeProtocolAdapter) resolveSessionID(request gatewayRequest, key string) string {
+	if a.sessionID != "" {
+		return a.sessionID
+	}
 	candidates := []string{
 		request.DownstreamHeaders.Get("x-session-id"),
 		request.DownstreamHeaders.Get("x-claude-code-session-id"),
@@ -305,13 +341,16 @@ func (a *commandCodeProtocolAdapter) resolveSessionID(request gatewayRequest, ke
 	for _, id := range candidates {
 		id = strings.TrimSpace(id)
 		if len(id) >= 8 {
+			a.sessionID = id
 			return id
 		}
 	}
 	if strings.TrimSpace(key) != "" {
-		return ccSessionForKey(key, time.Now())
+		a.sessionID = ccSessionForKey(key, time.Now())
+	} else {
+		a.sessionID = uuid.NewString()
 	}
-	return uuid.NewString()
+	return a.sessionID
 }
 
 func (a *commandCodeProtocolAdapter) BuildUpstreamBody(_ gatewayRequest, payload map[string]any) ([]byte, string, error) {
@@ -355,6 +394,7 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 
 	decoder := newCommandCodeStreamDecoder()
 	scanner := bufio.NewScanner(bytes.NewReader(body))
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 	var events []canonicalStreamEvent
 	for scanner.Scan() {
 		evs, err := decoder.DecodeLine(scanner.Bytes())
@@ -363,6 +403,10 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 		}
 		events = append(events, evs...)
 	}
+	if err := scanner.Err(); err != nil {
+		return gatewayBufferedResponse{}, fmt.Errorf("command code stream scan: %w", err)
+	}
+	events = append(events, decoder.Flush()...)
 
 	var fullText strings.Builder
 	var fullReasoning strings.Builder
@@ -390,11 +434,21 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 			})
 		case canonicalStreamEventUsage:
 			usage = ev.Usage
-		case canonicalStreamEventCompleted:
+		case canonicalStreamEventError:
+			return gatewayBufferedResponse{}, fmt.Errorf("command code upstream: %s", ev.ErrorMessage)
+		case canonicalStreamEventCompleted, canonicalStreamEventIncomplete:
 			if ev.FinishReason != "" {
 				finishReason = ev.FinishReason
 			}
 		}
+	}
+
+	resolvedModel := strings.TrimSpace(decoder.model)
+	if resolvedModel == "" {
+		resolvedModel = strings.TrimSpace(a.candidate.Model.UpstreamName)
+	}
+	if resolvedModel == "" {
+		resolvedModel = strings.TrimSpace(a.request.RequestedModel)
 	}
 
 	var outputJSON []byte
@@ -430,8 +484,18 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 				"input": input,
 			})
 		}
+		if len(content) == 0 {
+			content = append(content, map[string]any{
+				"type": "text",
+				"text": "",
+			})
+		}
 		stopReason := "end_turn"
-		if len(toolCalls) > 0 {
+		if finishReason == "length" {
+			stopReason = "max_tokens"
+		} else if finishReason == "pause_turn" || finishReason == "refusal" {
+			stopReason = finishReason
+		} else if len(toolCalls) > 0 {
 			stopReason = "tool_use"
 		}
 		respMap := map[string]any{
@@ -439,7 +503,7 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 			"type":        "message",
 			"role":        "assistant",
 			"content":     content,
-			"model":       decoder.model,
+			"model":       resolvedModel,
 			"stop_reason": stopReason,
 			"usage": map[string]any{
 				"input_tokens":  usage.PromptTokens,
@@ -450,20 +514,37 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 
 	case canonicalProtocolOpenAIResponses:
 		outputItems := []map[string]any{}
+		if fullReasoning.Len() > 0 {
+			outputItems = append(outputItems, map[string]any{
+				"id": "rs_" + uuid.NewString(), "type": "reasoning",
+				"summary": []map[string]any{{"type": "summary_text", "text": fullReasoning.String()}},
+			})
+		}
 		if fullText.Len() > 0 {
 			outputItems = append(outputItems, map[string]any{
+				"id": "msg_" + uuid.NewString(), "status": "completed",
 				"type": "message",
 				"role": "assistant",
 				"content": []map[string]any{
-					{"type": "text", "text": fullText.String()},
+					{"type": "output_text", "text": fullText.String(), "annotations": []any{}},
 				},
 			})
 		}
+		for _, tc := range toolCalls {
+			fn := tc["function"].(map[string]any)
+			outputItems = append(outputItems, map[string]any{
+				"id": "fc_" + uuid.NewString(), "type": "function_call", "status": "completed",
+				"call_id": tc["id"], "name": fn["name"], "arguments": fn["arguments"],
+			})
+		}
 		respMap := map[string]any{
-			"id":     responseID,
-			"object": "response",
-			"status": "completed",
-			"output": outputItems,
+			"id":                 responseID,
+			"object":             "response",
+			"status":             "completed",
+			"model":              resolvedModel,
+			"output":             outputItems,
+			"created_at":         decoder.createdAt,
+			"incomplete_details": nil,
 			"usage": map[string]any{
 				"total_tokens":    usage.TotalTokens,
 				"input_tokens":    usage.PromptTokens,
@@ -471,9 +552,20 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 				"reasoning_token": usage.ReasoningTokens,
 			},
 		}
+		if finishReason == "length" || finishReason == "pause_turn" {
+			reason := finishReason
+			if reason == "length" {
+				reason = "max_output_tokens"
+			}
+			respMap["status"] = "incomplete"
+			respMap["incomplete_details"] = map[string]any{"reason": reason}
+		}
 		outputJSON, err = json.Marshal(respMap)
 
 	default: // OpenAI Chat Completions
+		if finishReason == "pause_turn" {
+			finishReason = "length"
+		}
 		msg := map[string]any{
 			"role":    "assistant",
 			"content": fullText.String(),
@@ -491,7 +583,7 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 			"id":      responseID,
 			"object":  "chat.completion",
 			"created": decoder.createdAt,
-			"model":   decoder.model,
+			"model":   resolvedModel,
 			"choices": []map[string]any{
 				{
 					"index":         0,
@@ -523,6 +615,9 @@ type commandCodeStreamDecoder struct {
 	createdAt     int64
 	createdSent   bool
 	toolCallIndex int
+	sawFinish     bool
+	sawError      bool
+	pendingFinish *canonicalStreamEvent
 }
 
 func newCommandCodeStreamDecoder() *commandCodeStreamDecoder {
@@ -541,12 +636,19 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 		trimmed = strings.TrimSpace(trimmed[5:])
 	}
 	if trimmed == "[DONE]" {
-		return []canonicalStreamEvent{{Type: canonicalStreamEventCompleted}}, nil
+		return d.Flush(), nil
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
 		return nil, nil
+	}
+
+	if m, ok := raw["model"]; ok {
+		var modelStr string
+		if err := json.Unmarshal(m, &modelStr); err == nil && strings.TrimSpace(modelStr) != "" {
+			d.model = strings.TrimSpace(modelStr)
+		}
 	}
 
 	var eventType string
@@ -643,14 +745,15 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 		d.toolCallIndex++
 
 	case "finish-step", "finish":
+		d.sawFinish = true
 		var finishReason string
 		if fr, ok := raw["finishReason"]; ok {
 			_ = json.Unmarshal(fr, &finishReason)
 		}
-		if finishReason == "tool-calls" {
-			finishReason = "tool_calls"
-		} else if finishReason == "" {
-			finishReason = "stop"
+		finishReason = commandCodeFinishReason(finishReason)
+		if finishReason == "upstream_error" {
+			d.sawError = true
+			return []canonicalStreamEvent{{Type: canonicalStreamEventError, ErrorMessage: "provider reported an upstream connection failure"}}, nil
 		}
 
 		usageData := raw["totalUsage"]
@@ -681,12 +784,17 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 			}
 		}
 
-		events = append(events, canonicalStreamEvent{
-			Type:         canonicalStreamEventCompleted,
+		eventKind := canonicalStreamEventCompleted
+		if finishReason == "length" || finishReason == "pause_turn" {
+			eventKind = canonicalStreamEventIncomplete
+		}
+		d.pendingFinish = &canonicalStreamEvent{
+			Type:         eventKind,
 			FinishReason: finishReason,
-		})
+		}
 
 	case "error":
+		d.sawError = true
 		errMsg := "unknown error"
 		if errData, ok := raw["error"]; ok {
 			var e struct {
@@ -704,4 +812,36 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 	}
 
 	return events, nil
+}
+
+func (d *commandCodeStreamDecoder) Flush() []canonicalStreamEvent {
+	if d.sawError {
+		return nil
+	}
+	if d.pendingFinish != nil {
+		event := *d.pendingFinish
+		d.pendingFinish = nil
+		return []canonicalStreamEvent{event}
+	}
+	if !d.sawFinish && !d.sawError {
+		return []canonicalStreamEvent{{Type: canonicalStreamEventError, ErrorMessage: "stream ended without a finish event"}}
+	}
+	return nil
+}
+
+func commandCodeFinishReason(reason string) string {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "tool-calls", "tool_calls", "tool_use":
+		return "tool_calls"
+	case "length", "max_tokens", "max_output_tokens", "model_context_window_exceeded":
+		return "length"
+	case "network-error", "network_error", "network error", "networkerror",
+		"connection-error", "connection_error", "connection error", "connectionerror",
+		"upstream-error", "upstream_error", "upstream error", "upstreamerror":
+		return "upstream_error"
+	case "":
+		return "stop"
+	default:
+		return strings.ToLower(strings.TrimSpace(reason))
+	}
 }

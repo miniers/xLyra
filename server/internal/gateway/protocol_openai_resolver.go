@@ -306,7 +306,11 @@ func shouldUseOpenAIResponses(request gatewayRequest, candidate routeengine.Cand
 }
 
 func normalizeEndpointType(value string) string {
-	return strings.TrimSpace(strings.ToLower(value))
+	val := strings.TrimSpace(strings.ToLower(value))
+	if val == "openai-responses" || val == "responses" {
+		return "openai-response"
+	}
+	return val
 }
 
 func containsEndpointType(types []string, target string) bool {

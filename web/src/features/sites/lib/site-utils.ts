@@ -248,6 +248,12 @@ function formatProbePercent(value: number) {
 
 export function formatQuotaProbeBalance(probe: SiteQuotaProbeSummary | null | undefined) {
   if (!probe) return undefined
+  if (probe.probe_type === 'command_code') {
+    const balance = probe.entries?.find((entry) => entry.label === 'balance')
+    return typeof balance?.remaining === 'number'
+      ? `${formatProbeAmount(Math.max(0, balance.remaining))} credits`
+      : '-'
+  }
   if (probe.probe_type === 'kimi' || probe.probe_type === 'glm') {
     return formatFiveHourWeeklyQuotaBalance(probe)
   }
@@ -315,6 +321,9 @@ export function siteBalanceDetails(site: Site, language?: string): SiteBalanceDe
   const probe = site.quota_probe
   if (probe) {
     const probeType = probe.probe_type
+    if (probeType === 'command_code') {
+      return sub2APIKeyQuotaDetails(probe, language)
+    }
     if (probeType === 'kimi' || probeType === 'glm') {
       return fiveHourWeeklyQuotaDetails(probe, language)
     }
@@ -347,6 +356,19 @@ const WINDOW_QUOTA_ENTRY_ORDER = ['five_hour', 'weekly'] as const
 const WINDOW_QUOTA_ENTRY_LABELS: Record<string, SiteBalanceDetailLabel> = {
   five_hour: 'fiveHourQuota',
   weekly: 'weeklyQuota',
+}
+
+export function commandCodeQuotaWindows(probe: SiteQuotaProbeSummary | null | undefined): SiteBalanceDetail[] {
+  if (probe?.probe_type !== 'command_code') return []
+  return WINDOW_QUOTA_ENTRY_ORDER.flatMap((key) => {
+    const entry = probe.entries?.find((item) => item.label === key)
+    if (!entry || typeof entry.remaining !== 'number' || typeof entry.limit !== 'number' || entry.limit <= 0) return []
+    return [{
+      label: WINDOW_QUOTA_ENTRY_LABELS[key],
+      value: formatProbePercent(Math.min(100, Math.max(0, entry.remaining / entry.limit * 100))),
+      valuePrefix: 'remaining' as const,
+    }]
+  })
 }
 
 function fiveHourWeeklyQuotaDetails(probe: SiteQuotaProbeSummary, language?: string): SiteBalanceDetail[] {

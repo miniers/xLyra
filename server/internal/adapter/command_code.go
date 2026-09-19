@@ -129,7 +129,7 @@ func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential
 		}
 		caps := map[string]any{
 			"source":                   "command_code_spec",
-			"supported_endpoint_types": []string{"openai", "anthropic-messages", "openai-responses"},
+			"supported_endpoint_types": []string{"openai", "anthropic-messages", "openai-response"},
 			"tool_call":                true,
 			"supports_tools":           true,
 			"streaming":                true,
@@ -137,10 +137,12 @@ func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential
 		if item.ContextLength > 0 {
 			caps["context_length"] = item.ContextLength
 		}
+		pricing, _ := commandCodeModelPricing(modelID)
 		models = append(models, Model{
 			UpstreamName: modelID,
 			DisplayName:  modelID,
 			Capabilities: caps,
+			Pricing:      pricing,
 		})
 	}
 	return models, nil
@@ -180,16 +182,18 @@ func (a CommandCode) fetchModelCatalog(ctx context.Context, site SiteConfig, api
 func commandCodeFallbackModelList() []Model {
 	models := make([]Model, 0, len(commandCodeFallbackModels))
 	for _, item := range commandCodeFallbackModels {
+		pricing, _ := commandCodeModelPricing(item.ID)
 		models = append(models, Model{
 			UpstreamName: item.ID,
 			DisplayName:  item.Name,
 			Capabilities: map[string]any{
 				"source":                   "command_code_spec",
-				"supported_endpoint_types": []string{"openai", "anthropic-messages", "openai-responses"},
+				"supported_endpoint_types": []string{"openai", "anthropic-messages", "openai-response"},
 				"tool_call":                true,
 				"supports_tools":           true,
 				"streaming":                true,
 			},
+			Pricing: pricing,
 		})
 	}
 	return models

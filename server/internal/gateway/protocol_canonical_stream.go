@@ -1157,6 +1157,9 @@ func (e *openAIChatStreamEncoder) sendFinish() error {
 
 func (e *openAIChatStreamEncoder) sendIncomplete(event canonicalStreamEvent) error {
 	finishReason := nonEmptyString(event.FinishReason, "length")
+	if finishReason == "pause_turn" {
+		finishReason = "length"
+	}
 	return e.sendTerminal(finishReason, false, "response_incomplete")
 }
 
@@ -1168,7 +1171,7 @@ func (e *openAIChatStreamEncoder) sendTerminal(defaultFinishReason string, compl
 		return err
 	}
 	finishReason := defaultFinishReason
-	if e.sawToolCall && !e.sawText {
+	if completed && e.sawToolCall && !e.sawText {
 		finishReason = "tool_calls"
 	}
 	if err := e.writeChunk(map[string]any{
@@ -1236,22 +1239,23 @@ func (e *openAIChatStreamEncoder) writeChunk(chunk map[string]any) error {
 }
 
 type openAIResponsesStreamEncoder struct {
-	options       canonicalStreamOptions
-	w             http.ResponseWriter
-	capture       *streamCaptureState
-	responseID    string
-	model         string
-	createdAt     int64
-	responseSent  bool
-	textStarted   bool
-	textBuffer    strings.Builder
-	completed     bool
-	sequence      int
-	textOutputIdx int
-	contentIndex  int
-	nextOutputIdx int
-	toolCalls     map[string]*responsesStreamToolCallState
-	toolCallOrder []string
+	incompleteReason string
+	options          canonicalStreamOptions
+	w                http.ResponseWriter
+	capture          *streamCaptureState
+	responseID       string
+	model            string
+	createdAt        int64
+	responseSent     bool
+	textStarted      bool
+	textBuffer       strings.Builder
+	completed        bool
+	sequence         int
+	textOutputIdx    int
+	contentIndex     int
+	nextOutputIdx    int
+	toolCalls        map[string]*responsesStreamToolCallState
+	toolCallOrder    []string
 }
 
 type responsesStreamToolCallState struct {
@@ -1569,6 +1573,9 @@ func (e *openAIResponsesStreamEncoder) sendFinish() error {
 }
 
 func (e *openAIResponsesStreamEncoder) sendIncomplete(event canonicalStreamEvent) error {
+	if event.FinishReason == "pause_turn" {
+		e.incompleteReason = "pause_turn"
+	}
 	return e.sendTerminalResponse("incomplete", false, "response_incomplete")
 }
 
@@ -1733,6 +1740,10 @@ func (e *openAIResponsesStreamEncoder) writeEvent(event string, payload map[stri
 }
 
 func (e *openAIResponsesStreamEncoder) responsePayload(status string, usage completionUsage) map[string]any {
+	incomplete := incompleteDetailsPayload(status)
+	if status == "incomplete" && e.incompleteReason != "" {
+		incomplete = map[string]any{"reason": e.incompleteReason}
+	}
 	output := []any{}
 	if (status == "completed" || status == "incomplete") && e.textStarted {
 		output = append(output, map[string]any{
@@ -1776,7 +1787,7 @@ func (e *openAIResponsesStreamEncoder) responsePayload(status string, usage comp
 		"status":             status,
 		"background":         false,
 		"error":              nil,
-		"incomplete_details": incompleteDetailsPayload(status),
+		"incomplete_details": incomplete,
 		"model":              e.model,
 		"output":             output,
 		"usage":              responsesUsagePayload(usage),
@@ -1875,6 +1886,9 @@ func (e *anthropicMessagesStreamEncoder) EncodeEvent(event canonicalStreamEvent)
 		}
 		return e.sendFinish(stopReason, event.StopSequence, true, "done")
 	case canonicalStreamEventIncomplete:
+		if event.FinishReason == "pause_turn" {
+			return e.sendFinish("pause_turn", "", false, "response_incomplete")
+		}
 		return e.sendFinish("max_tokens", "", false, "response_incomplete")
 	case canonicalStreamEventError:
 		e.capture.endReason = "upstream_stream_error"

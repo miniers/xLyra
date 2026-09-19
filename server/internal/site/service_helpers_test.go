@@ -568,6 +568,12 @@ func TestCoalesceModelCapabilitiesMarksFirstUpstreamSourceOnlyForNewModels(t *te
 	if _, ok := merged.Capabilities["first_api_key"]; ok {
 		t.Fatalf("existing model should not gain first_api_key, got %#v", merged.Capabilities)
 	}
+
+	pricing := &adapter.ModelPricing{ModelName: "gpt-existing"}
+	merged = coalesceModelCapabilities(existing, adapter.Model{UpstreamName: "gpt-next", Pricing: pricing}, "key-c")
+	if merged.Pricing != pricing {
+		t.Fatalf("existing model should retain pricing metadata from the next credential, got %#v", merged.Pricing)
+	}
 }
 
 func TestSmallJSONAndSetHelpers(t *testing.T) {

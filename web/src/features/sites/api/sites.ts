@@ -115,7 +115,7 @@ export type ResponsesToolPolicy = 'passthrough' | 'compatibility'
 export type ResponsesHostedTool = 'image_generation'
 export type ResponsesImageGenerationPolicy =
   'passthrough' | 'strip_auto_tool' | 'disabled'
-export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'cliproxyapi'
+export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'cliproxyapi' | 'command_code'
 
 export type SiteQuotaProbeSummary = {
   status?: string

@@ -537,6 +537,7 @@ function ExplorationNumberField({
 }
 
 function SiteModelActions({
+  compact = false,
   group,
   locked,
   lockPending,
@@ -555,6 +556,7 @@ function SiteModelActions({
   onToggleSiteModel,
   t,
 }: {
+  compact?: boolean
   group: RouteSiteModelGroup
   locked: boolean
   lockPending: boolean
@@ -595,6 +597,7 @@ function SiteModelActions({
         </Button>
       ) : null}
       <SiteModelActionsMenu
+        compact={compact}
         group={group}
         locked={locked}
         lockPending={lockPending}
@@ -618,6 +621,7 @@ function SiteModelActions({
 }
 
 function SiteModelActionsMenu({
+  compact = false,
   group,
   locked,
   lockPending,
@@ -636,6 +640,7 @@ function SiteModelActionsMenu({
   explorationPending,
   t,
 }: {
+  compact?: boolean
   group: RouteSiteModelGroup
   locked: boolean
   lockPending: boolean
@@ -667,13 +672,14 @@ function SiteModelActionsMenu({
       <PopoverPrimitive.Trigger asChild>
         <Button
           type="button"
-          size="icon"
+          size={compact ? 'sm' : 'icon'}
           variant="ghost"
-          className="h-8 w-8 text-foreground/70 hover:text-foreground"
+          className={cn('shrink-0 text-foreground/70 hover:text-foreground', compact ? 'h-10 min-w-16 gap-1.5 px-2' : 'h-8 w-8')}
           aria-label={t('details.table.more')}
           title={t('details.table.more')}
         >
           <Ellipsis className="h-4 w-4" />
+          {compact ? <span>{t('details.table.more')}</span> : null}
         </Button>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
@@ -880,8 +886,9 @@ function MobileSiteModelRow({
             ) : null}
           </div>
         </div>
-        <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        <div className="shrink-0" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
           <SiteModelActions
+            compact
             group={group}
             locked={locked}
             lockPending={lockPending}

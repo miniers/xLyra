@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
-import { formatDateTime, formatSiteBalance, isSub2APIQuotaSite, siteBalanceDetails, sub2APIKeyQuotaDetails } from '@/features/sites/lib/site-utils'
+import { commandCodeQuotaWindows, formatDateTime, formatSiteBalance, isSub2APIQuotaSite, siteBalanceDetails, sub2APIKeyQuotaDetails } from '@/features/sites/lib/site-utils'
 import type { Site, SiteAPIKey } from '@/features/sites/api/sites'
 import { SiteAPIKeyQuotaDetailsContent, SiteQuotaDetailsPopover } from '@/features/sites/components/site-quota-details'
 
@@ -27,6 +27,19 @@ export function SiteBalanceDetailsContent({ site, apiKeys = [] }: { site: Site; 
   if (keyDetails.length === 0) {
     return (
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-left">
+        {site.quota_probe?.probe_type === 'command_code' && (
+          <>
+            {site.quota_probe.status === 'error' && <span className="col-span-2 text-destructive">{t('table.quotaDetails.probeFailed')}</span>}
+            {site.quota_probe.plan && <>
+              <span className="text-muted-foreground">{t('table.quotaDetails.plan')}</span>
+              <span>{site.quota_probe.plan}</span>
+            </>}
+            {site.quota_probe.expires_at && <>
+              <span className="text-muted-foreground">{t('table.quotaDetails.expiresAt')}</span>
+              <span>{formatDateTime(site.quota_probe.expires_at, i18n.language, 'h23')}</span>
+            </>}
+          </>
+        )}
         {details.map((detail, index) => (
           <div key={`${detail.label}-${index}`} className="contents">
             <span className="text-muted-foreground">{detail.labelText ?? t(`table.quotaDetails.${detail.label}`)}</span>
@@ -48,7 +61,10 @@ export function SiteBalanceCell({ site, apiKeys = [], className }: { site: Site;
   const { t, i18n } = useTranslation('sites')
   const value = formatSiteBalance(site)
   const { details, keyDetails } = getBalanceDetails(site, apiKeys, i18n.language)
-  const showTooltip = keyDetails.length > 0 || details.length > 0
+  const commandCode = site.quota_probe?.probe_type === 'command_code'
+  const windows = commandCodeQuotaWindows(site.quota_probe)
+  const failed = commandCode && site.quota_probe?.status === 'error'
+  const showTooltip = keyDetails.length > 0 || details.length > 0 || commandCode
   const detailValue = (detail: (typeof details)[number]) => {
     const quota = detail.valuePrefix
       ? `${t(`table.quotaDetails.${detail.valuePrefix}`)} ${detail.value}`
@@ -84,11 +100,15 @@ export function SiteBalanceCell({ site, apiKeys = [], className }: { site: Site;
   return (
     <SiteQuotaDetailsPopover
       enabled={showTooltip}
-      className={cn('text-sm text-foreground tabular-nums', className)}
+      className={cn('text-sm text-foreground tabular-nums', commandCode && 'inline-flex flex-col gap-0.5', className)}
       description={tooltipDescription}
       content={<SiteBalanceDetailsContent site={site} apiKeys={apiKeys} />}
     >
-      {value}
+      <span>{value}</span>
+      {windows.length > 0 && <span className="text-xs text-muted-foreground">
+        {windows.map((window) => `${t(`table.quotaDetails.${window.label}`)} ${t('table.quotaDetails.remaining')} ${window.value}`).join(' · ')}
+      </span>}
+      {failed && <span className="text-xs text-destructive">{t('table.quotaDetails.probeFailed')}</span>}
     </SiteQuotaDetailsPopover>
   )
 }

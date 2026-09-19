@@ -189,6 +189,14 @@ func cacheObservationInferUpstreamProtocol(candidate routeengine.Candidate, requ
 		return "anthropic_messages"
 	case isGrokSite(siteType):
 		return "openai_responses"
+	case isCommandCodeSite(siteType):
+		switch downstreamCanonicalProtocol(request.DownstreamPath) {
+		case canonicalProtocolOpenAIChat:
+			return "command_code_to_chat_completions"
+		case canonicalProtocolOpenAIResponses:
+			return "command_code_to_responses"
+		}
+		return "command_code_to_anthropic_messages"
 	}
 	downstream := downstreamCanonicalProtocol(request.DownstreamPath)
 	if alt, ok := alternateProtocolForCandidate(downstream, candidate); ok && canonicalProtocol(normalizeSpecKey(alt.Protocol)) == canonicalProtocolAnthropicMessages {

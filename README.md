@@ -183,6 +183,12 @@ Concurrency queue timeouts (`upstream_concurrency_wait_timeout`) never trigger a
 | Grok | OAuth CLI channel, multi-account management, image generation, tier-based model availability |
 | OpenCode Go | Subscription plan models and quota-based routing |
 | Command Code | Native upstream connection, CLI 1.53.1 hardware fingerprinting & anti-detection, rolling window & monthly quota probing with auto-cooldown, sticky cache scheduling, and Chat / Messages / Responses protocol conversion |
+
+Command Code sites show the remaining credits balance and 5-hour / weekly remaining percentages in the site list. Hover or focus the balance to see credit limits, reset times, plan and expiry; a failed quota refresh is marked while previously fetched values remain visible. Values use the existing quota-probe refresh cycle and the first successful account's detail snapshot, rather than summing account balances.
+
+Command Code conversion preserves images, reasoning history and tool calls across Chat, Messages and Responses. Truncated or failed upstream streams are reported as incomplete/error responses. Ordinary tests use offline fixtures; explicitly set `XLYRA_COMMAND_CODE_LIVE_TEST=1` with a local `.cmd_key` only when intentionally running the live upstream integration test.
+
+Command Code model pricing is maintained as a versioned static catalog keyed by the live model IDs returned from [`/provider/v1/models`](https://commandcode.ai/docs/provider#models), using the current `Now` values from [Pricing & Limits](https://commandcode.ai/docs/resources/pricing-limits#models). Model sync seeds these values into `site_model_pricings`; the current free models are stored as valid `$0` prices, manual site pricing overrides are preserved, page-only display models are excluded, and unknown future models continue to use the canonical fallback.
 | DeepSeek / Minimax / Moonshot / Kimi Code / Xiaomi MiMo / Google Gemini | Credential, model sync, or compatible protocol forwarding depending on site type |
 | GLM / GLM Code (Zhipu) | General API and Coding Plan credential validation, model sync, and compatible protocol forwarding |
 | xLyra | Cascade relay: model sync with ETag caching, downstream API key list and summary, admin user summary |
@@ -210,6 +216,7 @@ Concurrency queue timeouts (`upstream_concurrency_wait_timeout`) never trigger a
 - Model catalog, canonical models, aliases, site model binding, and support matrix
 - Manual canonical model pricing with automatic propagation as global fallback
 - LiteLLM and models.dev price sync; manual prices are not overwritten by automated sync
+- Command Code static pricing sync from the provider model catalog and current published prices
 - Site-level and site-group pricing multipliers
 - Long-context tiered pricing for OpenAI models
 

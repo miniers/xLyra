@@ -2711,6 +2711,9 @@ func coalesceModelCapabilities(existing adapter.Model, next adapter.Model, keyNa
 	if existing.Capabilities == nil {
 		existing.Capabilities = map[string]any{}
 	}
+	if existing.Pricing == nil && next.Pricing != nil {
+		existing.Pricing = next.Pricing
+	}
 	return existing
 }
 

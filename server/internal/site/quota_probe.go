@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1437,10 +1438,6 @@ func parseCommandCodeTimestamp(val any) *string {
 		if trimmed == "" {
 			return nil
 		}
-		var f float64
-		if _, err := fmt.Sscanf(trimmed, "%f", &f); err == nil && f > 0 {
-			return parseCommandCodeTimestamp(f)
-		}
 		if t, err := time.Parse(time.RFC3339, trimmed); err == nil {
 			str := t.UTC().Format(time.RFC3339)
 			return &str
@@ -1448,6 +1445,9 @@ func parseCommandCodeTimestamp(val any) *string {
 		if t, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
 			str := t.UTC().Format(time.RFC3339)
 			return &str
+		}
+		if f, err := strconv.ParseFloat(trimmed, 64); err == nil && f > 0 {
+			return parseCommandCodeTimestamp(f)
 		}
 	}
 	return nil

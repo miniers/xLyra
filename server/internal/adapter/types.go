@@ -66,6 +66,7 @@ type Model struct {
 	UpstreamName string
 	DisplayName  string
 	Capabilities map[string]any
+	Pricing      *ModelPricing
 }
 
 type APIKey struct {

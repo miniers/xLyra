@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Site, SiteQuotaProbeEntry } from '@/features/sites/api/sites'
-import { formatCompactTokens, formatDateTime, formatSiteBalance, isSiteAbnormal, siteBalanceDetails, sortSitesForDisplay, sub2APIKeyQuotaDetails } from '@/features/sites/lib/site-utils'
+import { commandCodeQuotaWindows, formatCompactTokens, formatDateTime, formatSiteBalance, isSiteAbnormal, siteBalanceDetails, sortSitesForDisplay, sub2APIKeyQuotaDetails } from '@/features/sites/lib/site-utils'
 
 function siteWithSyncState(failureClass: 'unknown' | 'limited' | 'transient' | 'credential_invalid'): Site {
   return {
@@ -50,6 +50,34 @@ describe('formatCompactTokens', () => {
   it('can omit the unit for compact mobile metrics', () => {
     expect(formatCompactTokens(3_200_000)).toBe('3.2M tokens')
     expect(formatCompactTokens(3_200_000, false)).toBe('3.2M')
+  })
+})
+
+describe('Command Code quota formatting', () => {
+  const site: Site = {
+    ...siteWithSyncState('unknown'), site_type: 'command_code',
+    quota_probe: {
+      probe_type: 'command_code', remaining_min: 0, unit: 'credits',
+      entries: [
+        { label: 'five_hour', unit: 'credits', remaining: 3.77, limit: 5, reset_at: '2026-09-19T10:00:00Z' },
+        { label: 'weekly', unit: 'credits', remaining: 27.5, limit: 40 },
+        { label: 'balance', unit: 'credits', remaining: 25.5 },
+      ],
+    },
+  }
+  it('uses the balance entry rather than a limiting window or another credential', () => {
+    expect(formatSiteBalance(site)).toBe('25.50 credits')
+    expect(commandCodeQuotaWindows(site.quota_probe).map((row) => row.value)).toEqual(['75.4%', '68.8%'])
+    const details = siteBalanceDetails(site, 'en')
+    expect(details[0].value).toBe('25.50 credits')
+    expect(details[1].value).toBe('3.77 credits / 5.00 credits')
+    expect(details[1].extra).toBe(formatDateTime('2026-09-19T10:00:00Z', 'en', 'h23'))
+  })
+  it('keeps stale values on error without inventing missing data', () => {
+    const probe = { ...site.quota_probe, status: 'error', entries: [{ label: 'weekly', remaining: 0, limit: 40 }] }
+    expect(formatSiteBalance({ ...site, quota_probe: probe })).toBe('-')
+    expect(commandCodeQuotaWindows(probe).map((row) => row.value)).toEqual(['0%'])
+    expect(commandCodeQuotaWindows({ ...probe, entries: [{ label: 'weekly', remaining: 0, limit: 0 }] })).toEqual([])
   })
 })
 

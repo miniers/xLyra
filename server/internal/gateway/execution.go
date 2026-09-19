@@ -706,6 +706,20 @@ func credentialSupportsProtocol(endpointTypes []string, protocol string) bool {
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	var accepted string
 	switch {
+	case protocol == "command_code_to_chat_completions":
+		accepted = "openai"
+	case protocol == "command_code_to_responses":
+		accepted = "openai-response"
+	case protocol == "command_code_to_anthropic_messages":
+		accepted = "anthropic-messages"
+	case strings.HasPrefix(protocol, "command_code"):
+		for _, endpointType := range endpointTypes {
+			val := normalizeEndpointType(endpointType)
+			if val == "openai" || val == "openai-response" || val == "anthropic-messages" {
+				return true
+			}
+		}
+		return false
 	case strings.HasPrefix(protocol, "openai_chat"):
 		accepted = "openai"
 	case strings.HasPrefix(protocol, "openai_responses"), strings.HasPrefix(protocol, "codex_responses"):
@@ -723,14 +737,14 @@ func credentialSupportsProtocol(endpointTypes []string, protocol string) bool {
 	}
 	if accepted != "" {
 		for _, endpointType := range endpointTypes {
-			if strings.EqualFold(strings.TrimSpace(endpointType), accepted) {
+			if normalizeEndpointType(endpointType) == normalizeEndpointType(accepted) {
 				return true
 			}
 		}
 		return false
 	}
 	for _, endpointType := range endpointTypes {
-		value := strings.ToLower(strings.TrimSpace(endpointType))
+		value := normalizeEndpointType(endpointType)
 		switch protocol {
 		case "openai_chat", "openai-chat", "openai":
 			if value == "openai" {

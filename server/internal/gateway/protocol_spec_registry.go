@@ -349,6 +349,8 @@ func inferCanonicalProtocol(protocolName string) canonicalProtocol {
 		return canonicalProtocolAntigravity
 	case strings.Contains(normalized, "google_gemini"):
 		return canonicalProtocolGoogleGemini
+	case strings.Contains(normalized, "command_code"):
+		return canonicalProtocolCommandCode
 	case strings.Contains(normalized, "responses"):
 		return canonicalProtocolOpenAIResponses
 	case strings.Contains(normalized, "audio_speech"):
