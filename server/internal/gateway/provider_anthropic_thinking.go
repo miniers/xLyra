@@ -325,13 +325,15 @@ type providerAnthropicStreamInspector struct {
 	signatureByIndex map[int]*strings.Builder
 	blockByIndex     map[int]map[string]any
 	toolUseIDs       []string
+	observeOutput    bool
 }
 
-func newProviderAnthropicStreamInspector() *providerAnthropicStreamInspector {
+func newProviderAnthropicStreamInspector(observeOutput bool) *providerAnthropicStreamInspector {
 	return &providerAnthropicStreamInspector{
 		thinkingByIndex:  map[int]*strings.Builder{},
 		signatureByIndex: map[int]*strings.Builder{},
 		blockByIndex:     map[int]map[string]any{},
+		observeOutput:    observeOutput,
 	}
 }
 
@@ -352,12 +354,30 @@ func (i *providerAnthropicStreamInspector) inspect(line []byte, capture *streamC
 	}
 	switch event.Type {
 	case "content_block_start":
+		if capture != nil && i.observeOutput {
+			switch strings.TrimSpace(anyString(event.ContentBlock["type"])) {
+			case "text", "thinking":
+				capture.observeOutputText(anyString(event.ContentBlock["text"]))
+				capture.observeOutputText(anyString(event.ContentBlock["thinking"]))
+			}
+		}
 		i.inspectContentBlockStart(event.Index, event.ContentBlock)
 	case "content_block_delta":
+		if capture != nil && i.observeOutput {
+			switch strings.TrimSpace(anyString(event.Delta["type"])) {
+			case "text_delta":
+				capture.observeOutputText(anyString(event.Delta["text"]))
+			case "thinking_delta":
+				capture.observeOutputText(anyString(event.Delta["thinking"]))
+			case "input_json_delta":
+				capture.observeOutputToolArguments(anyString(event.Delta["partial_json"]))
+			}
+		}
 		i.inspectContentBlockDelta(event.Index, event.Delta)
 	case "message_delta":
 		if capture != nil && (event.Usage.OutputTokens > 0 || event.Usage.InputTokens > 0) {
 			capture.usage = completionUsageFromGatewayUsage(gatewayUsageFromAnthropicUsage(event.Usage))
+			capture.observeOutputUsage(capture.usage)
 		}
 	case "message_stop":
 		if capture != nil {
@@ -429,7 +449,7 @@ func (i *providerAnthropicStreamInspector) flush() {
 }
 
 func proxyProviderAnthropicMessagesStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -438,7 +458,7 @@ func proxyProviderAnthropicMessagesStream(ctx context.Context, w http.ResponseWr
 	flusher, _ := w.(http.Flusher)
 	reader := bufio.NewReader(resp.Body)
 	headersWritten := false
-	inspector := newProviderAnthropicStreamInspector()
+	inspector := newProviderAnthropicStreamInspector(true)
 
 	writeHeaders := func() {
 		if headersWritten {

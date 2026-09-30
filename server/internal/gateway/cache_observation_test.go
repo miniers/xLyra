@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -347,9 +348,10 @@ func TestCacheShadowAffinityRequiresCompatibleHealthyCandidate(t *testing.T) {
 		CacheDomainHash:  cacheObservationCacheDomainHash(key, candidate.Site.ID, uuid.Nil, ""),
 	}
 	logs := []store.RequestLogCacheObservation{{
-		Success:   true,
-		CreatedAt: time.Now().Add(-time.Minute),
-		Metadata:  store.JSON(encoded),
+		Success:     true,
+		SiteModelID: uuid.NullUUID{UUID: candidate.Model.SiteModelID, Valid: true},
+		CreatedAt:   time.Now().Add(-time.Minute),
+		Metadata:    store.JSON(encoded),
 	}}
 	affinity := cacheShadowAffinityFromRequestLogs(key, current, []cacheShadowCandidate{descriptor}, logs, time.Now())
 	if !affinity.Matched || !affinity.Routable || affinity.MatchedCandidateRank != candidate.Rank {
@@ -360,6 +362,73 @@ func TestCacheShadowAffinityRequiresCompatibleHealthyCandidate(t *testing.T) {
 	affinity = cacheShadowAffinityFromRequestLogs(key, current, []cacheShadowCandidate{descriptor}, logs, time.Now())
 	if !affinity.Matched || affinity.Routable {
 		t.Fatalf("protocol-incompatible affinity = %#v, want unmatched candidate", affinity)
+	}
+}
+
+func TestCacheShadowAffinityPrefersTheSameSiteModelWithinSharedCacheDomain(t *testing.T) {
+	t.Parallel()
+
+	key := []byte("cache-observation-test-key")
+	handler := Handler{cacheObservationKey: key}
+	apiKeyID := uuid.New()
+	canonicalModelID := uuid.New()
+	firstRequest := cacheObservationRequest([]canonicalMessage{{
+		Type:       "message",
+		Role:       "user",
+		RawContent: "first user message",
+		Content:    []canonicalContentPart{{Type: "input_text", Text: "first user message"}},
+	}})
+	firstRequest.DownstreamHeaders.Set(codexGatewaySessionHeader, "shared-domain-session")
+	first, ok := cacheObservationFromContext(handler.withCacheObservation(context.Background(), apiKeyID, canonicalModelID, firstRequest))
+	if !ok {
+		t.Fatal("expected first cache observation")
+	}
+
+	firstSiteModelID := uuid.New()
+	secondSiteModelID := uuid.New()
+	firstCandidate := routeengine.Candidate{
+		Rank:  2,
+		Site:  routeengine.CandidateSite{ID: uuid.New(), SiteType: "openai"},
+		Model: routeengine.CandidateModel{SiteModelID: firstSiteModelID, UpstreamName: "gpt-test"},
+	}
+	secondCandidate := firstCandidate
+	secondCandidate.Rank = 1
+	secondCandidate.Site.ID = uuid.New()
+	secondCandidate.Model.SiteModelID = secondSiteModelID
+	firstCandidate.Credential.CacheDomain = "shared-project"
+	secondCandidate.Credential.CacheDomain = "shared-project"
+	firstMetadata := map[string]any{}
+	handler.appendCacheObservationMetadata(context.WithValue(context.Background(), cacheObservationContextKey{}, first), firstMetadata, firstCandidate, gatewayAttemptResult{
+		upstreamProtocol: "openai_chat_completions",
+	})
+	encoded, err := json.Marshal(firstMetadata)
+	if err != nil {
+		t.Fatalf("marshal first metadata: %v", err)
+	}
+
+	currentRequest := cacheObservationRequest([]canonicalMessage{
+		firstRequest.Canonical.Messages[0],
+		{Type: "message", Role: "assistant", RawContent: "assistant response", Content: []canonicalContentPart{{Type: "output_text", Text: "assistant response"}}},
+	})
+	currentRequest.DownstreamHeaders.Set(codexGatewaySessionHeader, "shared-domain-session")
+	current, ok := cacheObservationFromContext(handler.withCacheObservation(context.Background(), apiKeyID, canonicalModelID, currentRequest))
+	if !ok {
+		t.Fatal("expected current cache observation")
+	}
+	logs := []store.RequestLogCacheObservation{{
+		Success:     true,
+		SiteModelID: uuid.NullUUID{UUID: firstSiteModelID, Valid: true},
+		CreatedAt:   time.Now().Add(-time.Minute),
+		Metadata:    store.JSON(encoded),
+	}}
+	sharedDomain := cacheObservationCacheDomainHash(key, firstCandidate.Site.ID, uuid.Nil, "shared-project")
+	descriptors := []cacheShadowCandidate{
+		{Candidate: secondCandidate, UpstreamProtocol: "openai_chat_completions", CacheDomainHash: sharedDomain},
+		{Candidate: firstCandidate, UpstreamProtocol: "openai_chat_completions", CacheDomainHash: sharedDomain},
+	}
+	affinity := cacheShadowAffinityFromRequestLogs(key, current, descriptors, logs, time.Now())
+	if !affinity.Routable || affinity.MatchedCandidateRank != firstCandidate.Rank {
+		t.Fatalf("shared-domain affinity = %#v, want site model rank %d", affinity, firstCandidate.Rank)
 	}
 }
 
@@ -383,6 +452,79 @@ func TestCacheShadowAffinitySkipsExpiredObservation(t *testing.T) {
 	}}, time.Now())
 	if affinity.Matched {
 		t.Fatalf("expired affinity = %#v, want no match", affinity)
+	}
+}
+
+func TestPrioritizeCacheSessionAffinityMovesMatchedCandidate(t *testing.T) {
+	t.Parallel()
+
+	attempts := []routeengine.Candidate{
+		{Rank: 1},
+		{Rank: 2},
+		{Rank: 3},
+	}
+	ctx := context.WithValue(context.Background(), cacheShadowAffinityContextKey{}, cacheShadowAffinity{
+		Eligible:             true,
+		Matched:              true,
+		MatchKind:            "session",
+		Routable:             true,
+		MatchedCandidateRank: 3,
+	})
+
+	got := prioritizeCacheSessionAffinity(ctx, attempts)
+	if got[0].Rank != 3 || got[1].Rank != 1 || got[2].Rank != 2 {
+		t.Fatalf("session-affinity attempts = %#v, want ranks [3 1 2]", got)
+	}
+}
+
+func TestPrioritizeCacheSessionAffinityPreservesNormalOrder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		affinity cacheShadowAffinity
+		attempts []routeengine.Candidate
+	}{
+		{
+			name: "prefix match",
+			affinity: cacheShadowAffinity{
+				Routable:             true,
+				MatchKind:            "prefix",
+				MatchedCandidateRank: 2,
+			},
+			attempts: []routeengine.Candidate{{Rank: 1}, {Rank: 2}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.WithValue(context.Background(), cacheShadowAffinityContextKey{}, tt.affinity)
+			got := prioritizeCacheSessionAffinity(ctx, tt.attempts)
+			if got[0].Rank != 1 || got[1].Rank != 2 {
+				t.Fatalf("attempt order = %#v, want ranks [1 2]", got)
+			}
+		})
+	}
+}
+
+func TestPrioritizeCacheSessionAffinityDoesNotPromoteLockedTarget(t *testing.T) {
+	t.Parallel()
+
+	attempts := []routeengine.Candidate{
+		{Rank: 1},
+		{Rank: 2, Locked: true, Cooling: true},
+		{Rank: 3},
+	}
+	ctx := context.WithValue(context.Background(), cacheShadowAffinityContextKey{}, cacheShadowAffinity{
+		Routable:             true,
+		MatchKind:            "session",
+		MatchedCandidateRank: 2,
+	})
+
+	got := prioritizeCacheSessionAffinity(ctx, attempts)
+	if got[0].Rank != 1 || got[1].Rank != 2 || got[2].Rank != 3 {
+		t.Fatalf("locked-target attempts = %#v, want ranks [1 2 3]", got)
 	}
 }
 
@@ -481,7 +623,8 @@ func cacheObservationChatRequest(t *testing.T, body string) gatewayRequest {
 
 func cacheObservationRequest(messages []canonicalMessage) gatewayRequest {
 	return gatewayRequest{
-		DownstreamPath: gatewayEndpointChatCompletions,
+		DownstreamPath:    gatewayEndpointChatCompletions,
+		DownstreamHeaders: make(http.Header),
 		Canonical: &canonicalRequest{
 			SourceProtocol: canonicalProtocolOpenAIChat,
 			Instructions:   "system instruction",

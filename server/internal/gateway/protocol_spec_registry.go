@@ -184,6 +184,11 @@ func effectiveProtocolSpec(protocol canonicalProtocol, candidate routeengine.Can
 	model := strings.TrimSpace(candidate.Model.UpstreamName)
 	modelPattern, modelDef := matchModelSpec(config.Models, model)
 	providerKey := normalizeSpecKey(candidate.Site.SiteType)
+	// NVIDIA hosts other publishers' models through its own Chat API. Do not
+	// inherit original-vendor paths, parameter defaults or reasoning policies.
+	if providerKey == "nvidia" {
+		modelPattern, modelDef = "", modelSpecDefinition{}
+	}
 	if providerKey == "" || genericOpenAICompatibleSiteType(providerKey) {
 		providerKey = normalizeSpecKey(modelDef.Provider)
 	}
@@ -344,6 +349,8 @@ func inferCanonicalProtocol(protocolName string) canonicalProtocol {
 		return canonicalProtocolAntigravity
 	case strings.Contains(normalized, "google_gemini"):
 		return canonicalProtocolGoogleGemini
+	case strings.Contains(normalized, "command_code"):
+		return canonicalProtocolCommandCode
 	case strings.Contains(normalized, "responses"):
 		return canonicalProtocolOpenAIResponses
 	case strings.Contains(normalized, "audio_speech"):
@@ -607,7 +614,7 @@ func normalizeSpecKey(value string) string {
 
 func genericOpenAICompatibleSiteType(value string) bool {
 	switch normalizeSpecKey(value) {
-	case "openai-compatible", "newapi", "oneapi", "one_api", "xlyra":
+	case "openai-compatible", "newapi", "oneapi", "one_api", "xlyra", "cliproxyapi":
 		return true
 	default:
 		return false

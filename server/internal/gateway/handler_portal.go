@@ -186,9 +186,10 @@ func (h Handler) PortalRequests(w http.ResponseWriter, r *http.Request) {
 
 	keyID := apiKey.ID
 	query := usage.RequestQuery{
-		Page:     page,
-		PageSize: pageSize,
-		APIKeyID: &keyID,
+		Page:      page,
+		PageSize:  pageSize,
+		APIKeyID:  &keyID,
+		RequestID: strings.TrimSpace(r.URL.Query().Get("request_id")),
 	}
 
 	switch strings.TrimSpace(r.URL.Query().Get("status")) {
@@ -329,11 +330,12 @@ func portalRequestItem(item store.RequestLogDetail, dims config.PortalDimensions
 	metadata := portalMetadata(item.Metadata)
 	costCalc, _ := metadata["cost_calculation"].(map[string]any)
 	payload := map[string]any{
-		"id":          item.ID.String(),
-		"request_id":  item.RequestID,
-		"created_at":  item.CreatedAt.Format(time.RFC3339),
-		"status_code": item.StatusCode,
-		"success":     item.Success,
+		"id":                item.ID.String(),
+		"request_id":        item.RequestID,
+		"parent_request_id": portalNullString(item.ParentRequestID),
+		"created_at":        item.CreatedAt.Format(time.RFC3339),
+		"status_code":       item.StatusCode,
+		"success":           item.Success,
 	}
 	if dims.Endpoint {
 		payload["endpoint"] = item.Endpoint

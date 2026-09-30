@@ -116,6 +116,7 @@ type CreateAPIKeyInput struct {
 	SiteIDs              []uuid.UUID
 	SiteGroupIDs         []uuid.UUID
 	ModelRules           []store.APIKeyModelRule
+	GatewayConfig        *store.APIKeyGatewayConfig
 	ImageToolBridge      *ImageToolBridgeInput
 	BillingMultiplier    *float64
 	QuotaLimit           *float64
@@ -137,6 +138,7 @@ type UpdateAPIKeyInput struct {
 	SiteIDs              []uuid.UUID
 	SiteGroupIDs         []uuid.UUID
 	ModelRules           []store.APIKeyModelRule
+	GatewayConfig        *store.APIKeyGatewayConfig
 	ImageToolBridge      *ImageToolBridgeInput
 	BillingMultiplier    *float64
 	QuotaLimit           *float64
@@ -760,6 +762,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, input CreateAPIKeyInput, adm
 	if err != nil {
 		return CreateAPIKeyResult{}, err
 	}
+	gatewayConfig, err := store.NormalizeAPIKeyGatewayConfig(input.GatewayConfig)
+	if err != nil {
+		return CreateAPIKeyResult{}, err
+	}
 
 	key, keyKind, err := s.createGatewayAPIKeyValue(ctx, input.CustomKey)
 	if err != nil {
@@ -787,6 +793,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, input CreateAPIKeyInput, adm
 			ModelPolicy:          modelPolicy,
 			SitePolicy:           sitePolicy,
 			ModelMappings:        modelRules,
+			GatewayConfig:        gatewayConfig,
 			ImageToolBridge:      imageToolBridge,
 			BillingMultiplier:    billingMultiplier,
 			QuotaLimit:           nullableFloat(input.QuotaLimit),
@@ -883,8 +890,8 @@ func (s *Service) disableExpiredAPIKeys(ctx context.Context) {
 	_, _ = s.apiKeys.DisableExpiredAPIKeys(ctx, time.Now())
 }
 
-func (s *Service) ReorderAPIKeys(ctx context.Context, ids []uuid.UUID) error {
-	return s.apiKeys.Reorder(ctx, ids)
+func (s *Service) ReorderAPIKeys(ctx context.Context, ids []uuid.UUID, revision string) error {
+	return s.apiKeys.Reorder(ctx, ids, revision)
 }
 
 func (s *Service) ListAPIKeys(ctx context.Context) ([]store.APIKey, error) {
@@ -1102,6 +1109,10 @@ func (s *Service) UpdateAPIKey(ctx context.Context, id uuid.UUID, input UpdateAP
 	if err != nil {
 		return store.APIKey{}, err
 	}
+	gatewayConfig, err := store.NormalizeAPIKeyGatewayConfig(input.GatewayConfig)
+	if err != nil {
+		return store.APIKey{}, err
+	}
 
 	var updated store.APIKey
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1113,6 +1124,7 @@ func (s *Service) UpdateAPIKey(ctx context.Context, id uuid.UUID, input UpdateAP
 			ModelPolicy:          modelPolicy,
 			SitePolicy:           sitePolicy,
 			ModelMappings:        modelRules,
+			GatewayConfig:        gatewayConfig,
 			ImageToolBridge:      imageToolBridge,
 			BillingMultiplier:    input.BillingMultiplier,
 			QuotaLimit:           nullableFloat(input.QuotaLimit),

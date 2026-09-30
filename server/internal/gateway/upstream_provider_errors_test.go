@@ -47,7 +47,7 @@ func TestClassifyGoogleUpstreamErrorHandlesRateLimitAndServerErrors(t *testing.T
 	if !ok {
 		t.Fatal("expected Google 429 to be classified")
 	}
-	if rateLimited.ErrorType != "google_rate_limited" || rateLimited.CooldownReason != "google_rate_limited" || rateLimited.CooldownScope != "model" {
+	if rateLimited.ErrorType != "google_rate_limited" || rateLimited.CooldownReason != "google_rate_limited" || rateLimited.CooldownScope != "credential" {
 		t.Fatalf("unexpected rate limit classification: %#v", rateLimited)
 	}
 	if rateLimited.ErrorMessage != "quota exhausted" {
@@ -57,11 +57,39 @@ func TestClassifyGoogleUpstreamErrorHandlesRateLimitAndServerErrors(t *testing.T
 		t.Fatalf("unexpected retry-after: duration=%s seconds=%d", rateLimited.CooldownDuration, rateLimited.RetryAfterSeconds)
 	}
 
+	dailyLimited, ok := classifyGoogleUpstreamError(http.StatusTooManyRequests, []byte(`{
+		"error": {
+			"message": "Quota exceeded for quota metric 'Generate Content API requests per day'",
+			"status": "RESOURCE_EXHAUSTED"
+		}
+	}`), time.Now())
+	if !ok {
+		t.Fatal("expected Google daily 429 to be classified")
+	}
+	if dailyLimited.ErrorType != "google_daily_rate_limited" || dailyLimited.CooldownReason != "credential_rpd_limit_reached" || dailyLimited.CooldownScope != "credential" {
+		t.Fatalf("unexpected daily rate limit classification: %#v", dailyLimited)
+	}
+	if dailyLimited.CooldownDuration < 10*time.Minute {
+		t.Fatalf("expected long cooldown duration for daily limit, got %s", dailyLimited.CooldownDuration)
+	}
+
+	loc, _ := time.LoadLocation("America/Los_Angeles")
+	nearMidnight := time.Date(2026, 9, 11, 23, 56, 0, 0, loc)
+	nearMidnightLimited, ok := classifyGoogleUpstreamError(http.StatusTooManyRequests, []byte(`{
+		"error": {
+			"message": "requests per day limit exceeded",
+			"status": "RESOURCE_EXHAUSTED"
+		}
+	}`), nearMidnight)
+	if !ok || nearMidnightLimited.CooldownDuration != 10*time.Minute {
+		t.Fatalf("near midnight cooldown duration = %s, want minimum floor 10m (not 24h)", nearMidnightLimited.CooldownDuration)
+	}
+
 	defaultRetry, ok := classifyGoogleUpstreamError(http.StatusTooManyRequests, []byte(`{}`), time.Now())
 	if !ok {
 		t.Fatal("expected Google 429 without retryDelay to be classified")
 	}
-	if defaultRetry.CooldownDuration != time.Minute || defaultRetry.RetryAfterSeconds != 60 {
+	if defaultRetry.CooldownDuration != time.Minute || defaultRetry.RetryAfterSeconds != 60 || defaultRetry.CooldownScope != "credential" {
 		t.Fatalf("default retry-after = %s/%d, want 60s", defaultRetry.CooldownDuration, defaultRetry.RetryAfterSeconds)
 	}
 

@@ -1,14 +1,72 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	routeengine "xlyra/server/internal/router"
 )
+
+var clinePassModelPattern = regexp.MustCompile(`(^|[{\s,])"model"(\s*:\s*)"cline[-_]pass/`)
+
+func isClinePassSite(siteType string) bool {
+	return strings.EqualFold(strings.TrimSpace(siteType), "cline_pass")
+}
+
+func toClinePassUpstreamModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	model = strings.TrimPrefix(model, "models/")
+	model = strings.TrimPrefix(model, "model/")
+	if strings.HasPrefix(model, "cline-pass/") {
+		return model
+	}
+	if strings.HasPrefix(model, "cline_pass/") {
+		return "cline-pass/" + strings.TrimPrefix(model, "cline_pass/")
+	}
+	return "cline-pass/" + model
+}
+
+func stripClinePassModelPrefix(body []byte) []byte {
+	if !bytes.Contains(body, []byte("cline-pass/")) && !bytes.Contains(body, []byte("cline_pass/")) {
+		return body
+	}
+	return clinePassModelPattern.ReplaceAll(body, []byte(`${1}"model"${2}"`))
+}
+
+func stripClinePassStreamLine(line []byte) []byte {
+	return stripClinePassModelPrefix(line)
+}
+
+func stripClinePassPrefix(model string) string {
+	model = strings.TrimSpace(model)
+	model = strings.TrimPrefix(model, "cline-pass/")
+	model = strings.TrimPrefix(model, "cline_pass/")
+	return model
+}
+
+func normalizeClinePassBaseURL(baseURL string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return ""
+	}
+	for strings.HasSuffix(base, "/api/v1") || strings.HasSuffix(base, "/v1") {
+		if strings.HasSuffix(base, "/api/v1") {
+			base = strings.TrimSuffix(base, "/api/v1")
+		} else if strings.HasSuffix(base, "/v1") {
+			base = strings.TrimSuffix(base, "/v1")
+		}
+		base = strings.TrimRight(base, "/")
+	}
+	return base + "/api/v1"
+}
 
 type openAIChatProtocolAdapter struct {
 	downstreamProtocol canonicalProtocol
@@ -17,6 +75,8 @@ type openAIChatProtocolAdapter struct {
 	path               string
 	mimoTTS            bool
 	mimoTTSFormat      string
+	nvidia             bool
+	clinePass          bool
 }
 
 func (a openAIChatProtocolAdapter) ProtocolName() string {
@@ -73,10 +133,25 @@ func newOpenAIChatProtocolAdapter(request gatewayRequest, candidate routeengine.
 		path:               spec.Path,
 		mimoTTS:            isMiMoV25TTSModel(candidate.Model.UpstreamName),
 		mimoTTSFormat:      strings.ToLower(stringFromMapAny(audio, "format")),
+		nvidia:             normalizeSpecKey(candidate.Site.SiteType) == "nvidia",
+		clinePass:          isClinePassSite(candidate.Site.SiteType),
 	}
 }
 
 func (a openAIChatProtocolAdapter) applyUpstreamPolicy(payload map[string]any, candidate routeengine.Candidate) map[string]any {
+	if a.nvidia {
+		if value, ok := payload["max_completion_tokens"]; ok {
+			if _, exists := payload["max_tokens"]; !exists {
+				payload["max_tokens"] = value
+			}
+			delete(payload, "max_completion_tokens")
+		}
+	}
+	if a.clinePass {
+		if model, ok := payload["model"].(string); ok && model != "" {
+			payload["model"] = toClinePassUpstreamModel(model)
+		}
+	}
 	if a.mimoTTS {
 		payload["stream"] = true
 		audio, _ := payload["audio"].(map[string]any)
@@ -94,6 +169,21 @@ func (a openAIChatProtocolAdapter) applyUpstreamPolicy(payload map[string]any, c
 }
 
 func (a openAIChatProtocolAdapter) UpstreamPath(baseURL string) string {
+	if a.nvidia {
+		baseURL = strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(baseURL), "/"), "/v1")
+	}
+	if a.clinePass {
+		baseURL = normalizeClinePassBaseURL(baseURL)
+		path := a.path
+		if path == "" || path == gatewayEndpointChatCompletions {
+			path = "/chat/completions"
+		}
+		return upstreamPathFromSpec(baseURL, resolvedProtocolSpec{
+			OfficialBaseURL: a.baseURL,
+			BasePath:        a.basePath,
+			Path:            path,
+		}, "/chat/completions")
+	}
 	return upstreamPathFromSpec(baseURL, resolvedProtocolSpec{
 		OfficialBaseURL: a.baseURL,
 		BasePath:        a.basePath,
@@ -102,6 +192,12 @@ func (a openAIChatProtocolAdapter) UpstreamPath(baseURL string) string {
 }
 
 func (a openAIChatProtocolAdapter) TransformBufferedResponse(statusCode int, headers http.Header, body []byte) (gatewayBufferedResponse, error) {
+	if a.nvidia && statusCode == http.StatusAccepted {
+		return gatewayBufferedResponse{}, fmt.Errorf("NVIDIA returned an asynchronous response; pending responses are not supported")
+	}
+	if a.clinePass && statusCode >= 200 && statusCode < 300 {
+		body = stripClinePassModelPrefix(body)
+	}
 	contentType := strings.TrimSpace(headers.Get("Content-Type"))
 	if a.mimoTTS && statusCode >= 200 && statusCode < 300 && (isEventStreamContentType(contentType) || looksLikeSSEBody(body)) {
 		convertedBody, usage, err := bufferMiMoTTSChatStream(body, a.mimoTTSFormat)
@@ -142,11 +238,14 @@ func (a openAIChatProtocolAdapter) usesRawBufferedResponse() bool {
 func (a openAIChatProtocolAdapter) ProxyStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time, candidate routeengine.Candidate) (streamCaptureState, bool, error) {
 	switch a.downstreamProtocol {
 	case canonicalProtocolOpenAIResponses:
-		return proxyChatCompletionsStreamAsResponses(ctx, w, resp, startedAt)
+		return proxyChatCompletionsStreamAsResponses(ctx, w, resp, startedAt, candidate)
 	case canonicalProtocolAnthropicMessages:
 		return proxyCanonicalStream(ctx, w, resp, startedAt, canonicalProtocolOpenAIChat, canonicalProtocolAnthropicMessages, canonicalStreamOptions{IncludeUsage: true, RequireUsage: true, Candidate: candidate})
 	case canonicalProtocolGoogleGemini:
 		return proxyCanonicalStream(ctx, w, resp, startedAt, canonicalProtocolOpenAIChat, canonicalProtocolGoogleGemini, canonicalStreamOptions{IncludeUsage: true, RequireUsage: true, Candidate: candidate})
+	}
+	if a.clinePass {
+		return proxyUpstreamStreamWithTransform(ctx, w, resp, startedAt, inspectOpenAIChatStreamLine, stripClinePassStreamLine)
 	}
 	return proxyUpstreamStream(ctx, w, resp, startedAt)
 }

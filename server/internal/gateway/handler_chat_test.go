@@ -119,6 +119,36 @@ func TestWriteChatFailureIncludesUnsupportedReasoningEffortValue(t *testing.T) {
 	}
 }
 
+func TestLockedRouteUnavailableClassifiesPreResponseFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		item   *gatewayAttemptResult
+		image  bool
+		params bool
+		want   bool
+	}{
+		{name: "credential unavailable", item: &gatewayAttemptResult{errorType: "upstream_credential_unavailable"}, want: true},
+		{name: "transport failure", item: &gatewayAttemptResult{errorType: "upstream_transport_error", statusCode: http.StatusBadGateway}, want: true},
+		{name: "first byte timeout", item: &gatewayAttemptResult{errorType: "upstream_first_byte_timeout", statusCode: http.StatusGatewayTimeout}, want: true},
+		{name: "oauth refresh failure", item: &gatewayAttemptResult{errorType: "codex_oauth_refresh_failed", statusCode: http.StatusBadGateway}, want: true},
+		{name: "endpoint resolution failure", item: &gatewayAttemptResult{errorType: "protocol_resolution_failed", statusCode: http.StatusBadGateway}, want: true},
+		{name: "upstream not found", item: &gatewayAttemptResult{errorType: "upstream_http_error", statusCode: http.StatusBadGateway, upstreamStatusCode: http.StatusNotFound}, want: true},
+		{name: "semantic request failure", item: &gatewayAttemptResult{errorType: "upstream_response_failed", statusCode: http.StatusBadGateway, upstreamStatusCode: http.StatusOK}, want: false},
+		{name: "rate limited remains upstream error", item: &gatewayAttemptResult{errorType: "upstream_http_error", statusCode: http.StatusTooManyRequests, upstreamStatusCode: http.StatusTooManyRequests}, want: false},
+		{name: "response already started", item: &gatewayAttemptResult{errorType: "upstream_transport_error", statusCode: http.StatusBadGateway, responseStarted: true}, want: false},
+		{name: "incompatible image", image: true, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := lockedRouteUnavailable(tt.item, tt.image, tt.params); got != tt.want {
+				t.Fatalf("lockedRouteUnavailable = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGeminiGatewayErrorUsesGeminiEnvelope(t *testing.T) {
 	t.Parallel()
 

@@ -448,6 +448,28 @@ func TestAudioSpeechProxyStreamConvertsSSEToAudio(t *testing.T) {
 	}
 }
 
+func TestAudioSpeechProxyStreamPublishesUsageObserver(t *testing.T) {
+	t.Parallel()
+
+	var observed completionUsage
+	ctx := withGatewayOutputTokenUsageObserver(context.Background(), func(usage completionUsage) {
+		observed = usage
+	})
+	adapter := openAIAudioSpeechProtocolAdapter{sseMode: true, responseFormat: "mp3"}
+	recorder := httptest.NewRecorder()
+	capture, started, err := adapter.ProxyStream(ctx, recorder, &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(audioSSEBody([]string{"audio"}, 7, 19))),
+	}, time.Now(), routeengine.Candidate{})
+	if err != nil || !started || !capture.streamCompleted {
+		t.Fatalf("capture=%+v started=%v err=%v", capture, started, err)
+	}
+	if observed.PromptTokens != 7 || observed.AudioOutputTokens != 19 {
+		t.Fatalf("observed usage = %+v, want input=7 audio_output=19", observed)
+	}
+}
+
 func TestAudioSpeechProxyStreamWritesRawAudioProgressively(t *testing.T) {
 	t.Parallel()
 

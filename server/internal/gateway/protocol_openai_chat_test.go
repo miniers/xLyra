@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +45,36 @@ func TestOpenAIChatProtocolBuildsPayloadPathAndStreamOptions(t *testing.T) {
 	}
 	if got := protocol.ProtocolName(); got != "openai_chat_completions" {
 		t.Fatalf("ProtocolName = %q, want openai_chat_completions", got)
+	}
+}
+
+func TestNVIDIAChatProtocolUsesNIMPathAndTokenParameter(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "nvidia", BaseURL: "https://integrate.api.nvidia.com/v1"},
+		Model: routeengine.CandidateModel{UpstreamName: "nvidia/nemotron-3.5-lightning-30b-a3b"},
+	}
+	protocol := newOpenAIChatProtocolAdapter(gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+	payload, err := protocol.BuildUpstreamPayload(gatewayRequest{
+		DownstreamPath: gatewayEndpointChatCompletions,
+		Payload: map[string]any{
+			"model":                 "alias",
+			"messages":              []any{map[string]any{"role": "user", "content": "hello"}},
+			"max_completion_tokens": 64,
+		},
+	}, candidate)
+	if err != nil {
+		t.Fatalf("BuildUpstreamPayload returned error: %v", err)
+	}
+	if payload["model"] != candidate.Model.UpstreamName || payload["max_tokens"] != 64 {
+		t.Fatalf("NVIDIA payload = %#v", payload)
+	}
+	if _, ok := payload["max_completion_tokens"]; ok {
+		t.Fatalf("NVIDIA payload retained max_completion_tokens: %#v", payload)
+	}
+	if got := protocol.UpstreamPath(candidate.Site.BaseURL); got != "https://integrate.api.nvidia.com/v1/chat/completions" {
+		t.Fatalf("NVIDIA UpstreamPath = %q", got)
 	}
 }
 
@@ -289,3 +320,224 @@ func TestOpenAIChatProtocolTransformsNativeAndStreams(t *testing.T) {
 	}
 	assertGatewayBodyContainsAll(t, rec.Body.String(), `"delta":{"content":"Hi"}`, `"prompt_cache_hit_tokens":1`, `"prompt_cache_miss_tokens":0`)
 }
+
+func TestClinePassProtocolBuildsUpstreamPayload(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "cline_pass"},
+		Model: routeengine.CandidateModel{UpstreamName: "qwen3.8-max"},
+	}
+	protocol := newOpenAIChatProtocolAdapter(gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+
+	// Test 1: model name in candidate is prefix-free -> upstream gets cline-pass/ prefix
+	payload, err := protocol.BuildUpstreamPayload(gatewayRequest{
+		DownstreamPath: gatewayEndpointChatCompletions,
+		Payload: map[string]any{
+			"model": "qwen3.8-max",
+			"messages": []any{
+				map[string]any{"role": "user", "content": "hi"},
+			},
+		},
+	}, candidate)
+	if err != nil {
+		t.Fatalf("BuildUpstreamPayload failed: %v", err)
+	}
+	if payload["model"] != "cline-pass/qwen3.8-max" {
+		t.Fatalf("model = %v, want cline-pass/qwen3.8-max", payload["model"])
+	}
+
+	// Test 2: candidate with cline_pass/ prefix gets normalized to cline-pass/
+	candidateAlt := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "cline_pass"},
+		Model: routeengine.CandidateModel{UpstreamName: "cline_pass/deepseek-v4-pro"},
+	}
+	payloadAlt, err := protocol.BuildUpstreamPayload(gatewayRequest{
+		DownstreamPath: gatewayEndpointChatCompletions,
+		Payload: map[string]any{
+			"model": "cline_pass/deepseek-v4-pro",
+		},
+	}, candidateAlt)
+	if err != nil {
+		t.Fatalf("BuildUpstreamPayload failed: %v", err)
+	}
+	if payloadAlt["model"] != "cline-pass/deepseek-v4-pro" {
+		t.Fatalf("model = %v, want cline-pass/deepseek-v4-pro", payloadAlt["model"])
+	}
+}
+
+func TestClinePassProtocolTransformsBufferedResponse(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "cline_pass"},
+		Model: routeengine.CandidateModel{UpstreamName: "qwen3.8-max"},
+	}
+	protocol := newOpenAIChatProtocolAdapter(gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+
+	body := []byte(`{"id":"chatcmpl-1","object":"chat.completion","model":"cline-pass/qwen3.8-max","choices":[{"message":{"role":"assistant","content":"hello world"}}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	transformed, err := protocol.TransformBufferedResponse(http.StatusOK, http.Header{"Content-Type": []string{"application/json"}}, body)
+	if err != nil {
+		t.Fatalf("TransformBufferedResponse failed: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(transformed.Body, &parsed); err != nil {
+		t.Fatalf("unmarshal transformed body: %v", err)
+	}
+	if parsed["model"] != "qwen3.8-max" {
+		t.Fatalf("parsed model = %v, want prefix-free qwen3.8-max", parsed["model"])
+	}
+}
+
+func TestClinePassProtocolStreamsPrefixFreeModel(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "cline_pass"},
+		Model: routeengine.CandidateModel{UpstreamName: "qwen3.8-max"},
+	}
+	protocol := newOpenAIChatProtocolAdapter(gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+
+	resp := gatewayStreamTestResponse(
+		"data: {\"id\":\"chatcmpl-1\",\"model\":\"cline-pass/qwen3.8-max\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-1\",\"model\":\"cline-pass/qwen3.8-max\",\"choices\":[{\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+	rec := httptest.NewRecorder()
+	capture, started, err := protocol.ProxyStream(t.Context(), rec, resp, time.Now(), candidate)
+	if err != nil {
+		t.Fatalf("ProxyStream failed: %v", err)
+	}
+	if !started || !capture.streamCompleted {
+		t.Fatalf("started=%v completed=%v", started, capture.streamCompleted)
+	}
+	if capture.responseModel != "qwen3.8-max" {
+		t.Fatalf("capture.responseModel = %q, want qwen3.8-max", capture.responseModel)
+	}
+	outBody := rec.Body.String()
+	if strings.Contains(outBody, "cline-pass/") {
+		t.Fatalf("stream output unexpectedly contains cline-pass/ prefix: %s", outBody)
+	}
+	assertGatewayBodyContainsAll(t, outBody, `"model":"qwen3.8-max"`, `"delta":{"content":"Hello"}`)
+}
+
+func TestClinePassProtocolUpstreamPath(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "cline_pass"},
+		Model: routeengine.CandidateModel{UpstreamName: "deepseek-v4.1-flash"},
+	}
+	protocol := newOpenAIChatProtocolAdapter(gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+
+	testCases := []struct {
+		name     string
+		baseURL  string
+		wantPath string
+	}{
+		{
+			name:     "default official base url with /api/v1",
+			baseURL:  "https://api.cline.bot/api/v1",
+			wantPath: "https://api.cline.bot/api/v1/chat/completions",
+		},
+		{
+			name:     "base url without /api/v1",
+			baseURL:  "https://api.cline.bot",
+			wantPath: "https://api.cline.bot/api/v1/chat/completions",
+		},
+		{
+			name:     "base url with trailing slash",
+			baseURL:  "https://api.cline.bot/",
+			wantPath: "https://api.cline.bot/api/v1/chat/completions",
+		},
+		{
+			name:     "base url with /v1 only",
+			baseURL:  "https://api.cline.bot/v1",
+			wantPath: "https://api.cline.bot/api/v1/chat/completions",
+		},
+		{
+			name:     "base url with accidental duplicate /api/v1/v1",
+			baseURL:  "https://api.cline.bot/api/v1/v1",
+			wantPath: "https://api.cline.bot/api/v1/chat/completions",
+		},
+		{
+			name:     "empty base url falls back to official",
+			baseURL:  "",
+			wantPath: "https://api.cline.bot/api/v1/chat/completions",
+		},
+		{
+			name:     "custom proxy host without /api/v1",
+			baseURL:  "https://proxy.example.com",
+			wantPath: "https://proxy.example.com/api/v1/chat/completions",
+		},
+		{
+			name:     "custom proxy host with /api/v1",
+			baseURL:  "https://proxy.example.com/api/v1",
+			wantPath: "https://proxy.example.com/api/v1/chat/completions",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := protocol.UpstreamPath(tc.baseURL)
+			if got != tc.wantPath {
+				t.Fatalf("UpstreamPath(%q) = %q, want %q", tc.baseURL, got, tc.wantPath)
+			}
+		})
+	}
+}
+
+func TestClinePassProtocolResolverRoutesChatEndpoints(t *testing.T) {
+	t.Parallel()
+
+	candidate := routeengine.Candidate{
+		Site:  routeengine.CandidateSite{SiteType: "cline_pass", BaseURL: "https://api.cline.bot/api/v1"},
+		Model: routeengine.CandidateModel{UpstreamName: "deepseek-v4.1-flash", SupportedEndpointTypes: []string{"openai", "anthropic-messages"}},
+	}
+	resolver := openAIProtocolResolver{}
+
+	// Chat completions
+	adapterChat, err := resolver.Resolve(t.Context(), gatewayRequest{DownstreamPath: gatewayEndpointChatCompletions}, candidate)
+	if err != nil {
+		t.Fatalf("Resolve chat completions: %v", err)
+	}
+	if adapterChat.ProtocolName() != "openai_chat_completions" {
+		t.Fatalf("chat protocol name = %q, want openai_chat_completions", adapterChat.ProtocolName())
+	}
+	if got := adapterChat.UpstreamPath(candidate.Site.BaseURL); got != "https://api.cline.bot/api/v1/chat/completions" {
+		t.Fatalf("chat upstream path = %q, want https://api.cline.bot/api/v1/chat/completions", got)
+	}
+
+	// Anthropic messages bridges to chat completions
+	adapterMessages, err := resolver.Resolve(t.Context(), gatewayRequest{DownstreamPath: gatewayEndpointMessages}, candidate)
+	if err != nil {
+		t.Fatalf("Resolve messages: %v", err)
+	}
+	if adapterMessages.ProtocolName() != "openai_chat_completions_to_messages" {
+		t.Fatalf("messages protocol name = %q, want openai_chat_completions_to_messages", adapterMessages.ProtocolName())
+	}
+	if got := adapterMessages.UpstreamPath(candidate.Site.BaseURL); got != "https://api.cline.bot/api/v1/chat/completions" {
+		t.Fatalf("messages upstream path = %q, want https://api.cline.bot/api/v1/chat/completions", got)
+	}
+
+	// Responses bridges to chat completions
+	adapterResponses, err := resolver.Resolve(t.Context(), gatewayRequest{DownstreamPath: gatewayEndpointResponses}, candidate)
+	if err != nil {
+		t.Fatalf("Resolve responses: %v", err)
+	}
+	if adapterResponses.ProtocolName() != "openai_chat_completions_to_responses" {
+		t.Fatalf("responses protocol name = %q, want openai_chat_completions_to_responses", adapterResponses.ProtocolName())
+	}
+	if got := adapterResponses.UpstreamPath(candidate.Site.BaseURL); got != "https://api.cline.bot/api/v1/chat/completions" {
+		t.Fatalf("responses upstream path = %q, want https://api.cline.bot/api/v1/chat/completions", got)
+	}
+
+	// Unsupported endpoints return error
+	_, err = resolver.Resolve(t.Context(), gatewayRequest{DownstreamPath: gatewayEndpointEmbeddings}, candidate)
+	if err == nil {
+		t.Fatal("expected error for embeddings endpoint on cline_pass site")
+	}
+}
+
+

@@ -126,11 +126,14 @@ func buildStreamProtocolSpecs() map[canonicalProtocol]streamProtocolSpec {
 				return newAnthropicMessagesStreamEncoder(options, w, capture)
 			},
 		},
+		canonicalProtocolCommandCode: {
+			NewDecoder: func() canonicalStreamDecoder { return newCommandCodeStreamDecoder() },
+		},
 	}
 }
 
 func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time, from canonicalProtocol, to canonicalProtocol, options canonicalStreamOptions) (streamCaptureState, bool, error) {
-	capture := streamCaptureState{}
+	capture := newStreamCaptureState(ctx)
 	if resp == nil || resp.Body == nil {
 		capture.endReason = "upstream_stream_missing_body"
 		return capture, false, fmt.Errorf("upstream stream body is not available")
@@ -180,6 +183,11 @@ func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http
 		return nil
 	}
 	encodeFiltered := func(events []canonicalStreamEvent) error {
+		if isClinePassSite(options.Candidate.Site.SiteType) {
+			for i := range events {
+				events[i].Model = stripClinePassPrefix(events[i].Model)
+			}
+		}
 		if stopFilter != nil {
 			events = stopFilter.Apply(events)
 		}
@@ -267,19 +275,22 @@ func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http
 					return capture, headersWritten, decodeErr
 				}
 				capture.malformedLines++
-			} else if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputDefer {
-				if bufferErr := bufferPreOutputEvents(events, len(line)); bufferErr != nil {
-					return capture, false, bufferErr
-				}
 			} else {
-				if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputCommit {
-					responsesPreOutputCommitted = true
-					if flushErr := flushPreOutput(); flushErr != nil {
-						return capture, headersWritten, flushErr
+				observeCanonicalOutputEvents(&capture, events)
+				if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputDefer {
+					if bufferErr := bufferPreOutputEvents(events, len(line)); bufferErr != nil {
+						return capture, false, bufferErr
 					}
-				}
-				if encodeErr := encodeEvents(events); encodeErr != nil {
-					return capture, headersWritten, encodeErr
+				} else {
+					if deferResponsesPreOutput && !headersWritten && !responsesPreOutputCommitted && preOutputDisposition == responsesPreOutputCommit {
+						responsesPreOutputCommitted = true
+						if flushErr := flushPreOutput(); flushErr != nil {
+							return capture, headersWritten, flushErr
+						}
+					}
+					if encodeErr := encodeEvents(events); encodeErr != nil {
+						return capture, headersWritten, encodeErr
+					}
 				}
 			}
 		}
@@ -341,6 +352,26 @@ func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http
 			return capture, headersWritten, flushErr
 		}
 		return capture, headersWritten, err
+	}
+}
+
+func observeCanonicalOutputEvents(capture *streamCaptureState, events []canonicalStreamEvent) {
+	if capture == nil {
+		return
+	}
+	for _, event := range events {
+		switch event.Type {
+		case canonicalStreamEventTextDelta:
+			capture.observeOutputText(event.Delta)
+		case canonicalStreamEventToolCallDelta:
+			capture.observeOutputToolArguments(event.ToolCallArgumentsDelta)
+		case canonicalStreamEventReasoningDelta:
+			if event.ReasoningKind != "thinking_signature" {
+				capture.observeOutputText(event.Delta)
+			}
+		case canonicalStreamEventUsage:
+			capture.observeOutputUsage(event.Usage)
+		}
 	}
 }
 
@@ -881,6 +912,15 @@ func (d *anthropicMessagesStreamDecoder) DecodeLine(line []byte) ([]canonicalStr
 		switch strings.TrimSpace(anyString(event.ContentBlock["type"])) {
 		case "thinking":
 			d.thinkingByIndex[event.Index] = true
+			if thinking := anyString(event.ContentBlock["thinking"]); thinking != "" {
+				return []canonicalStreamEvent{{
+					Type:               canonicalStreamEventReasoningDelta,
+					Delta:              thinking,
+					ReasoningKind:      "thinking",
+					ReasoningEventName: event.Type,
+					ReasoningIndex:     event.Index,
+				}}, nil
+			}
 			return nil, nil
 		case "redacted_thinking":
 			d.thinkingByIndex[event.Index] = true
@@ -1138,6 +1178,9 @@ func (e *openAIChatStreamEncoder) sendFinish() error {
 
 func (e *openAIChatStreamEncoder) sendIncomplete(event canonicalStreamEvent) error {
 	finishReason := nonEmptyString(event.FinishReason, "length")
+	if finishReason == "pause_turn" {
+		finishReason = "length"
+	}
 	return e.sendTerminal(finishReason, false, "response_incomplete")
 }
 
@@ -1153,7 +1196,7 @@ func (e *openAIChatStreamEncoder) sendTerminal(defaultFinishReason string, compl
 		return err
 	}
 	finishReason := defaultFinishReason
-	if e.sawToolCall && !e.sawText {
+	if completed && e.sawToolCall && !e.sawText {
 		finishReason = "tool_calls"
 	}
 	if err := e.writeChunk(map[string]any{
@@ -1221,22 +1264,23 @@ func (e *openAIChatStreamEncoder) writeChunk(chunk map[string]any) error {
 }
 
 type openAIResponsesStreamEncoder struct {
-	options       canonicalStreamOptions
-	w             http.ResponseWriter
-	capture       *streamCaptureState
-	responseID    string
-	model         string
-	createdAt     int64
-	responseSent  bool
-	textStarted   bool
-	textBuffer    strings.Builder
-	completed     bool
-	sequence      int
-	textOutputIdx int
-	contentIndex  int
-	nextOutputIdx int
-	toolCalls     map[string]*responsesStreamToolCallState
-	toolCallOrder []string
+	incompleteReason string
+	options          canonicalStreamOptions
+	w                http.ResponseWriter
+	capture          *streamCaptureState
+	responseID       string
+	model            string
+	createdAt        int64
+	responseSent     bool
+	textStarted      bool
+	textBuffer       strings.Builder
+	completed        bool
+	sequence         int
+	textOutputIdx    int
+	contentIndex     int
+	nextOutputIdx    int
+	toolCalls        map[string]*responsesStreamToolCallState
+	toolCallOrder    []string
 }
 
 type responsesStreamToolCallState struct {
@@ -1554,6 +1598,9 @@ func (e *openAIResponsesStreamEncoder) sendFinish() error {
 }
 
 func (e *openAIResponsesStreamEncoder) sendIncomplete(event canonicalStreamEvent) error {
+	if event.FinishReason == "pause_turn" {
+		e.incompleteReason = "pause_turn"
+	}
 	return e.sendTerminalResponse("incomplete", false, "response_incomplete")
 }
 
@@ -1722,6 +1769,10 @@ func (e *openAIResponsesStreamEncoder) writeEvent(event string, payload map[stri
 }
 
 func (e *openAIResponsesStreamEncoder) responsePayload(status string, usage completionUsage) map[string]any {
+	incomplete := incompleteDetailsPayload(status)
+	if status == "incomplete" && e.incompleteReason != "" {
+		incomplete = map[string]any{"reason": e.incompleteReason}
+	}
 	output := []any{}
 	if (status == "completed" || status == "incomplete") && e.textStarted {
 		output = append(output, map[string]any{
@@ -1765,7 +1816,7 @@ func (e *openAIResponsesStreamEncoder) responsePayload(status string, usage comp
 		"status":             status,
 		"background":         false,
 		"error":              nil,
-		"incomplete_details": incompleteDetailsPayload(status),
+		"incomplete_details": incomplete,
 		"model":              e.model,
 		"output":             output,
 		"usage":              responsesUsagePayload(usage),
@@ -1864,6 +1915,9 @@ func (e *anthropicMessagesStreamEncoder) EncodeEvent(event canonicalStreamEvent)
 		}
 		return e.sendFinish(stopReason, event.StopSequence, true, "done")
 	case canonicalStreamEventIncomplete:
+		if event.FinishReason == "pause_turn" {
+			return e.sendFinish("pause_turn", "", false, "response_incomplete")
+		}
 		return e.sendFinish("max_tokens", "", false, "response_incomplete")
 	case canonicalStreamEventError:
 		e.capture.endReason = "upstream_stream_error"

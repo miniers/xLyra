@@ -9,7 +9,27 @@ import (
 	"xlyra/server/internal/httpx"
 	"xlyra/server/internal/ratelimit"
 	routeengine "xlyra/server/internal/router"
+	"xlyra/server/internal/store"
 )
+
+func TestAttemptMetadataIncludesRouteLockContext(t *testing.T) {
+	t.Parallel()
+
+	lock := &store.RouteLock{
+		ID:          uuid.MustParse("66666666-6666-6666-6666-666666666666"),
+		SiteModelID: uuid.MustParse("77777777-7777-7777-7777-777777777777"),
+		Policy:      store.RouteLockPolicyFallback,
+	}
+	ctx := withRouteLockMetadata(context.Background(), lock, true)
+	metadata := attemptMetadata(ctx, "req-lock", "req-lock", uuid.Nil, uuid.Nil, routeengine.Candidate{}, gatewayAttemptResult{})
+	routingLock, ok := metadata["routing_lock"].(map[string]any)
+	if !ok {
+		t.Fatalf("routing_lock metadata = %#v, want object", metadata["routing_lock"])
+	}
+	if routingLock["id"] != lock.ID.String() || routingLock["target_site_model_id"] != lock.SiteModelID.String() || routingLock["policy"] != store.RouteLockPolicyFallback || routingLock["fallback_engaged"] != true {
+		t.Fatalf("routing_lock metadata = %#v", routingLock)
+	}
+}
 
 func TestDownstreamRequestPathMaterializesGeminiModel(t *testing.T) {
 	t.Parallel()
@@ -157,6 +177,7 @@ func TestAttemptMetadataIncludesNormalizedGatewayFields(t *testing.T) {
 		t.Fatalf("expected canonical conversion mode, got %#v", got)
 	}
 }
+
 
 func TestStreamMetadataClassifiesReadFailureAsIncomplete(t *testing.T) {
 	t.Parallel()
@@ -472,6 +493,20 @@ func TestRateLimitTokenCountIncludesAudioOutput(t *testing.T) {
 				t.Fatalf("rate limit tokens = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestInflightTokenAmountIncludesAudioOutputInOutputBreakdown(t *testing.T) {
+	t.Parallel()
+
+	amount := inflightTokenAmount(gatewayAttemptResult{
+		promptTokens:       100,
+		completionTokens:   50,
+		audioOutputTokens:  25,
+		cachedPromptTokens: 10,
+	})
+	if amount.Total != 175 || amount.Input != 100 || amount.Output != 75 || amount.Cached != 10 {
+		t.Fatalf("inflight token amount = %#v, want total=175 input=100 output=75 cached=10", amount)
 	}
 }
 

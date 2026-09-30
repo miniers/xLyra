@@ -149,7 +149,8 @@ func (a mimoAudioSpeechProtocolAdapter) ProxyStream(ctx context.Context, w http.
 	}
 	collectAudio := a.responseFormat == "wav" || a.downstreamSSE
 	decoder := newMiMoTTSChatStreamDecoder(collectAudio)
-	capture := streamCaptureState{usage: gatewayUsage{PromptTokens: a.inputChars}}
+	capture := newStreamCaptureState(ctx)
+	capture.usage = gatewayUsage{PromptTokens: a.inputChars}
 	reader := bufio.NewReader(resp.Body)
 	flusher, _ := w.(http.Flusher)
 	headersWritten := false
@@ -198,6 +199,7 @@ func (a mimoAudioSpeechProtocolAdapter) ProxyStream(ctx context.Context, w http.
 			}
 			if chunk.Usage != nil {
 				capture.usage = *chunk.Usage
+				capture.observeOutputUsage(capture.usage)
 			}
 			if len(chunk.Audio) > 0 && a.responseFormat != "wav" {
 				if a.downstreamSSE {
@@ -233,6 +235,7 @@ func (a mimoAudioSpeechProtocolAdapter) ProxyStream(ctx context.Context, w http.
 	}
 	if usage != (completionUsage{}) {
 		capture.usage = usage
+		capture.observeOutputUsage(capture.usage)
 	}
 	if a.responseFormat == "wav" {
 		audio = mimoTTSWAV(audio)

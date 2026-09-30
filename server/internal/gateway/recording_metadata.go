@@ -4,21 +4,57 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"xlyra/server/internal/httpx"
 	routeengine "xlyra/server/internal/router"
+	"xlyra/server/internal/store"
 )
 
 type modelMappingContextKey struct{}
 type retryAfterContextKey struct{}
 type reasoningEffortContextKey struct{}
+type requestStartedAtContextKey struct{}
+type routeLockMetadataContextKey struct{}
 
 type modelMappingInfo struct {
 	OriginalModel string
 	MappedModel   string
 	Mode          string
+}
+
+type routeLockMetadata struct {
+	ID                uuid.UUID
+	TargetSiteModelID uuid.UUID
+	Policy            string
+	FallbackEngaged   bool
+}
+
+func withRouteLockMetadata(ctx context.Context, lock *store.RouteLock, fallbackEngaged bool) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if lock == nil || lock.ID == uuid.Nil {
+		// Writing an empty value also clears metadata from a previous model
+		// mapping when the fallback plan has no lock of its own.
+		return context.WithValue(ctx, routeLockMetadataContextKey{}, routeLockMetadata{})
+	}
+	return context.WithValue(ctx, routeLockMetadataContextKey{}, routeLockMetadata{
+		ID:                lock.ID,
+		TargetSiteModelID: lock.SiteModelID,
+		Policy:            store.NormalizeRouteLockPolicy(lock.Policy),
+		FallbackEngaged:   fallbackEngaged,
+	})
+}
+
+func routeLockMetadataFromContext(ctx context.Context) (routeLockMetadata, bool) {
+	if ctx == nil {
+		return routeLockMetadata{}, false
+	}
+	metadata, ok := ctx.Value(routeLockMetadataContextKey{}).(routeLockMetadata)
+	return metadata, ok && metadata.ID != uuid.Nil
 }
 
 func withModelMapping(ctx context.Context, original, mapped, mode string) context.Context {
@@ -64,6 +100,31 @@ func reasoningEffortFromContext(ctx context.Context) (string, bool) {
 	effort, ok := ctx.Value(reasoningEffortContextKey{}).(string)
 	effort = strings.ToLower(strings.TrimSpace(effort))
 	return effort, ok && isSupportedReasoningEffort(effort)
+}
+
+func withRequestStartedAt(ctx context.Context, startedAt time.Time) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if startedAt.IsZero() {
+		return ctx
+	}
+	return context.WithValue(ctx, requestStartedAtContextKey{}, startedAt)
+}
+
+func requestStartedAtFromContext(ctx context.Context) (time.Time, bool) {
+	if ctx == nil {
+		return time.Time{}, false
+	}
+	startedAt, ok := ctx.Value(requestStartedAtContextKey{}).(time.Time)
+	return startedAt, ok && !startedAt.IsZero()
+}
+
+func requestStartedAtMetadataValue(startedAt time.Time) any {
+	if startedAt.IsZero() {
+		return nil
+	}
+	return startedAt.UTC().Format(time.RFC3339Nano)
 }
 
 func reasoningEffortFromPayload(payload map[string]any) string {
@@ -238,6 +299,14 @@ func attemptMetadata(
 		meta["mapped_model"] = mapping.MappedModel
 		meta["mapping_mode"] = emptyToNil(mapping.Mode)
 	}
+	if lock, ok := routeLockMetadataFromContext(ctx); ok {
+		meta["routing_lock"] = map[string]any{
+			"id":                   lock.ID.String(),
+			"target_site_model_id": lock.TargetSiteModelID.String(),
+			"policy":               lock.Policy,
+			"fallback_engaged":     lock.FallbackEngaged,
+		}
+	}
 	if result.rateLimit != nil {
 		meta["rate_limit"] = result.rateLimit.Metadata(rateLimitTokenCount(result))
 	} else if rateLimit, ok := rateLimitMetadataFromContext(ctx); ok {
@@ -352,6 +421,14 @@ func requestFailureMetadata(
 		meta["original_model"] = mapping.OriginalModel
 		meta["mapped_model"] = mapping.MappedModel
 		meta["mapping_mode"] = emptyToNil(mapping.Mode)
+	}
+	if lock, ok := routeLockMetadataFromContext(ctx); ok {
+		meta["routing_lock"] = map[string]any{
+			"id":                   lock.ID.String(),
+			"target_site_model_id": lock.TargetSiteModelID.String(),
+			"policy":               lock.Policy,
+			"fallback_engaged":     lock.FallbackEngaged,
+		}
 	}
 	if retryAfter, ok := retryAfterFromContext(ctx); ok {
 		meta["retry_after_seconds"] = retryAfter

@@ -39,7 +39,7 @@ func shouldTryNextCredential(result gatewayAttemptResult) bool {
 		return true
 	}
 	switch result.statusCode {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests:
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests:
 		return true
 	default:
 		return false
@@ -219,7 +219,7 @@ func cooldownInputForFailure(candidate routeengine.Candidate, result gatewayAtte
 			base.Duration = 2 * time.Minute
 		}
 		return base, true
-	case (isCodexSite(candidate.Site.SiteType) || isAntigravitySite(candidate.Site.SiteType)) && result.cooldownScope == "credential" && credentialID != uuid.Nil:
+	case result.cooldownScope == "credential" && credentialID != uuid.Nil:
 		base.SiteCredentialID = &credentialID
 		base.Scope = "credential"
 		if base.Reason == "" {
@@ -242,11 +242,19 @@ func cooldownInputForFailure(candidate routeengine.Candidate, result gatewayAtte
 		base.Reason = "upstream_credential_forbidden"
 		base.Duration = 30 * time.Minute
 		return base, true
-	case result.statusCode == http.StatusTooManyRequests && credentialID != uuid.Nil:
+	case (result.statusCode == http.StatusTooManyRequests || result.statusCode == http.StatusPaymentRequired) && credentialID != uuid.Nil:
 		base.SiteCredentialID = &credentialID
 		base.Scope = "credential"
-		base.Reason = "upstream_credential_rate_limited"
-		base.Duration = rateLimitedCooldownDuration(result.retryAfterSeconds)
+		if base.Reason == "" {
+			if result.statusCode == http.StatusPaymentRequired {
+				base.Reason = store.CooldownReasonUpstreamInsufficientBalance
+			} else {
+				base.Reason = "upstream_credential_rate_limited"
+			}
+		}
+		if base.Duration <= 0 {
+			base.Duration = rateLimitedCooldownDuration(result.retryAfterSeconds)
+		}
 		return base, true
 	case result.statusCode == http.StatusNotFound:
 		base.SiteModelID = &siteModelID

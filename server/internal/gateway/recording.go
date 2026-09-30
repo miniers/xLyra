@@ -21,6 +21,7 @@ func (h Handler) recordAttempt(
 	result gatewayAttemptResult,
 	upstreamResponse any,
 ) uuid.UUID {
+	result = applyGatewayAttemptContextFailure(ctx, result)
 	recordCtx, cancel := detachedRecordingContext(ctx)
 	defer cancel()
 
@@ -29,9 +30,11 @@ func (h Handler) recordAttempt(
 	mergeInternalRequestMetadata(metadata, ctx)
 	h.appendCacheObservationMetadata(ctx, metadata, candidate, result)
 	internal, parentLogID := bridgeRecordingFromContext(ctx)
+	startedAt, _ := requestStartedAtFromContext(ctx)
 	requestLog, _, err := h.recorder.RecordGatewayRequest(recordCtx, GatewayRequestRecord{
 		RequestID:                  attemptRequestID,
 		ParentRequestID:            requestID,
+		StartedAt:                  startedAt,
 		APIKeyID:                   apiKeyID,
 		SiteID:                     candidate.Site.ID,
 		CanonicalModelID:           canonicalModelID,
@@ -97,6 +100,7 @@ func (h Handler) recordRequestFailure(
 	if _, _, err := recorder.RecordGatewayRequest(recordCtx, GatewayRequestRecord{
 		RequestID:       failureRequestID,
 		ParentRequestID: requestID,
+		StartedAt:       startedAt,
 		APIKeyID:        apiKeyID,
 		Endpoint:        stringValue(&endpoint, gatewayEndpointChatCompletions),
 		StatusCode:      statusCode,

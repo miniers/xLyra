@@ -41,6 +41,7 @@ func TestProtocolSpecRegistryLoadsCurrentFamilies(t *testing.T) {
 		"dashscope",
 		"deepseek",
 		"xiaomi_mimo",
+		"nvidia",
 	} {
 		if _, ok := config.Providers[provider]; !ok {
 			t.Fatalf("missing provider spec %q", provider)

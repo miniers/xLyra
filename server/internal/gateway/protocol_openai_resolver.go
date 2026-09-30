@@ -34,6 +34,22 @@ func (r openAIProtocolResolver) Resolve(ctx context.Context, request gatewayRequ
 	if endpointTypes := candidate.Model.SupportedEndpointTypes; len(endpointTypes) > 0 && !endpointTypesAllowRequest(request, endpointTypes) {
 		return nil, fmt.Errorf("credential does not support request endpoint")
 	}
+	if normalizeSpecKey(candidate.Site.SiteType) == "nvidia" {
+		switch request.DownstreamPath {
+		case gatewayEndpointChatCompletions, gatewayEndpointResponses, gatewayEndpointMessages:
+			return newOpenAIChatProtocolAdapter(request, candidate), nil
+		default:
+			return nil, fmt.Errorf("NVIDIA NIM site supports chat endpoints only")
+		}
+	}
+	if isClinePassSite(candidate.Site.SiteType) {
+		switch request.DownstreamPath {
+		case gatewayEndpointChatCompletions, gatewayEndpointResponses, gatewayEndpointMessages:
+			return newOpenAIChatProtocolAdapter(request, candidate), nil
+		default:
+			return nil, fmt.Errorf("ClinePass site supports chat endpoints only")
+		}
+	}
 	if request.DownstreamPath == gatewayEndpointEmbeddings {
 		return newOpenAIEmbeddingsProtocolAdapter(request, candidate), nil
 	}
@@ -79,6 +95,9 @@ func (r openAIProtocolResolver) Resolve(ctx context.Context, request gatewayRequ
 		adapter := newAnthropicMessagesProtocolAdapter(downstreamCanonicalProtocol(request.DownstreamPath))
 		adapter.includeUsage = chatStreamUsageEnabled(request.Payload)
 		return adapter, nil
+	}
+	if isCommandCodeSite(candidate.Site.SiteType) {
+		return newCommandCodeProtocolAdapter(request, candidate), nil
 	}
 	if isGrokSite(candidate.Site.SiteType) {
 		return newGrokResponsesProtocolAdapterWithReasoningEfforts(request, r.grokModelReasoningEfforts(ctx, candidate.Model.SiteModelID)), nil
@@ -305,7 +324,11 @@ func shouldUseOpenAIResponses(request gatewayRequest, candidate routeengine.Cand
 }
 
 func normalizeEndpointType(value string) string {
-	return strings.TrimSpace(strings.ToLower(value))
+	val := strings.TrimSpace(strings.ToLower(value))
+	if val == "openai-responses" || val == "responses" {
+		return "openai-response"
+	}
+	return val
 }
 
 func containsEndpointType(types []string, target string) bool {

@@ -280,6 +280,7 @@ func (h Handler) forwardSiteModelTestRequest(
 	selectedCredential *store.GatewayCredential,
 ) gatewayAttemptResult {
 	startedAt := time.Now()
+	ctx = withRequestStartedAt(ctx, startedAt)
 	result := gatewayAttemptResult{
 		attempt:          1,
 		currency:         "USD",
