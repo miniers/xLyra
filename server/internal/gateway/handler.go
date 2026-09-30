@@ -21,27 +21,27 @@ import (
 const RouteSiteHeader = "X-Xlyra-Route-Site"
 
 type Handler struct {
-	logger              *slog.Logger
-	auth                *auth.Service
-	router              *routeengine.Service
-	db                  *store.Store
-	credentials         credential.Service
-	httpClient          *http.Client
-	clients             *httpclient.Manager
-	limits              *upstreamConcurrencyCache
-	recorder            Recorder
-	oauth               *oauthsvc.Service
-	rateLimits          *ratelimit.Service
-	modelsCache         *modelsCache
-	noRoutes            *noRouteSuppressionCache
-	userBalanceThrottle *userBalanceThrottle
+	logger                *slog.Logger
+	auth                  *auth.Service
+	router                *routeengine.Service
+	db                    *store.Store
+	credentials           credential.Service
+	httpClient            *http.Client
+	clients               *httpclient.Manager
+	limits                *upstreamConcurrencyCache
+	recorder              Recorder
+	oauth                 *oauthsvc.Service
+	rateLimits            *ratelimit.Service
+	modelsCache           *modelsCache
+	noRoutes              *noRouteSuppressionCache
+	userBalanceThrottle   *userBalanceThrottle
 	credentialSelector    *credentialWindowSelector
 	credentialRateLimiter *CredentialRateLimiter
 	confFile              *config.ConfigFile
-	usage               *usage.Service
-	timeZone            config.TimeZone
-	exposeRouteSite     bool
-	cacheObservationKey []byte
+	usage                 *usage.Service
+	timeZone              config.TimeZone
+	exposeRouteSite       bool
+	cacheObservationKey   []byte
 }
 
 func (h Handler) WithRouteSiteHeader() Handler {
@@ -98,4 +98,3 @@ func (h Handler) CredentialRateLimitUsage(credentialID uuid.UUID, timezone strin
 	}
 	return h.credentialRateLimiter.CurrentUsage(credentialID, timezone, time.Now())
 }
-

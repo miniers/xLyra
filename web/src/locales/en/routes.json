@@ -44,7 +44,19 @@
     "toast": {
       "modelToggleFailed": "Failed to update model toggle",
       "cooldownCleared": "Cooldown cleared",
-      "cooldownClearFailed": "Failed to clear cooldown"
+      "cooldownClearFailed": "Failed to clear cooldown",
+      "routingLockUpdated": "Routing lock saved",
+      "routingLockUpdateFailed": "Failed to save routing lock",
+      "routingLockRemoved": "Routing lock removed",
+      "routingLockRemoveFailed": "Failed to remove routing lock",
+      "temporaryScoreAdjusted": "Score adjustment updated",
+      "temporaryScoreAdjustFailed": "Failed to adjust score",
+      "automaticAnomalyCleared": "Anomaly penalty cleared",
+      "automaticAnomalyClearFailed": "Failed to clear anomaly penalty",
+      "preferenceUpdated": "Routing preference updated",
+      "preferenceUpdateFailed": "Failed to update routing preference",
+      "expiryRescueUpdated": "Subscription rescue updated",
+      "expiryRescueUpdateFailed": "Failed to update subscription rescue"
     }
   },
   "details": {
@@ -81,6 +93,85 @@
       "remaining": "{{duration}} remaining",
       "clear": "Clear",
       "noCooldowns": "No cooldowns"
+    },
+    "table": {
+      "more": "More",
+      "test": "Test",
+      "enableModel": "Enable model",
+      "disableModel": "Disable model",
+      "lock": "Lock",
+      "editLock": "Edit lock",
+      "removeLock": "Remove lock",
+      "pinLock": "Pin lock",
+      "scoreDetails": "Score details",
+      "channelDetails": "Channel details",
+      "noChannels": "No channels",
+      "noHealth": "No health check",
+      "noModels": "No models found",
+      "loadFailed": "Failed to load route channels",
+      "cancel": "Cancel",
+      "toggleSuccess": "Model state updated",
+      "toggleFailed": "Failed to update model state",
+      "headers": {
+        "rank": "Rank",
+        "siteModel": "Channel / Site",
+        "score": "Score",
+        "healthPricing": "Health & Pricing",
+        "actions": "Actions"
+      }
+    },
+    "lock": {
+      "pinned": "Pinned",
+      "pinChannel": "Pin channel temporarily",
+      "description": "Lock requests for this model to a specific upstream channel.",
+      "target": "Target channel",
+      "targetUnavailable": "Target unavailable",
+      "remaining": "{{duration}} remaining",
+      "unlimited": "Permanent",
+      "policy": {
+        "title": "Fallback policy",
+        "strict": "Strict (fail if unavailable)",
+        "fallback": "Fallback (route to other channels)"
+      },
+      "expiresAt": "Expiry time",
+      "reason": "Lock reason",
+      "save": "Save lock"
+    },
+    "preference": {
+      "title": "Routing preference",
+      "description": "Adjust balance between latency, success rate and price.",
+      "expiryRescue": "Subscription expiry rescue",
+      "expiryRescueDescription": "Prioritize channels nearing subscription expiry to avoid quota waste."
+    },
+    "scores": {
+      "badge": "Score {{score}}",
+      "tooltip": "Comprehensive routing score: {{score}}",
+      "unavailable": "No score data available",
+      "site": "Site {{score}}",
+      "model": "Model {{score}}",
+      "increaseScore": "Increase score (+5)",
+      "decreaseScore": "Decrease score (-5)",
+      "clearAutomaticAnomaly": "Clear automatic anomaly penalty",
+      "components": {
+        "siteHealth": "Site health",
+        "siteSuccessRate": "Site success rate",
+        "siteLatency": "Site latency",
+        "modelSuccessRate": "Model success rate",
+        "modelLatency": "Model latency",
+        "modelFirstByteLatency": "First-byte latency",
+        "apiKeyCapacity": "API key capacity",
+        "actualPrice": "Actual price",
+        "subscriptionExpiryUrgency": "Subscription expiry urgency",
+        "subscriptionExpiryRescueBonus": "Expiry rescue bonus",
+        "automaticAnomalyPenalty": "Automatic anomaly penalty",
+        "manualScoreAdjustment": "Manual score adjustment"
+      },
+      "raw": {
+        "actualPriceCacheHitRate": "Cache hit rate {{value}}",
+        "actualPriceCacheReadRatio": "Cache discount {{value}}",
+        "automaticAnomalyFirstByte": "First-byte latency {{recent}}ms vs baseline {{baseline}}ms",
+        "automaticAnomalyCache": "Cache hit rate {{recent}} vs baseline {{baseline}}"
+      }
     }
   },
   "channels": {

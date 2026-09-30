@@ -33,6 +33,16 @@ func TestApplyRouteScoreAdjustmentAccumulatesAndRefreshesExpiry(t *testing.T) {
 	if expired.Delta != -5 {
 		t.Fatalf("expired adjustment = %#v, want a fresh -5 adjustment", expired)
 	}
+
+	clampedHigh := applyRouteScoreAdjustment(RouteScoreAdjustment{Delta: 28, ActiveUntil: now.Add(time.Hour)}, 5, now)
+	if clampedHigh.Delta != MaxRouteScoreAdjustmentDelta {
+		t.Fatalf("clamped high delta = %v, want %v", clampedHigh.Delta, MaxRouteScoreAdjustmentDelta)
+	}
+
+	clampedLow := applyRouteScoreAdjustment(RouteScoreAdjustment{Delta: -28, ActiveUntil: now.Add(time.Hour)}, -5, now)
+	if clampedLow.Delta != MinRouteScoreAdjustmentDelta {
+		t.Fatalf("clamped low delta = %v, want %v", clampedLow.Delta, MinRouteScoreAdjustmentDelta)
+	}
 }
 
 func TestRouteScoreAdjustmentRepositoryListActiveScopesPairAndExpiry(t *testing.T) {

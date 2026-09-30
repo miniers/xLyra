@@ -35,7 +35,12 @@
     "copyFailed": "コピーに失敗しました",
     "enableAll": "すべて有効",
     "disableAll": "すべて無効",
-    "toggleLabel": "{{name}} を切り替え"
+    "toggleLabel": "{{name}} を切り替え",
+    "testing": "テスト中...",
+    "testSuccess": "テスト成功",
+    "testFailed": "テスト失敗",
+    "testModel": "モデルをテスト",
+    "noSiteAvailable": "利用可能なサイトがありません"
   },
   "pagination": {
     "label": "ページネーション",
@@ -63,7 +68,9 @@
   "navigation": {
     "open": "ナビゲーションを開く",
     "close": "ナビゲーションを閉じる",
-    "closeOverlay": "ナビゲーションオーバーレイを閉じる"
+    "closeOverlay": "ナビゲーションオーバーレイを閉じる",
+    "collapseSidebar": "サイドバーを折りたたむ",
+    "expandSidebar": "サイドバーを展開"
   },
   "datePicker": {
     "clear": "日付をクリア"

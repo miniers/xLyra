@@ -67,7 +67,8 @@
       "tokens": "トークン",
       "requests": "リクエスト数",
       "successRate": "成功率",
-      "latency": "平均レイテンシ"
+      "latency": "平均レイテンシ",
+      "cacheHitRate": "キャッシュヒット率"
     },
     "dimensions": {
       "none": "合計",

@@ -117,14 +117,32 @@ func (a ClinePass) ValidateCredentials(ctx context.Context, site SiteConfig, api
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return upstream.NewHTTPError("upstream returned", resp.StatusCode, resp.Header, body)
 	}
 
-	// If /users/me returned another code, fall back to testing ListModels
-	_, err = a.ListModels(ctx, site, apiKey)
-	return err
+	// If /users/me returned another code (e.g. 404 on mirrors), test /models endpoint directly
+	modelsReq, err := http.NewRequestWithContext(ctx, http.MethodGet, clinePassBaseURL(site.BaseURL)+"/models", nil)
+	if err != nil {
+		return fmt.Errorf("create models verify request: %w", err)
+	}
+	if strings.TrimSpace(apiKey) != "" {
+		modelsReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+	modelsReq.Header.Set("Accept", "application/json")
+
+	modelsResp, err := client.Do(modelsReq)
+	if err != nil {
+		return fmt.Errorf("verify credential via models: %w", err)
+	}
+	defer modelsResp.Body.Close()
+
+	if modelsResp.StatusCode >= 200 && modelsResp.StatusCode < 300 {
+		return nil
+	}
+	modelsBody, _ := io.ReadAll(io.LimitReader(modelsResp.Body, 512))
+	return upstream.NewHTTPError("upstream returned", modelsResp.StatusCode, modelsResp.Header, modelsBody)
 }
 
 func (a ClinePass) ProbeHealth(ctx context.Context, site SiteConfig, apiKey string) ([]Model, error) {
@@ -150,6 +168,11 @@ func (a ClinePass) ListModels(ctx context.Context, site SiteConfig, apiKey strin
 		return a.fallbackModels(), nil
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, upstream.NewHTTPError("upstream returned", resp.StatusCode, resp.Header, body)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return a.fallbackModels(), nil

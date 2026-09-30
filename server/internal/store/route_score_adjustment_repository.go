@@ -98,11 +98,22 @@ func (r RouteScoreAdjustmentRepository) Apply(ctx context.Context, canonicalMode
 	return item, nil
 }
 
+const (
+	MaxRouteScoreAdjustmentDelta = 30.0
+	MinRouteScoreAdjustmentDelta = -30.0
+)
+
 func applyRouteScoreAdjustment(previous RouteScoreAdjustment, delta float64, now time.Time) RouteScoreAdjustment {
 	if !previous.ActiveUntil.After(now) {
 		previous.Delta = 0
 	}
-	previous.Delta += delta
+	newDelta := previous.Delta + delta
+	if newDelta > MaxRouteScoreAdjustmentDelta {
+		newDelta = MaxRouteScoreAdjustmentDelta
+	} else if newDelta < MinRouteScoreAdjustmentDelta {
+		newDelta = MinRouteScoreAdjustmentDelta
+	}
+	previous.Delta = newDelta
 	previous.ActiveUntil = now.Add(RouteScoreAdjustmentDuration)
 	return previous
 }

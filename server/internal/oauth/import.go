@@ -530,6 +530,13 @@ func (s *ImportService) updateImportedSiteMeta(ctx context.Context, siteService 
 	if planType, ok := connectionMeta["plan_type"].(string); ok && strings.TrimSpace(planType) != "" {
 		siteMeta["oauth_plan_type"] = strings.TrimSpace(planType)
 	}
+	if tier, ok := connectionMeta["subscription_tier"].(string); ok && strings.TrimSpace(tier) != "" {
+		siteMeta["oauth_plan_type"] = strings.TrimSpace(tier)
+		siteMeta["oauth_subscription_tier"] = strings.TrimSpace(tier)
+	}
+	if projectID, ok := connectionMeta["project_id"].(string); ok && strings.TrimSpace(projectID) != "" {
+		siteMeta["oauth_project_id"] = strings.TrimSpace(projectID)
+	}
 	for _, key := range []string{"chatgpt_subscription_active_start", "chatgpt_subscription_active_until"} {
 		if value := connectionMeta[key]; value != nil {
 			siteMeta["oauth_"+strings.TrimPrefix(key, "chatgpt_")] = value

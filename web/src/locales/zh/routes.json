@@ -44,7 +44,19 @@
     "toast": {
       "modelToggleFailed": "模型开关更新失败",
       "cooldownCleared": "冷却已清理",
-      "cooldownClearFailed": "冷却清理失败"
+      "cooldownClearFailed": "冷却清理失败",
+      "routingLockUpdated": "已保存路由锁定",
+      "routingLockUpdateFailed": "保存路由锁定失败",
+      "routingLockRemoved": "已解除路由锁定",
+      "routingLockRemoveFailed": "解除路由锁定失败",
+      "temporaryScoreAdjusted": "已调整临时分值",
+      "temporaryScoreAdjustFailed": "调整临时分值失败",
+      "automaticAnomalyCleared": "已清除异常降权",
+      "automaticAnomalyClearFailed": "清除异常降权失败",
+      "preferenceUpdated": "已更新路由偏好",
+      "preferenceUpdateFailed": "更新路由偏好失败",
+      "expiryRescueUpdated": "已更新订阅抢救设置",
+      "expiryRescueUpdateFailed": "更新订阅抢救设置失败"
     }
   },
   "details": {
@@ -81,6 +93,85 @@
       "remaining": "剩余 {{duration}}",
       "clear": "清理",
       "noCooldowns": "暂无冷却"
+    },
+    "table": {
+      "more": "更多",
+      "test": "测试",
+      "enableModel": "启用模型",
+      "disableModel": "禁用模型",
+      "lock": "锁定",
+      "editLock": "编辑锁定",
+      "removeLock": "解除锁定",
+      "pinLock": "置顶锁定",
+      "scoreDetails": "评分详情",
+      "channelDetails": "渠道详情",
+      "noChannels": "无可用渠道",
+      "noHealth": "暂无健康数据",
+      "noModels": "未找到模型",
+      "loadFailed": "加载路由渠道失败",
+      "cancel": "取消",
+      "toggleSuccess": "模型状态已更新",
+      "toggleFailed": "更新模型状态失败",
+      "headers": {
+        "rank": "顺位",
+        "siteModel": "渠道 / 站点",
+        "score": "综合评分",
+        "healthPricing": "健康度 / 定价",
+        "actions": "操作"
+      }
+    },
+    "lock": {
+      "pinned": "已置顶",
+      "pinChannel": "临时置顶渠道",
+      "description": "将此模型的请求固定发送到指定的上游渠道。",
+      "target": "目标渠道",
+      "targetUnavailable": "目标不可用",
+      "remaining": "剩余 {{duration}}",
+      "unlimited": "永久",
+      "policy": {
+        "title": "降级策略",
+        "strict": "严格模式（不可用时报错）",
+        "fallback": "降级模式（自动切换其他渠道）"
+      },
+      "expiresAt": "过期时间",
+      "reason": "锁定原因",
+      "save": "保存锁定"
+    },
+    "preference": {
+      "title": "路由偏好",
+      "description": "调整延迟、成功率与价格之间的权重平衡。",
+      "expiryRescue": "订阅临期抢救",
+      "expiryRescueDescription": "优先调度即将过期的订阅渠道，避免额度浪费。"
+    },
+    "scores": {
+      "badge": "评分 {{score}}",
+      "tooltip": "路由综合总分：{{score}}",
+      "unavailable": "暂无评分明细",
+      "site": "站点 {{score}}",
+      "model": "模型 {{score}}",
+      "increaseScore": "增加调分 (+5)",
+      "decreaseScore": "降低调分 (-5)",
+      "clearAutomaticAnomaly": "清除自动异常降权",
+      "components": {
+        "siteHealth": "站点健康状态",
+        "siteSuccessRate": "站点成功率",
+        "siteLatency": "站点平均延迟",
+        "modelSuccessRate": "模型成功率",
+        "modelLatency": "模型平均延迟",
+        "modelFirstByteLatency": "首字延迟 (TTFT)",
+        "apiKeyCapacity": "可用密钥容量",
+        "actualPrice": "实际有效单价",
+        "subscriptionExpiryUrgency": "订阅临期紧迫度",
+        "subscriptionExpiryRescueBonus": "临期抢救加分",
+        "automaticAnomalyPenalty": "自动异常惩罚",
+        "manualScoreAdjustment": "手动动态调分"
+      },
+      "raw": {
+        "actualPriceCacheHitRate": "缓存命中率 {{value}}",
+        "actualPriceCacheReadRatio": "缓存折扣 {{value}}",
+        "automaticAnomalyFirstByte": "首字延迟 {{recent}}ms (基线 {{baseline}}ms)",
+        "automaticAnomalyCache": "缓存命中率 {{recent}} (基线 {{baseline}})"
+      }
     }
   },
   "channels": {

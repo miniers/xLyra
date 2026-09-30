@@ -6,7 +6,9 @@
     "failed": "Failed to save key order",
     "drag": "Drag {{name}} to reorder, or use the arrow keys",
     "up": "Move {{name}} up",
-    "down": "Move {{name}} down"
+    "down": "Move {{name}} down",
+    "conflict": "Order changed elsewhere, please reload",
+    "reload": "Reload"
   },
   "quota": {
     "unlimited": "Unlimited",
@@ -236,7 +238,13 @@
       "imageBridgeLoading": "Loading available models…",
       "imageBridgeNoModels": "No image models available on enabled sites",
       "modeHard": "Hard",
-      "modeSoft": "Soft"
+      "modeSoft": "Soft",
+      "gatewayTimeout": "Gateway Timeout",
+      "gatewayTimeoutDesc": "Configure custom timeout for upstream requests.",
+      "gatewayDefaultTimeout": "Default Timeout",
+      "gatewayDefaultTimeoutDesc": "Timeout in milliseconds for standard requests.",
+      "gatewayModelTimeouts": "Model-specific Timeouts",
+      "gatewayUnset": "Inherit default"
     },
     "actions": {
       "save": "Save",
@@ -260,7 +268,8 @@
       "expiresRequired": "Please select an expiration date",
       "expiresPast": "Expiration must be in the future",
       "mappingDuplicate": "Duplicate mapping rule \"{{key}}\"",
-      "imageBridgeModelRequired": "An image model is required when the image bridge is enabled"
+      "imageBridgeModelRequired": "An image model is required when the image bridge is enabled",
+      "gatewayTimeoutInvalid": "Please enter a valid timeout in milliseconds"
     }
   }
 }

@@ -230,4 +230,3 @@ func TestNVIDIAListModelsDegradesGracefullyOnCatalogFailure(t *testing.T) {
 		t.Fatalf("unexpected capabilities: %#v", models[0].Capabilities)
 	}
 }
-

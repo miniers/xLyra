@@ -35,7 +35,12 @@
     "copyFailed": "复制失败",
     "enableAll": "全部启用",
     "disableAll": "全部禁用",
-    "toggleLabel": "切换 {{name}}"
+    "toggleLabel": "切换 {{name}}",
+    "testing": "测试中...",
+    "testSuccess": "测试成功",
+    "testFailed": "测试失败",
+    "testModel": "测试模型",
+    "noSiteAvailable": "无可用站点"
   },
   "pagination": {
     "label": "分页",
@@ -63,7 +68,9 @@
   "navigation": {
     "open": "打开导航",
     "close": "关闭导航",
-    "closeOverlay": "关闭导航遮罩"
+    "closeOverlay": "关闭导航遮罩",
+    "collapseSidebar": "折叠侧边栏",
+    "expandSidebar": "展开侧边栏"
   },
   "datePicker": {
     "clear": "清除日期"

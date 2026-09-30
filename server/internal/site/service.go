@@ -46,18 +46,18 @@ type Service struct {
 }
 
 type CreateSiteParams struct {
-	Name                     string
-	Slug                     string
-	SiteType                 string
-	BaseURL                  string
-	Enabled                  bool
-	RoutingPriority          *float64
-	GatewayConfig            *GatewayConfig
-	ProxyID                  *string
-	RequestHeaders           map[string]string
-	Credential               *CredentialInput
-	Credentials              []CredentialInput
-	QueueSync                bool
+	Name            string
+	Slug            string
+	SiteType        string
+	BaseURL         string
+	Enabled         bool
+	RoutingPriority *float64
+	GatewayConfig   *GatewayConfig
+	ProxyID         *string
+	RequestHeaders  map[string]string
+	Credential      *CredentialInput
+	Credentials     []CredentialInput
+	QueueSync       bool
 }
 
 type UpdateSiteParams struct {

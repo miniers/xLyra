@@ -228,11 +228,19 @@
       "apiKeys": "Downstream keys",
       "requests": "Requests",
       "cost": "Cost",
-      "tokens": "Tokens"
+      "tokens": "Tokens",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "cachedTokens": "Cached tokens",
+      "successRate": "Success rate",
+      "failureRate": "Failure rate",
+      "cacheHitRate": "Cache hit rate",
+      "avgLatency": "Avg latency"
     },
     "chart": {
       "title": "Cost share",
-      "description": "Top API keys sorted by usage."
+      "description": "Top API keys sorted by usage.",
+      "modelTitle": "Model cost share"
     },
     "table": {
       "title": "Split details",
@@ -244,12 +252,28 @@
       "actualPrice": "Actual price",
       "tokens": "Tokens",
       "requests": "Requests",
-      "successRate": "Success"
+      "successRate": "Success",
+      "modelTitle": "Model details",
+      "model": "Model"
     },
     "empty": {
       "title": "No split data",
-      "description": "No usage in this range can be attributed to downstream API keys."
-    }
+      "description": "No usage in this range can be attributed to downstream API keys.",
+      "breakdown": "No breakdown data available"
+    },
+    "observationNotice": "Costs and tokens shown here are aggregated based on recorded downstream requests.",
+    "cost": {
+      "unconfigured": "Unconfigured"
+    },
+    "hourlyEmpty": "No hourly data in this range",
+    "dailyEmpty": "No daily data in this range",
+    "hourlyTitle": "Hourly split",
+    "dailyTitle": "Daily split",
+    "dimensions": {
+      "apiKey": "By key",
+      "model": "By model"
+    },
+    "analyticsUnavailable": "Model analytics temporarily unavailable"
   },
   "quota": {
     "title": "Quota",

@@ -168,7 +168,14 @@
       "headerValuePlaceholder": "Header 值",
       "quotaProbe": "上游程序类型（余额探测）",
       "quotaProbeDesc": "选择该站点背后实际运行的程序，网关将按其接口定期探测各凭证的可用余额并展示。仅适用于 API Key 凭证的站点。",
-      "quotaProbeNone": "不探测"
+      "quotaProbeNone": "不探测",
+      "firstByteTimeout": "首字响应超时 (ms)",
+      "firstByteTimeoutHint": "等待上游返回首个字节的最长时间，留空表示不限制。",
+      "maxConcurrency": "最大并发数",
+      "maxConcurrencyHint": "当前站点同时处理的最大请求数，留空表示不限制。",
+      "maxConcurrencyPlaceholder": "不限制",
+      "maxSameSiteCredentialRetries": "同站点重试其他密钥上限",
+      "maxSameSiteCredentialRetriesHint": "单次请求在故障切换到其他站点前，允许尝试该站点内其他密钥的最大次数（默认 2）。"
     },
     "categories": {
       "official": "官方接入",
@@ -203,7 +210,10 @@
       "userIdNumeric": "用户 ID 需要是数字",
       "headerNameRequired": "请输入 Header 名",
       "responsesToolRequired": "兼容模式下至少选择一个禁用工具",
-      "urlContainsV1": "地址无需包含 /v1，系统会自动追加"
+      "urlContainsV1": "地址无需包含 /v1，系统会自动追加",
+      "maxConcurrencyInvalid": "请输入有效的正整数",
+      "gatewayRetriesInvalid": "请输入 0 到 5 之间的整数",
+      "gatewayTimeoutInvalid": "请输入有效的超时毫秒数"
     },
     "actions": {
       "save": "保存修改",
@@ -257,7 +267,9 @@
       "updated": "已更新",
       "modelToggleFailed": "模型开关更新失败",
       "refreshed": "Key 状态已刷新",
-      "refreshFailed": "Key 刷新失败"
+      "refreshFailed": "Key 刷新失败",
+      "cooldownCleared": "冷却状态已解除",
+      "clearCooldownFailed": "解除冷却失败"
     },
     "deleteDialog": {
       "title": "删除 Apikey",
@@ -288,7 +300,26 @@
       "unknown": "未同步",
       "pending": "等待同步",
       "syncing": "同步中"
-    }
+    },
+    "rpmLimit": "速率限制 (RPM)",
+    "rpmLimitPlaceholder": "继承默认",
+    "rpdLimit": "每日限制 (RPD)",
+    "rpdLimitPlaceholder": "继承默认",
+    "resetTimezone": "配额重置时区",
+    "multiplierSource": "倍率计算方式",
+    "multiplierManual": "固定手动配置",
+    "multiplierAuto": "自动取峰值",
+    "multiplierHistory": "历史倍率",
+    "multiplierProbe": "实时探测",
+    "multiplierPeakHint": "自动对比实时探测与最近历史倍率并取较高值",
+    "multiplierProbeOk": "探测正常",
+    "multiplierProbeError": "探测异常",
+    "multiplierProbeIncomplete": "探测不完整",
+    "multiplierProbeUnknown": "探测状态未知",
+    "rateLimitUsageTitle": "限流用量统计",
+    "cooling": "冷却中",
+    "clearCooldown": "解除冷却",
+    "clearCooldownLabel": "解除 {{name}} 的冷却状态"
   },
   "grokAccounts": {
     "title": "Grok 账号",

@@ -6,7 +6,9 @@
     "failed": "排序保存失败",
     "drag": "拖动 {{name}} 调整顺序，也可使用上下方向键",
     "up": "上移 {{name}}",
-    "down": "下移 {{name}}"
+    "down": "下移 {{name}}",
+    "conflict": "排序已被其他地方修改，请重新加载",
+    "reload": "重新加载"
   },
   "quota": {
     "unlimited": "不限",
@@ -236,7 +238,13 @@
       "imageBridgeLoading": "正在加载可用模型…",
       "imageBridgeNoModels": "启用站点中没有可用的生图模型",
       "modeHard": "硬映射",
-      "modeSoft": "软映射"
+      "modeSoft": "软映射",
+      "gatewayTimeout": "网关超时时间",
+      "gatewayTimeoutDesc": "配置上游请求的自定义超时时间。",
+      "gatewayDefaultTimeout": "默认超时时间",
+      "gatewayDefaultTimeoutDesc": "普通请求的超时时间（毫秒）。",
+      "gatewayModelTimeouts": "模型自定义超时",
+      "gatewayUnset": "继承默认"
     },
     "actions": {
       "save": "保存",
@@ -260,7 +268,8 @@
       "expiresRequired": "请选择到期日期",
       "expiresPast": "到期时间必须晚于当前时间",
       "mappingDuplicate": "映射规则「{{key}}」重复",
-      "imageBridgeModelRequired": "启用生图桥接时必须选择生图模型"
+      "imageBridgeModelRequired": "启用生图桥接时必须选择生图模型",
+      "gatewayTimeoutInvalid": "请输入有效的超时毫秒数"
     }
   }
 }

@@ -522,6 +522,14 @@ func (h Handler) serveEndpoint(
 		h.writeGatewayError(w, r, http.StatusBadGateway, "upstream_failed", "all upstream route candidates failed")
 		return
 	}
+	if lastFailure != nil && (lastFailure.statusCode == http.StatusTooManyRequests || lastFailure.upstreamStatusCode == http.StatusTooManyRequests) {
+		if len(lastFailure.body) == 0 {
+			lastFailure.contentType = "application/json"
+			lastFailure.body = gatewayRequestFailureBody(nonEmptyString(lastFailure.errorType, "rate_limit_exceeded"), nonEmptyString(lastFailure.errorMessage, "rate limit exceeded"), requestID)
+		}
+		writeUpstreamFailure(w, *lastFailure, requestID)
+		return
+	}
 	if lastFailure != nil && len(lastFailure.body) > 0 && lastFailure.statusCode >= 400 {
 		writeUpstreamFailure(w, *lastFailure, requestID)
 		return

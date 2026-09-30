@@ -331,10 +331,16 @@ func (h Handler) forwardGatewayRequest(
 					h.logger.WarnContext(ctx, "failed to activate credential rate limit cooldown", "site_id", candidate.Site.ID, "credential_id", selectedCredential.Credential.ID, "reason", cooldown.Reason, "error", err)
 				}
 				result.statusCode = http.StatusTooManyRequests
+				result.upstreamStatusCode = http.StatusTooManyRequests
 				result.errorType = "credential_rate_limited"
 				result.errorMessage = "credential rate limit exceeded"
 				result.cooldownReason = cooldown.Reason
 				result.cooldownDuration = cooldown.Duration
+				result.contentType = "application/json"
+				result.body = gatewayRequestFailureBody("credential_rate_limited", "credential rate limit exceeded", requestID)
+				if cooldown.Duration > 0 {
+					result.retryAfterSeconds = int64(cooldown.Duration.Seconds())
+				}
 				result.latencyMS = time.Since(startedAt).Milliseconds()
 				result = recordCredentialAttempt(result, nil, true)
 				lastResult = result

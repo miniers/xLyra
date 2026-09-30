@@ -44,7 +44,19 @@
     "toast": {
       "modelToggleFailed": "モデル切り替えの更新に失敗しました",
       "cooldownCleared": "クールダウンを解除しました",
-      "cooldownClearFailed": "クールダウン解除に失敗しました"
+      "cooldownClearFailed": "クールダウン解除に失敗しました",
+      "routingLockUpdated": "ルーティングロックを保存しました",
+      "routingLockUpdateFailed": "ルーティングロックの保存に失敗しました",
+      "routingLockRemoved": "ルーティングロックを解除しました",
+      "routingLockRemoveFailed": "ルーティングロックの解除に失敗しました",
+      "temporaryScoreAdjusted": "スコア調整を更新しました",
+      "temporaryScoreAdjustFailed": "スコア調整に失敗しました",
+      "automaticAnomalyCleared": "異常ペナルティを解除しました",
+      "automaticAnomalyClearFailed": "異常ペナルティの解除に失敗しました",
+      "preferenceUpdated": "ルーティング優先設定を更新しました",
+      "preferenceUpdateFailed": "ルーティング優先設定の更新に失敗しました",
+      "expiryRescueUpdated": "サブスク救済設定を更新しました",
+      "expiryRescueUpdateFailed": "サブスク救済設定の更新に失敗しました"
     }
   },
   "details": {
@@ -81,6 +93,85 @@
       "remaining": "残り {{duration}}",
       "clear": "クリア",
       "noCooldowns": "クールダウンなし"
+    },
+    "table": {
+      "more": "詳細",
+      "test": "テスト",
+      "enableModel": "モデルを有効化",
+      "disableModel": "モデルを無効化",
+      "lock": "ロック",
+      "editLock": "ロックを編集",
+      "removeLock": "ロックを解除",
+      "pinLock": "ピン留め",
+      "scoreDetails": "スコア詳細",
+      "channelDetails": "チャネル詳細",
+      "noChannels": "チャネルがありません",
+      "noHealth": "ヘルスデータなし",
+      "noModels": "モデルが見つかりません",
+      "loadFailed": "ルートチャネルの読み込みに失敗しました",
+      "cancel": "キャンセル",
+      "toggleSuccess": "モデル状態を更新しました",
+      "toggleFailed": "モデル状態の更新に失敗しました",
+      "headers": {
+        "rank": "順位",
+        "siteModel": "チャネル / サイト",
+        "score": "スコア",
+        "healthPricing": "ヘルス & 料金",
+        "actions": "操作"
+      }
+    },
+    "lock": {
+      "pinned": "ピン留め済み",
+      "pinChannel": "チャネルを一時的にピン留め",
+      "description": "このモデルのリクエストを指定された上流チャネルに固定します。",
+      "target": "対象チャネル",
+      "targetUnavailable": "対象は利用不可",
+      "remaining": "残り {{duration}}",
+      "unlimited": "無期限",
+      "policy": {
+        "title": "フォールバックポリシー",
+        "strict": "厳格（利用不可時はエラー）",
+        "fallback": "フォールバック（他チャネルへ切り替え）"
+      },
+      "expiresAt": "有効期限",
+      "reason": "ロック理由",
+      "save": "ロックを保存"
+    },
+    "preference": {
+      "title": "ルーティング優先設定",
+      "description": "レイテンシ、成功率、料金の重み付けバランスを調整します。",
+      "expiryRescue": "サブスク期限切れ前の優先消費",
+      "expiryRescueDescription": "クォータの浪費を防ぐため、期限が近いサブスクリプションを優先します。"
+    },
+    "scores": {
+      "badge": "スコア {{score}}",
+      "tooltip": "総合ルーティングスコア：{{score}}",
+      "unavailable": "スコア明細はありません",
+      "site": "サイト {{score}}",
+      "model": "モデル {{score}}",
+      "increaseScore": "スコア加算 (+5)",
+      "decreaseScore": "スコア減算 (-5)",
+      "clearAutomaticAnomaly": "自動異常ペナルティを解除",
+      "components": {
+        "siteHealth": "サイトヘルス",
+        "siteSuccessRate": "サイト成功率",
+        "siteLatency": "サイトレイテンシ",
+        "modelSuccessRate": "モデル成功率",
+        "modelLatency": "モデルレイテンシ",
+        "modelFirstByteLatency": "ファーストバイトレイテンシ",
+        "apiKeyCapacity": "APIキーキャパシティ",
+        "actualPrice": "実効単価",
+        "subscriptionExpiryUrgency": "サブスク期限緊急度",
+        "subscriptionExpiryRescueBonus": "期限救済ボーナス",
+        "automaticAnomalyPenalty": "自動異常ペナルティ",
+        "manualScoreAdjustment": "手動スコア調整"
+      },
+      "raw": {
+        "actualPriceCacheHitRate": "キャッシュヒット率 {{value}}",
+        "actualPriceCacheReadRatio": "キャッシュ割引 {{value}}",
+        "automaticAnomalyFirstByte": "ファーストバイト {{recent}}ms (ベースライン {{baseline}}ms)",
+        "automaticAnomalyCache": "キャッシュヒット率 {{recent}} (ベースライン {{baseline}})"
+      }
     }
   },
   "channels": {

@@ -55,21 +55,21 @@ type CanonicalModel struct {
 	RoutingPreference          string `gorm:"column:routing_preference;not null;default:'default'"`
 	RoutingExpiryRescueEnabled bool   `gorm:"column:routing_expiry_rescue_enabled;not null;default:false"`
 	InputPrice                 sql.NullFloat64
-	OutputPrice            sql.NullFloat64
-	CacheReadRatio         sql.NullFloat64
-	CacheWriteRatio        sql.NullFloat64
-	CacheWrite1hRatio      sql.NullFloat64 `gorm:"column:cache_write_1h_ratio"`
-	PricingVariants        JSON            `gorm:"type:jsonb"`
-	AudioRatio             sql.NullFloat64
-	AudioCompletionRatio   sql.NullFloat64
-	SupportedEndpointTypes JSON `gorm:"type:jsonb"`
-	Modalities             JSON `gorm:"type:jsonb"`
-	ContextWindow          sql.NullInt32
-	MaxOutputTokens        sql.NullInt32
-	PricingSource          string
-	LastPricingSyncedAt    sql.NullTime
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	OutputPrice                sql.NullFloat64
+	CacheReadRatio             sql.NullFloat64
+	CacheWriteRatio            sql.NullFloat64
+	CacheWrite1hRatio          sql.NullFloat64 `gorm:"column:cache_write_1h_ratio"`
+	PricingVariants            JSON            `gorm:"type:jsonb"`
+	AudioRatio                 sql.NullFloat64
+	AudioCompletionRatio       sql.NullFloat64
+	SupportedEndpointTypes     JSON `gorm:"type:jsonb"`
+	Modalities                 JSON `gorm:"type:jsonb"`
+	ContextWindow              sql.NullInt32
+	MaxOutputTokens            sql.NullInt32
+	PricingSource              string
+	LastPricingSyncedAt        sql.NullTime
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type CanonicalModelWithStats struct {

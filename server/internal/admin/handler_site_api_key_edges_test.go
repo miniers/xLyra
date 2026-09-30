@@ -317,4 +317,3 @@ func TestResolveSiteCredentialsRateLimits(t *testing.T) {
 	}, req)
 	assertAdminErrorCode(t, recBad, http.StatusBadRequest, "invalid_reset_timezone")
 }
-

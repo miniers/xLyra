@@ -168,7 +168,14 @@
       "headerValuePlaceholder": "Header value",
       "quotaProbe": "Upstream software (balance probe)",
       "quotaProbeDesc": "Select the software actually running behind this site; the gateway periodically probes each credential's available balance via its API. Applies to API-key credential sites only.",
-      "quotaProbeNone": "Disabled"
+      "quotaProbeNone": "Disabled",
+      "firstByteTimeout": "First-byte timeout (ms)",
+      "firstByteTimeoutHint": "Maximum wait time for the first byte from upstream. Empty to disable.",
+      "maxConcurrency": "Max concurrency",
+      "maxConcurrencyHint": "Maximum number of simultaneous active requests to this site. Empty for unlimited.",
+      "maxConcurrencyPlaceholder": "Unlimited",
+      "maxSameSiteCredentialRetries": "Same-site credential retries",
+      "maxSameSiteCredentialRetriesHint": "Maximum number of alternative credentials to try on this site before failing over. Default 2."
     },
     "categories": {
       "official": "Official",
@@ -205,7 +212,10 @@
       "userIdNumeric": "User ID must be numeric",
       "headerNameRequired": "Please enter a header name",
       "responsesToolRequired": "Select at least one disabled tool in compatibility mode",
-      "urlContainsV1": "No need to include /v1 — it will be added automatically"
+      "urlContainsV1": "No need to include /v1 — it will be added automatically",
+      "maxConcurrencyInvalid": "Please enter a valid positive integer",
+      "gatewayRetriesInvalid": "Please enter an integer between 0 and 5",
+      "gatewayTimeoutInvalid": "Please enter a valid timeout in milliseconds"
     },
     "actions": {
       "save": "Save Changes",
@@ -255,7 +265,11 @@
       "deleted": "API key deleted",
       "updateFailed": "API key update failed",
       "updated": "Updated",
-      "modelToggleFailed": "Model toggle failed"
+      "modelToggleFailed": "Model toggle failed",
+      "cooldownCleared": "Cooldown cleared",
+      "clearCooldownFailed": "Failed to clear cooldown",
+      "refreshed": "API key state refreshed",
+      "refreshFailed": "Failed to refresh API key state"
     },
     "deleteDialog": {
       "title": "Delete Apikey",
@@ -286,7 +300,28 @@
       "unknown": "Not synced",
       "pending": "Waiting to sync",
       "syncing": "Syncing"
-    }
+    },
+    "refresh": "Refresh",
+    "refreshLabel": "Refresh {{name}}",
+    "rpmLimit": "Rate limit (RPM)",
+    "rpmLimitPlaceholder": "Inherit default",
+    "rpdLimit": "Rate limit (RPD)",
+    "rpdLimitPlaceholder": "Inherit default",
+    "resetTimezone": "Reset timezone",
+    "multiplierSource": "Multiplier source",
+    "multiplierManual": "Manual",
+    "multiplierAuto": "Automatic peak",
+    "multiplierHistory": "Historical",
+    "multiplierProbe": "Active probe",
+    "multiplierPeakHint": "Automatically uses the higher value between probed multiplier and recent history",
+    "multiplierProbeOk": "Probe normal",
+    "multiplierProbeError": "Probe error",
+    "multiplierProbeIncomplete": "Probe incomplete",
+    "multiplierProbeUnknown": "Probe unknown",
+    "rateLimitUsageTitle": "Rate Limit Usage",
+    "cooling": "Cooling",
+    "clearCooldown": "Clear cooldown",
+    "clearCooldownLabel": "Clear cooldown for {{name}}"
   },
   "grokAccounts": {
     "title": "Grok Accounts",

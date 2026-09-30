@@ -36,6 +36,19 @@ func mapCCToolName(name string) string {
 	return name
 }
 
+var ccReverseToolAliases = map[string]string{
+	"shell_output": "bash_output",
+	"search_tools": "tool_search",
+	"read_file":    "read_multiple_files",
+}
+
+func reverseMapCCToolName(name string) string {
+	if original, ok := ccReverseToolAliases[name]; ok {
+		return original
+	}
+	return name
+}
+
 func ccGenerateTraceparent() string {
 	traceID := make([]byte, 16)
 	spanID := make([]byte, 8)
@@ -738,7 +751,7 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 			Model:                  d.model,
 			CreatedAt:              d.createdAt,
 			ToolCallID:             toolCallID,
-			ToolCallName:           toolName,
+			ToolCallName:           reverseMapCCToolName(toolName),
 			ToolCallArgumentsDelta: args,
 			ToolCallIndex:          d.toolCallIndex,
 		})

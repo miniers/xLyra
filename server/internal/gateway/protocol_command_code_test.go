@@ -250,6 +250,42 @@ func TestCommandCodeStreamDecoderAndBufferedTransform(t *testing.T) {
 	}
 }
 
+func TestCommandCodeReverseToolMapping(t *testing.T) {
+	decoder := newCommandCodeStreamDecoder()
+	line := []byte(`{"type":"tool-call","toolCallId":"call_123","toolName":"shell_output","input":{"command":"ls"}}`)
+	events, err := decoder.DecodeLine(line)
+	if err != nil {
+		t.Fatalf("DecodeLine error: %v", err)
+	}
+	if len(events) < 1 {
+		t.Fatalf("expected events, got %d", len(events))
+	}
+	lastEvent := events[len(events)-1]
+	if lastEvent.Type != canonicalStreamEventToolCallDelta || lastEvent.ToolCallName != "bash_output" {
+		t.Fatalf("expected reversed tool name 'bash_output', got %#v", lastEvent)
+	}
+
+	adapterChat := newCommandCodeProtocolAdapter(gatewayRequest{
+		DownstreamPath: "/v1/chat/completions",
+	}, routeengine.Candidate{})
+	streamBody := []byte("data: {\"type\":\"tool-call\",\"toolCallId\":\"call_abc\",\"toolName\":\"search_tools\",\"input\":{\"query\":\"git\"}}\n\ndata: {\"type\":\"finish\",\"finishReason\":\"tool_calls\"}\n\ndata: [DONE]\n\n")
+	resp, err := adapterChat.TransformBufferedResponse(http.StatusOK, http.Header{}, streamBody)
+	if err != nil {
+		t.Fatalf("TransformBufferedResponse error: %v", err)
+	}
+	var chatResp map[string]any
+	if err := json.Unmarshal(resp.Body, &chatResp); err != nil {
+		t.Fatalf("json unmarshal: %v", err)
+	}
+	choices := chatResp["choices"].([]any)
+	msg := choices[0].(map[string]any)["message"].(map[string]any)
+	toolCalls := msg["tool_calls"].([]any)
+	firstCall := toolCalls[0].(map[string]any)["function"].(map[string]any)
+	if firstCall["name"] != "tool_search" {
+		t.Fatalf("expected reverse mapped tool name 'tool_search', got %q", firstCall["name"])
+	}
+}
+
 func TestCommandCodeBuildUpstreamPayloadImages(t *testing.T) {
 	adapter := newCommandCodeProtocolAdapter(gatewayRequest{
 		DownstreamPath: "/v1/chat/completions",

@@ -35,7 +35,12 @@
     "copyFailed": "Copy failed",
     "enableAll": "Enable all",
     "disableAll": "Disable all",
-    "toggleLabel": "Toggle {{name}}"
+    "toggleLabel": "Toggle {{name}}",
+    "testing": "Testing...",
+    "testSuccess": "Test succeeded",
+    "testFailed": "Test failed",
+    "testModel": "Test model",
+    "noSiteAvailable": "No site available"
   },
   "pagination": {
     "label": "pagination",
@@ -63,7 +68,9 @@
   "navigation": {
     "open": "Open navigation",
     "close": "Close navigation",
-    "closeOverlay": "Close navigation overlay"
+    "closeOverlay": "Close navigation overlay",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar"
   },
   "datePicker": {
     "clear": "Clear date"

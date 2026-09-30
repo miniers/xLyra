@@ -147,10 +147,18 @@ func (r RouteAnomalyRepository) SaveEvaluation(ctx context.Context, state RouteA
 	if len(state.Metrics) == 0 {
 		state.Metrics = JSON("[]")
 	}
+	if state.UpdatedAt.IsZero() {
+		state.UpdatedAt = time.Now()
+	}
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "canonical_model_id"},
 			{Name: "site_model_id"},
+		},
+		Where: clause.Where{
+			Exprs: []clause.Expression{
+				clause.Expr{SQL: "route_anomaly_states.updated_at IS NULL OR route_anomaly_states.updated_at <= EXCLUDED.updated_at"},
+			},
 		},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"active",

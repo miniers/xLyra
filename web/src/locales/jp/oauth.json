@@ -228,11 +228,19 @@
       "apiKeys": "下流 Key",
       "requests": "リクエスト",
       "cost": "消費",
-      "tokens": "Tokens"
+      "tokens": "Tokens",
+      "inputTokens": "入力トークン",
+      "outputTokens": "出力トークン",
+      "cachedTokens": "キャッシュトークン",
+      "successRate": "成功率",
+      "failureRate": "失敗率",
+      "cacheHitRate": "キャッシュヒット率",
+      "avgLatency": "平均レイテンシ"
     },
     "chart": {
       "title": "消費割合",
-      "description": "使用量順に API Key の上位を表示します。"
+      "description": "使用量順に API Key の上位を表示します。",
+      "modelTitle": "モデル別費用シェア"
     },
     "table": {
       "title": "分担明細",
@@ -244,12 +252,28 @@
       "actualPrice": "実価格",
       "tokens": "Tokens",
       "requests": "リクエスト",
-      "successRate": "成功率"
+      "successRate": "成功率",
+      "modelTitle": "モデル別明細",
+      "model": "モデル"
     },
     "empty": {
       "title": "分担データがありません",
-      "description": "この期間には下流 API Key に紐付く使用量がありません。"
-    }
+      "description": "この期間には下流 API Key に紐付く使用量がありません。",
+      "breakdown": "明細データはありません"
+    },
+    "observationNotice": "ここに表示される費用とトークンは、記録された下流リクエストに基づいて配分および集計されます。",
+    "cost": {
+      "unconfigured": "料金未設定"
+    },
+    "hourlyEmpty": "この期間の時間別データはありません",
+    "dailyEmpty": "この期間の日別データはありません",
+    "hourlyTitle": "時間別配分",
+    "dailyTitle": "日別配分",
+    "dimensions": {
+      "apiKey": "キー別",
+      "model": "モデル別"
+    },
+    "analyticsUnavailable": "モデル分析は一時的に利用できません"
   },
   "quota": {
     "title": "クォータ",

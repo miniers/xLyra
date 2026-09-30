@@ -48,7 +48,28 @@
       "retentionDaysPositive": "保持日数は正の整数である必要があります",
       "sessionLifetimeRequired": "セッション有効期間を入力してください",
       "sessionLifetimeInteger": "セッション有効期間は整数（時間）で入力してください",
-      "sessionLifetimeRange": "セッション有効期間は 0〜720 時間にしてください"
+      "sessionLifetimeRange": "セッション有効期間は 0〜720 時間にしてください",
+      "gatewayRetries": "再試行回数は 0〜20 の整数を入力してください",
+      "gatewayTimeout": "ファーストバイトタイムアウトは 0〜600000 の整数を入力してください",
+      "gatewayInvalid": "ゲートウェイ設定が無効です"
+    },
+    "gateway": {
+      "title": "ゲートウェイフェイルオーバー",
+      "description": "セッションアフィニティ、同サイト内クレデンシャル再試行、ファーストバイトタイムアウトを設定します。0 は無効化を意味します。",
+      "sessionAffinity": "セッションアフィニティ",
+      "sessionAffinityDesc": "同一セッションでは直近で成功したルートを優先し、上流キャッシュのヒット率を高めます。無効化すると通常のルート順序に戻ります。",
+      "sameSiteRetries": "同サイトクレデンシャル再試行回数",
+      "sameSiteRetriesDesc": "下流への出力が開始されていない転送エラー、タイムアウト、5xxエラーに適用されます。範囲: 0〜20。",
+      "firstByteTimeout": "グローバルファーストバイトタイムアウト (ms)",
+      "firstByteTimeoutDesc": "上流から時間内に有効な最初の出力がない場合にクレデンシャルを切り替えます。0 で無効化。"
+    },
+    "serviceWorker": {
+      "title": "Service Worker",
+      "description": "バージョン更新に問題がある場合、フロントエンドの Service Worker を手動で確認・更新します。",
+      "update": "Service Worker を更新",
+      "updating": "Service Worker を更新中...",
+      "updated": "Service Worker の更新確認を開始しました",
+      "updateFailed": "Service Worker の更新に失敗しました"
     }
   },
   "profile": {

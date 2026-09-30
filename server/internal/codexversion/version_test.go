@@ -53,7 +53,7 @@ func TestRefreshRejectsInvalidVersion(t *testing.T) {
 
 func TestNormalizeVersionStripsRustPrefixAndWhitespace(t *testing.T) {
 	cases := map[string]string{
-		" 0.153.3 ":   "0.153.3",
+		" 0.153.3 ":    "0.153.3",
 		"rust-0.153.3": "0.153.3",
 		"v0.153.3":     "",
 		"0.153":        "",

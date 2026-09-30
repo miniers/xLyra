@@ -13,7 +13,8 @@
       "reasoning": "推論の強度",
       "input": "入力",
       "output": "出力",
-      "cost": "コスト"
+      "cost": "コスト",
+      "actions": "操作"
     },
     "test": "テスト",
     "success": "成功",
@@ -27,7 +28,18 @@
     "empty": {
       "title": "リクエストログがありません",
       "description": "表示できる転送リクエスト記録はありません。"
-    }
+    },
+    "inProgress": "進行中",
+    "phases": {
+      "accepted": "受付済み",
+      "routed": "ルーティング済み",
+      "responding": "応答中",
+      "completed": "完了",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み"
+    },
+    "cacheWrite": "キャッシュ書き込み {{tokens}}",
+    "cacheReadWrite": "キャッシュ {{read}}/{{write}}"
   },
   "filters": {
     "dateFrom": "開始日",
@@ -52,7 +64,8 @@
     "hideWithoutSiteLabel": "上流サイトのないリクエストを非表示",
     "autoRefresh": "自動更新",
     "autoRefreshLabel": "リクエストログを自動更新",
-    "refresh": "更新"
+    "refresh": "更新",
+    "cacheHitRate": "キャッシュヒット率 {{rate}}"
   },
   "tokens": {
     "total": "総トークン",
@@ -66,11 +79,11 @@
     "loadFailed": "詳細の読み込みに失敗しました: {{message}}",
     "requestId": "リクエスト ID",
     "request": "リクエスト",
-    "downstreamModel": "下流モデル",
+    "downstreamModel": "モデル",
     "upstreamModel": "上流モデル",
     "responseModel": "応答モデル",
     "transport": "トランスポート",
-    "status": "ステータス",
+    "status": "状態",
     "success": "成功",
     "failure": "失敗",
     "statusCode": "ステータスコード",
@@ -167,7 +180,14 @@
       "perRequestUnit": "{{price}}/回"
     },
     "longContext": "長文脈課金",
-    "longContextApplied": "長文脈レートを適用"
+    "longContextApplied": "長文脈レートを適用",
+    "inProgress": "進行中",
+    "phase": "フェーズ",
+    "attempt": "試行回数",
+    "responseMode": "応答モード",
+    "apiKey": "APIキー",
+    "startedAt": "開始時刻",
+    "tps": "生成速度"
   },
   "modelMapping": {
     "responseNamespace": "上流の応答モデルはプロバイダーの接頭辞のみ異なります：{{model}}",
@@ -184,12 +204,19 @@
     "filters": "フィルター",
     "done": "完了",
     "statusCode": "ステータス {{code}}",
-    "tokens": "入力 {{input}} / 出力 {{output}}"
+    "tokens": "入力 {{input}} / 出力 {{output}}",
+    "tokensWithTps": "{{total}} トークン · {{tps}}"
   },
   "page": {
     "loadFailed": "リクエストログの読み込みに失敗しました",
     "eyebrow": "操作",
     "title": "リクエスト",
     "description": "ゲートウェイのリクエストログ、ルーティング結果、使用コストを確認します。"
+  },
+  "actions": {
+    "cancel": "リクエストをキャンセル",
+    "cancelSuccess": "リクエストをキャンセルしました",
+    "alreadyFinished": "リクエストはすでに終了しています",
+    "controlFailed": "リクエストのキャンセルに失敗しました"
   }
 }

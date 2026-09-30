@@ -178,7 +178,6 @@ func TestAttemptMetadataIncludesNormalizedGatewayFields(t *testing.T) {
 	}
 }
 
-
 func TestStreamMetadataClassifiesReadFailureAsIncomplete(t *testing.T) {
 	t.Parallel()
 

@@ -13,7 +13,8 @@
       "reasoning": "推理强度",
       "input": "输入",
       "output": "输出",
-      "cost": "花费"
+      "cost": "花费",
+      "actions": "操作"
     },
     "test": "测试",
     "success": "成功",
@@ -29,6 +30,15 @@
     "empty": {
       "title": "没有请求日志",
       "description": "当前没有可展示的转发请求记录。"
+    },
+    "inProgress": "进行中",
+    "phases": {
+      "accepted": "已接收",
+      "routed": "已路由",
+      "responding": "响应中",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
     }
   },
   "filters": {
@@ -54,7 +64,8 @@
     "hideWithoutSiteLabel": "隐藏没有上游站点的请求",
     "autoRefresh": "自动刷新",
     "autoRefreshLabel": "自动刷新请求日志",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "cacheHitRate": "缓存命中率 {{rate}}"
   },
   "tokens": {
     "total": "总 Tokens",
@@ -66,9 +77,9 @@
   "detail": {
     "loading": "读取详情中",
     "loadFailed": "详情读取失败：{{message}}",
-    "requestId": "请求ID",
+    "requestId": "请求 ID",
     "request": "请求",
-    "downstreamModel": "下游模型",
+    "downstreamModel": "模型",
     "upstreamModel": "上游模型",
     "responseModel": "响应模型",
     "transport": "传输",
@@ -169,7 +180,14 @@
       "perRequestUnit": "{{price}}/次"
     },
     "longContext": "长上下文计价",
-    "longContextApplied": "已按长上下文档计价"
+    "longContextApplied": "已按长上下文档计价",
+    "inProgress": "进行中",
+    "phase": "阶段",
+    "attempt": "尝试次数",
+    "responseMode": "响应模式",
+    "apiKey": "API 密钥",
+    "startedAt": "开始时间",
+    "tps": "生成速率"
   },
   "modelMapping": {
     "responseNamespace": "上游响应模型仅厂商前缀不同：{{model}}",
@@ -186,12 +204,19 @@
     "filters": "筛选",
     "done": "完成",
     "statusCode": "状态码 {{code}}",
-    "tokens": "输入 {{input}} / 输出 {{output}}"
+    "tokens": "输入 {{input}} / 输出 {{output}}",
+    "tokensWithTps": "{{total}} tokens · {{tps}}"
   },
   "page": {
     "loadFailed": "请求日志读取失败",
     "eyebrow": "运维",
     "title": "请求",
     "description": "检查网关请求日志、路由结果和用量花费。"
+  },
+  "actions": {
+    "cancel": "取消请求",
+    "cancelSuccess": "已取消请求",
+    "alreadyFinished": "请求已结束",
+    "controlFailed": "取消请求失败"
   }
 }

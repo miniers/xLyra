@@ -176,3 +176,33 @@ func TestClinePassValidateCredentials(t *testing.T) {
 		t.Fatal("expected invalid key to fail, got nil")
 	}
 }
+
+func TestClinePassValidateCredentialsFallbackModels(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/users/me" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/api/v1/models" {
+			if r.Header.Get("Authorization") == "Bearer valid-fallback" {
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{}})
+				return
+			}
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cp := NewClinePass()
+	if err := cp.ValidateCredentials(t.Context(), SiteConfig{BaseURL: server.URL}, "valid-fallback"); err != nil {
+		t.Fatalf("expected valid fallback key to pass, got: %v", err)
+	}
+	if err := cp.ValidateCredentials(t.Context(), SiteConfig{BaseURL: server.URL}, "bad-key"); err == nil {
+		t.Fatal("expected bad key to fail on models fallback")
+	}
+}

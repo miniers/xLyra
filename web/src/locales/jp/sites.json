@@ -160,7 +160,22 @@
       "headerValuePlaceholder": "ヘッダー値",
       "quotaProbe": "上流ソフトウェア（残高プローブ）",
       "quotaProbeDesc": "このサイトの背後で実際に動作しているソフトウェアを選択すると、ゲートウェイが各認証情報の利用可能残高を定期的に取得して表示します。API キー認証のサイトのみ対象です。",
-      "quotaProbeNone": "無効"
+      "quotaProbeNone": "無効",
+      "firstByteTimeout": "ファーストバイトタイムアウト (ms)",
+      "firstByteTimeoutHint": "上流から最初のバイトを受信するまでの最大待機時間。空欄で無効化。",
+      "maxConcurrency": "最大同時実行数",
+      "maxConcurrencyHint": "このサイトで同時に処理する最大リクエスト数。空欄で無制限。",
+      "maxConcurrencyPlaceholder": "無制限",
+      "maxSameSiteCredentialRetries": "同サイト内別キー再試行上限",
+      "maxSameSiteCredentialRetriesHint": "他サイトへフェイルオーバーする前に、同サイト内の別キーを試行する最大回数（デフォルト 2）。",
+      "disableImageGenerationTool": "画像生成ツールを無効化",
+      "disableImageGenerationToolDesc": "画像生成ツール呼び出しを無効化します。",
+      "disabledResponsesTools": "無効なResponsesツール",
+      "disabledResponsesToolsDesc": "除外するResponsesツールを指定します。",
+      "responsesToolPolicy": "Responsesツールポリシー",
+      "responsesToolPolicyDesc": "Responsesプロトコルのツール呼び出し処理ポリシー。",
+      "responsesToolPolicyCompatibility": "互換モード",
+      "responsesToolPolicyPassthrough": "パススルー"
     },
     "categories": {
       "official": "公式",
@@ -196,7 +211,11 @@
       "userIdRequired": "ユーザー ID を入力してください",
       "userIdNumeric": "ユーザー ID は数字で入力してください",
       "headerNameRequired": "ヘッダー名を入力してください",
-      "urlContainsV1": "/v1 を含める必要はありません。自動的に追加されます"
+      "urlContainsV1": "/v1 を含める必要はありません。自動的に追加されます",
+      "maxConcurrencyInvalid": "有効な正の整数を入力してください",
+      "gatewayRetriesInvalid": "0から5の間の整数を入力してください",
+      "gatewayTimeoutInvalid": "有効なタイムアウト（ミリ秒）を入力してください",
+      "responsesToolRequired": "Responsesツールポリシーを選択してください"
     },
     "actions": {
       "save": "変更を保存",
@@ -246,7 +265,11 @@
       "deleted": "API キーを削除しました",
       "updateFailed": "API キー更新に失敗しました",
       "updated": "更新日時",
-      "modelToggleFailed": "モデル切り替えに失敗しました"
+      "modelToggleFailed": "モデル切り替えに失敗しました",
+      "cooldownCleared": "クールダウンを解除しました",
+      "clearCooldownFailed": "クールダウン解除に失敗しました",
+      "refreshed": "APIキー状態を更新しました",
+      "refreshFailed": "APIキー状態の更新に失敗しました"
     },
     "deleteDialog": {
       "title": "Apikey を削除",
@@ -277,7 +300,28 @@
       "unknown": "未同期",
       "pending": "同期待ち",
       "syncing": "同期中"
-    }
+    },
+    "refresh": "更新",
+    "refreshLabel": "{{name}} を更新",
+    "rpmLimit": "レート制限 (RPM)",
+    "rpmLimitPlaceholder": "デフォルトを継承",
+    "rpdLimit": "日次制限 (RPD)",
+    "rpdLimitPlaceholder": "デフォルトを継承",
+    "resetTimezone": "リセットタイムゾーン",
+    "multiplierSource": "倍率算出方式",
+    "multiplierManual": "手動設定",
+    "multiplierAuto": "ピーク値自動適用",
+    "multiplierHistory": "履歴倍率",
+    "multiplierProbe": "リアルタイム検出",
+    "multiplierPeakHint": "検出された倍率と直近履歴を比較し高い方を自動適用します",
+    "multiplierProbeOk": "検出正常",
+    "multiplierProbeError": "検出エラー",
+    "multiplierProbeIncomplete": "検出未完了",
+    "multiplierProbeUnknown": "検出状態不明",
+    "rateLimitUsageTitle": "レート制限使用状況",
+    "cooling": "クールダウン中",
+    "clearCooldown": "クールダウン解除",
+    "clearCooldownLabel": "{{name}} のクールダウンを解除"
   },
   "grokAccounts": {
     "title": "Grok アカウント",
@@ -352,7 +396,17 @@
     "toast": {
       "testFailed": "テストに失敗しました"
     },
-    "empty": "テスト可能なモデルがありません"
+    "empty": "テスト可能なモデルがありません",
+    "protocol": {
+      "auto": "自動検出",
+      "chatCompletions": "Chat Completions",
+      "messages": "Messages",
+      "responses": "Responses"
+    },
+    "stream": {
+      "stream": "ストリーム",
+      "nonStream": "非ストリーム"
+    }
   },
   "models": {
     "title": "モデル",

@@ -969,6 +969,7 @@ func kimiMembershipPlanName(level string, region string) string {
 //   - TOKENS_LIMIT：旧 Token 套餐，5 小时/周窗口，percentage 是已用百分比
 //   - CREDIT_LIMIT：积分制套餐，5 小时/周窗口，usage/currentValue/remaining 为积分绝对值
 //   - TIME_LIMIT：MCP 工具月度额度（unit=5 分钟×1），usageDetails 为各模型调用次数
+//
 // 窗口按 unit × number 换算分钟数识别：300 分钟 = 5 小时，10080 分钟 = 周。
 func probeGLMQuota(ctx context.Context, client *http.Client, baseURL string, secret string) (string, []QuotaProbeEntry, string, error) {
 	endpoint, err := quotaProbeGLMLimitURL(baseURL)

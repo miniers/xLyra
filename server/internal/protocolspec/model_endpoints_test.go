@@ -140,4 +140,3 @@ func TestResolveClinePassModelEndpointTypes(t *testing.T) {
 		t.Fatalf("fallback endpoint types = %#v, want %#v", fallback, wantFallback)
 	}
 }
-

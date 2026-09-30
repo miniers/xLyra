@@ -539,5 +539,3 @@ func TestClinePassProtocolResolverRoutesChatEndpoints(t *testing.T) {
 		t.Fatal("expected error for embeddings endpoint on cline_pass site")
 	}
 }
-
-

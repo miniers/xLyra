@@ -13,7 +13,8 @@
       "reasoning": "Reasoning effort",
       "input": "Input",
       "output": "Output",
-      "cost": "Cost"
+      "cost": "Cost",
+      "actions": "Actions"
     },
     "test": "Test",
     "success": "Success",
@@ -29,6 +30,15 @@
     "empty": {
       "title": "No request logs",
       "description": "No forwarded request records to display."
+    },
+    "inProgress": "In progress",
+    "phases": {
+      "accepted": "Accepted",
+      "routed": "Routed",
+      "responding": "Responding",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
     }
   },
   "filters": {
@@ -54,7 +64,8 @@
     "hideWithoutSiteLabel": "Hide requests without an upstream site",
     "autoRefresh": "Auto refresh",
     "autoRefreshLabel": "Auto refresh request logs",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "cacheHitRate": "Cache hit rate {{rate}}"
   },
   "tokens": {
     "total": "Total tokens",
@@ -68,7 +79,7 @@
     "loadFailed": "Failed to load details: {{message}}",
     "requestId": "Request ID",
     "request": "Request",
-    "downstreamModel": "Downstream model",
+    "downstreamModel": "Model",
     "upstreamModel": "Upstream model",
     "responseModel": "Response model",
     "transport": "Transport",
@@ -169,7 +180,14 @@
       "perRequestUnit": "{{price}}/req"
     },
     "longContext": "Long context billing",
-    "longContextApplied": "Long-context tier applied"
+    "longContextApplied": "Long-context tier applied",
+    "inProgress": "In progress",
+    "phase": "Phase",
+    "attempt": "Attempt",
+    "responseMode": "Response mode",
+    "apiKey": "API Key",
+    "startedAt": "Started at",
+    "tps": "Generation speed"
   },
   "modelMapping": {
     "responseNamespace": "Upstream response model differs only by provider namespace: {{model}}",
@@ -186,12 +204,19 @@
     "filters": "Filters",
     "done": "Done",
     "statusCode": "Status {{code}}",
-    "tokens": "In {{input}} / Out {{output}}"
+    "tokens": "In {{input}} / Out {{output}}",
+    "tokensWithTps": "{{total}} tokens · {{tps}}"
   },
   "page": {
     "loadFailed": "Failed to load request logs",
     "eyebrow": "Operations",
     "title": "Requests",
     "description": "Inspect gateway request logs, routing results and usage costs."
+  },
+  "actions": {
+    "cancel": "Cancel request",
+    "cancelSuccess": "Request cancelled",
+    "alreadyFinished": "Request already finished",
+    "controlFailed": "Failed to cancel request"
   }
 }

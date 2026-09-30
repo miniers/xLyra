@@ -137,4 +137,3 @@ func TestCredentialRateLimiter_RPDLimit(t *testing.T) {
 		t.Fatalf("request after Reset should be allowed, got %v, %v", allowedAfterReset, cooldownAfterReset)
 	}
 }
-

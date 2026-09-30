@@ -18,56 +18,56 @@ const (
 	OAuthQuotaRoundCurrent  = "current"
 	OAuthQuotaRoundPrevious = "previous"
 
-	OAuthQuotaConfidenceBaseline   = "baseline"
-	OAuthQuotaConfidenceSampling   = "sampling"
-	OAuthQuotaConfidenceReady      = "ready"
-	OAuthQuotaConfidenceLowSample  = "low_sample"
+	OAuthQuotaConfidenceBaseline  = "baseline"
+	OAuthQuotaConfidenceSampling  = "sampling"
+	OAuthQuotaConfidenceReady     = "ready"
+	OAuthQuotaConfidenceLowSample = "low_sample"
 )
 
 type OAuthQuotaSnapshot struct {
-	ID                         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	OAuthConnectionID          uuid.UUID `gorm:"column:oauth_connection_id"`
-	SiteID                     uuid.UUID
-	ObservedAt                 time.Time
-	FiveHourUsedPercent        sql.NullFloat64
-	FiveHourRemainingPercent   sql.NullFloat64
-	FiveHourResetAt            sql.NullTime
-	WeeklyUsedPercent          sql.NullFloat64
-	WeeklyRemainingPercent     sql.NullFloat64
-	WeeklyResetAt              sql.NullTime
-	Available                  bool
-	RawQuota                   JSON `gorm:"type:jsonb"`
-	CreatedAt                  time.Time
+	ID                       uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	OAuthConnectionID        uuid.UUID `gorm:"column:oauth_connection_id"`
+	SiteID                   uuid.UUID
+	ObservedAt               time.Time
+	FiveHourUsedPercent      sql.NullFloat64
+	FiveHourRemainingPercent sql.NullFloat64
+	FiveHourResetAt          sql.NullTime
+	WeeklyUsedPercent        sql.NullFloat64
+	WeeklyRemainingPercent   sql.NullFloat64
+	WeeklyResetAt            sql.NullTime
+	Available                bool
+	RawQuota                 JSON `gorm:"type:jsonb"`
+	CreatedAt                time.Time
 }
 
 func (OAuthQuotaSnapshot) TableName() string { return "oauth_quota_snapshots" }
 
 type OAuthQuotaWindowRound struct {
-	ID                      uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	OAuthConnectionID       uuid.UUID `gorm:"column:oauth_connection_id"`
-	SiteID                  uuid.UUID
-	WindowType              string
-	Status                  string
-	StartedAt               time.Time
-	EndedAt                 sql.NullTime
-	StartUsedPercent        sql.NullFloat64
-	LatestUsedPercent       sql.NullFloat64
-	StartRemainingPercent   sql.NullFloat64
-	LatestRemainingPercent  sql.NullFloat64
-	StartResetAt            sql.NullTime
-	LatestResetAt           sql.NullTime
-	StartSnapshotID         uuid.NullUUID
-	LatestSnapshotID        uuid.NullUUID
-	CumulativeUsedPercent   float64
-	CumulativeSystemCost    float64 `gorm:"type:numeric(18,8)"`
-	RequestCount            int64
-	SampleCount             int
-	EstimatedTotal          sql.NullFloat64 `gorm:"type:numeric(18,8)"`
-	Confidence              string
-	ExternalUsageHint       bool
-	Currency                string
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	ID                     uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	OAuthConnectionID      uuid.UUID `gorm:"column:oauth_connection_id"`
+	SiteID                 uuid.UUID
+	WindowType             string
+	Status                 string
+	StartedAt              time.Time
+	EndedAt                sql.NullTime
+	StartUsedPercent       sql.NullFloat64
+	LatestUsedPercent      sql.NullFloat64
+	StartRemainingPercent  sql.NullFloat64
+	LatestRemainingPercent sql.NullFloat64
+	StartResetAt           sql.NullTime
+	LatestResetAt          sql.NullTime
+	StartSnapshotID        uuid.NullUUID
+	LatestSnapshotID       uuid.NullUUID
+	CumulativeUsedPercent  float64
+	CumulativeSystemCost   float64 `gorm:"type:numeric(18,8)"`
+	RequestCount           int64
+	SampleCount            int
+	EstimatedTotal         sql.NullFloat64 `gorm:"type:numeric(18,8)"`
+	Confidence             string
+	ExternalUsageHint      bool
+	Currency               string
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 func (OAuthQuotaWindowRound) TableName() string { return "oauth_quota_window_rounds" }
