@@ -144,6 +144,11 @@ func TestDisableSiteOnPermanentErrorOnlySavesEnabledBoundSiteOffline(t *testing.
 	if saveCount != 1 || savedSite.ID != siteID || savedSite.Enabled {
 		t.Fatalf("saved site = %#v save count = %d, want enabled site disabled once", savedSite, saveCount)
 	}
+
+	service.disableSiteOnPermanentError(context.Background(), nil, store.OAuthConnection{SiteID: &siteID}, "codex token refresh returned 401: unauthorized")
+	if saveCount != 2 || savedSite.ID != siteID || savedSite.Enabled {
+		t.Fatalf("saved site = %#v save count = %d, want enabled site disabled via fallback db", savedSite, saveCount)
+	}
 }
 
 func setCodexRelayStartedForCreateUpdateTest(t *testing.T, started bool) {

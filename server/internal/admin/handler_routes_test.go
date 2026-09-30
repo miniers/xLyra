@@ -62,6 +62,39 @@ func TestRouteHandlersRequireRouterService(t *testing.T) {
 			call:   handler.CreateRouteCooldown,
 		},
 		{
+			name:   "clear route anomaly",
+			method: http.MethodPost,
+			target: "/api/v1/routes/anomalies/clear",
+			body:   `{"canonical_model_id":"` + uuid.NewString() + `","site_model_id":"` + uuid.NewString() + `"}`,
+			call:   handler.ClearRouteAnomaly,
+		},
+		{
+			name:   "adjust route score",
+			method: http.MethodPost,
+			target: "/api/v1/routes/score-adjustments",
+			body:   `{"canonical_model_id":"` + uuid.NewString() + `","site_model_id":"` + uuid.NewString() + `","direction":"increase"}`,
+			call:   handler.AdjustRouteScore,
+		},
+		{
+			name:   "get model routing lock",
+			method: http.MethodGet,
+			target: "/api/v1/models/" + uuid.NewString() + "/routing-lock",
+			call:   handler.GetModelRoutingLock,
+		},
+		{
+			name:   "update model routing lock",
+			method: http.MethodPut,
+			target: "/api/v1/models/" + uuid.NewString() + "/routing-lock",
+			body:   `{"site_model_id":"` + uuid.NewString() + `"}`,
+			call:   handler.UpdateModelRoutingLock,
+		},
+		{
+			name:   "delete model routing lock",
+			method: http.MethodDelete,
+			target: "/api/v1/models/" + uuid.NewString() + "/routing-lock",
+			call:   handler.DeleteModelRoutingLock,
+		},
+		{
 			name:   "select route",
 			method: http.MethodPost,
 			target: "/api/v1/routes/select",
@@ -262,6 +295,7 @@ func TestRouteCandidatePayloadIncludesDebugBreakdown(t *testing.T) {
 	currency := "USD"
 	input := 0.25
 	output := 1.25
+	cacheReadRatio := 0.1
 	successRate := 0.95
 	latency := int64(320)
 
@@ -294,10 +328,11 @@ func TestRouteCandidatePayloadIncludesDebugBreakdown(t *testing.T) {
 			TotalAPIKeys:     3,
 		},
 		Pricing: routeengine.CandidatePricing{
-			GroupName:   &group,
-			Currency:    &currency,
-			InputValue:  &input,
-			OutputValue: &output,
+			GroupName:      &group,
+			Currency:       &currency,
+			InputValue:     &input,
+			OutputValue:    &output,
+			CacheReadRatio: &cacheReadRatio,
 		},
 		ScoreBreakdown: map[string]float64{"site_health": 40},
 	}, true)
@@ -319,6 +354,10 @@ func TestRouteCandidatePayloadIncludesDebugBreakdown(t *testing.T) {
 	health, _ := payload["health"].(map[string]any)
 	if health["recent_success_rate"] != successRate || health["recent_avg_latency_ms"] != latency {
 		t.Fatalf("unexpected health payload: %#v", health)
+	}
+	pricing, _ := payload["pricing"].(map[string]any)
+	if pricing["cache_read_ratio"] != cacheReadRatio {
+		t.Fatalf("unexpected cache read ratio payload: %#v", pricing)
 	}
 	if payload["score_breakdown"] == nil {
 		t.Fatalf("expected debug score breakdown")

@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"xlyra/server/internal/inflight"
@@ -94,6 +97,37 @@ func (h Handler) TrafficFlowStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (h Handler) CancelTrafficFlowRequest(w http.ResponseWriter, r *http.Request) {
+	requestID, err := url.PathUnescape(strings.TrimSpace(chi.URLParam(r, "requestID")))
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_request_id", "request id must be a valid URL path value")
+		return
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_request_id", "request id is required")
+		return
+	}
+	request, ok := inflight.CurrentRequest(requestID)
+	if !ok {
+		h.writeError(w, r, http.StatusNotFound, "request_not_found", "in-flight request was not found")
+		return
+	}
+	if request.Phase == inflight.PhaseCompleted || request.Phase == inflight.PhaseFailed || request.Phase == inflight.PhaseCancelled {
+		h.writeError(w, r, http.StatusConflict, "request_not_active", "request is no longer active")
+		return
+	}
+	if !inflight.CancelRequest(requestID) {
+		h.writeError(w, r, http.StatusConflict, "request_control_unavailable", "request control is no longer available")
+		return
+	}
+	h.writePayload(w, http.StatusOK, map[string]any{
+		"request_id": requestID,
+		"action":     "cancel",
+		"accepted":   true,
+	})
 }
 
 func (h Handler) trafficFlowTopology(r *http.Request) (trafficFlowTopology, error) {

@@ -94,14 +94,16 @@ func (h Handler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, r, http.StatusInternalServerError, "api_key_list_failed", "failed to list api keys")
 		return
 	}
+	keys := make([]store.APIKey, 0, len(items))
 	payloadItems := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		if item.APIKey.KeyKind == store.APIKeyKindAgentInternal && !includeInternal {
 			continue
 		}
+		keys = append(keys, item.APIKey)
 		payloadItems = append(payloadItems, h.apiKeyPayloadWithRateLimit(item.APIKey, item.Models, item.Sites, item.Groups, false, item.RateLimit))
 	}
-	h.writeItems(w, http.StatusOK, payloadItems, map[string]any{"count": len(payloadItems)})
+	h.writeItems(w, http.StatusOK, payloadItems, map[string]any{"count": len(payloadItems), "order_revision": store.APIKeyOrderRevision(keys)})
 }
 
 func (h Handler) GetAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -469,25 +471,26 @@ func (h Handler) CheckAPIKeyModel(w http.ResponseWriter, r *http.Request) {
 }
 
 type apiKeyRequest struct {
-	Name                 string                  `json:"name"`
-	CustomKey            string                  `json:"custom_key"`
-	Status               string                  `json:"status"`
-	ModelPolicy          string                  `json:"model_policy"`
-	SiteModelIDs         []string                `json:"site_model_ids"`
-	SitePolicy           string                  `json:"site_policy"`
-	SiteIDs              []string                `json:"site_ids"`
-	SiteGroupIDs         []string                `json:"site_group_ids"`
-	ModelMappings        []modelRuleRequest      `json:"model_mappings"`
-	ImageToolBridge      *imageToolBridgeRequest `json:"image_tool_bridge"`
-	BillingMultiplier    *float64                `json:"billing_multiplier"`
-	QuotaLimit           *float64                `json:"quota_limit"`
-	QuotaUnlimited       *bool                   `json:"quota_unlimited"`
-	QuotaDailyLimit      *float64                `json:"quota_daily_limit"`
-	QuotaDailyUnlimited  *bool                   `json:"quota_daily_unlimited"`
-	QuotaWeeklyLimit     *float64                `json:"quota_weekly_limit"`
-	QuotaWeeklyUnlimited *bool                   `json:"quota_weekly_unlimited"`
-	ExpiresAt            json.RawMessage         `json:"expires_at"`
-	RateLimit            *rateLimitRequest       `json:"rate_limit"`
+	Name                 string                     `json:"name"`
+	CustomKey            string                     `json:"custom_key"`
+	Status               string                     `json:"status"`
+	ModelPolicy          string                     `json:"model_policy"`
+	SiteModelIDs         []string                   `json:"site_model_ids"`
+	SitePolicy           string                     `json:"site_policy"`
+	SiteIDs              []string                   `json:"site_ids"`
+	SiteGroupIDs         []string                   `json:"site_group_ids"`
+	ModelMappings        []modelRuleRequest         `json:"model_mappings"`
+	GatewayConfig        *store.APIKeyGatewayConfig `json:"gateway_config"`
+	ImageToolBridge      *imageToolBridgeRequest    `json:"image_tool_bridge"`
+	BillingMultiplier    *float64                   `json:"billing_multiplier"`
+	QuotaLimit           *float64                   `json:"quota_limit"`
+	QuotaUnlimited       *bool                      `json:"quota_unlimited"`
+	QuotaDailyLimit      *float64                   `json:"quota_daily_limit"`
+	QuotaDailyUnlimited  *bool                      `json:"quota_daily_unlimited"`
+	QuotaWeeklyLimit     *float64                   `json:"quota_weekly_limit"`
+	QuotaWeeklyUnlimited *bool                      `json:"quota_weekly_unlimited"`
+	ExpiresAt            json.RawMessage            `json:"expires_at"`
+	RateLimit            *rateLimitRequest          `json:"rate_limit"`
 }
 
 type modelRuleRequest struct {
@@ -598,6 +601,7 @@ func apiKeyInputFromRequest(w http.ResponseWriter, r *http.Request, payload apiK
 		SiteIDs:              siteIDs,
 		SiteGroupIDs:         siteGroupIDs,
 		ModelRules:           authModelRules(payload.ModelMappings),
+		GatewayConfig:        payload.GatewayConfig,
 		ImageToolBridge:      imageToolBridge,
 		BillingMultiplier:    payload.BillingMultiplier,
 		QuotaLimit:           payload.QuotaLimit,
@@ -685,6 +689,7 @@ func apiKeyUpdateInputFromRequest(w http.ResponseWriter, r *http.Request, payloa
 		SiteIDs:              siteIDs,
 		SiteGroupIDs:         siteGroupIDs,
 		ModelRules:           authModelRules(payload.ModelMappings),
+		GatewayConfig:        payload.GatewayConfig,
 		ImageToolBridge:      imageToolBridge,
 		BillingMultiplier:    payload.BillingMultiplier,
 		QuotaLimit:           quotaLimit,
@@ -782,6 +787,7 @@ func (h Handler) apiKeyPayloadWithRateLimit(item store.APIKey, models []store.AP
 		"model_policy":           item.ModelPolicy,
 		"site_policy":            item.SitePolicy,
 		"model_mappings":         modelMappingsPayload(item.ModelMappings),
+		"gateway_config":         item.Gateway(),
 		"image_tool_bridge":      imageToolBridgePayload(item),
 		"billing_multiplier":     item.BillingMultiplier,
 		"quota_limit":            nullFloat64Value(item.QuotaLimit),

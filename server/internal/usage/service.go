@@ -72,48 +72,58 @@ type ChannelSplitResult struct {
 }
 
 type ChannelSplitSummary struct {
-	SiteID            string   `json:"site_id"`
-	SiteIDs           []string `json:"site_ids"`
-	SiteName          string   `json:"site_name"`
-	SiteNames         []string `json:"site_names"`
-	SiteSlug          string   `json:"site_slug"`
-	SiteType          string   `json:"site_type"`
-	TargetLabel       string   `json:"target_label"`
-	OAuthConnectionID *string  `json:"oauth_connection_id"`
-	OAuthProvider     *string  `json:"oauth_provider"`
-	OAuthAccount      *string  `json:"oauth_account"`
-	RangeAll          bool     `json:"range_all"`
-	DateFrom          string   `json:"date_from"`
-	DateTo            string   `json:"date_to"`
-	RangeStart        string   `json:"range_start"`
-	RangeEnd          string   `json:"range_end"`
-	TimeZone          string   `json:"timezone"`
-	GeneratedAt       string   `json:"generated_at"`
-	RequestCount      int64    `json:"request_count"`
-	SuccessCount      int64    `json:"success_count"`
-	FailureCount      int64    `json:"failure_count"`
-	PromptTokens      int64    `json:"prompt_tokens"`
-	CompletionTokens  int64    `json:"completion_tokens"`
-	TotalTokens       int64    `json:"total_tokens"`
-	EstimatedCost     float64  `json:"estimated_cost"`
-	Currency          string   `json:"currency"`
-	APIKeyCount       int      `json:"api_key_count"`
+	SiteID                   string             `json:"site_id"`
+	SiteIDs                  []string           `json:"site_ids"`
+	SiteName                 string             `json:"site_name"`
+	SiteNames                []string           `json:"site_names"`
+	SiteSlug                 string             `json:"site_slug"`
+	SiteType                 string             `json:"site_type"`
+	TargetLabel              string             `json:"target_label"`
+	OAuthConnectionID        *string            `json:"oauth_connection_id"`
+	OAuthProvider            *string            `json:"oauth_provider"`
+	OAuthAccount             *string            `json:"oauth_account"`
+	RangeAll                 bool               `json:"range_all"`
+	DateFrom                 string             `json:"date_from"`
+	DateTo                   string             `json:"date_to"`
+	RangeStart               string             `json:"range_start"`
+	RangeEnd                 string             `json:"range_end"`
+	TimeZone                 string             `json:"timezone"`
+	GeneratedAt              string             `json:"generated_at"`
+	RequestCount             int64              `json:"request_count"`
+	SuccessCount             int64              `json:"success_count"`
+	FailureCount             int64              `json:"failure_count"`
+	PromptTokens             int64              `json:"prompt_tokens"`
+	CompletionTokens         int64              `json:"completion_tokens"`
+	CachedTokens             int64              `json:"cached_tokens"`
+	CacheWriteTokens         int64              `json:"cache_write_tokens"`
+	CacheCreationInputTokens int64              `json:"cache_creation_input_tokens"`
+	CacheWriteCost           float64            `json:"cache_write_cost"`
+	TotalTokens              int64              `json:"total_tokens"`
+	EstimatedCost            float64            `json:"estimated_cost"`
+	CostByCurrency           map[string]float64 `json:"cost_by_currency"`
+	Currency                 string             `json:"currency"`
+	APIKeyCount              int                `json:"api_key_count"`
 }
 
 type ChannelSplitItem struct {
-	APIKeyID         string  `json:"api_key_id"`
-	APIKeyName       string  `json:"api_key_name"`
-	MaskedKey        string  `json:"masked_key"`
-	RequestCount     int64   `json:"request_count"`
-	SuccessCount     int64   `json:"success_count"`
-	FailureCount     int64   `json:"failure_count"`
-	PromptTokens     int64   `json:"prompt_tokens"`
-	CompletionTokens int64   `json:"completion_tokens"`
-	TotalTokens      int64   `json:"total_tokens"`
-	EstimatedCost    float64 `json:"estimated_cost"`
-	Currency         string  `json:"currency"`
-	TokenShare       float64 `json:"token_share"`
-	CostShare        float64 `json:"cost_share"`
+	APIKeyID                 string             `json:"api_key_id"`
+	APIKeyName               string             `json:"api_key_name"`
+	MaskedKey                string             `json:"masked_key"`
+	RequestCount             int64              `json:"request_count"`
+	SuccessCount             int64              `json:"success_count"`
+	FailureCount             int64              `json:"failure_count"`
+	PromptTokens             int64              `json:"prompt_tokens"`
+	CompletionTokens         int64              `json:"completion_tokens"`
+	CachedTokens             int64              `json:"cached_tokens"`
+	CacheWriteTokens         int64              `json:"cache_write_tokens"`
+	CacheCreationInputTokens int64              `json:"cache_creation_input_tokens"`
+	CacheWriteCost           float64            `json:"cache_write_cost"`
+	TotalTokens              int64              `json:"total_tokens"`
+	EstimatedCost            float64            `json:"estimated_cost"`
+	CostByCurrency           map[string]float64 `json:"cost_by_currency"`
+	Currency                 string             `json:"currency"`
+	TokenShare               float64            `json:"token_share"`
+	CostShare                float64            `json:"cost_share"`
 }
 
 type requestTimeRange struct {
@@ -580,17 +590,22 @@ func channelSplitAPIKeyIDs(rows []store.RequestUsageDailySummary, siteIDs []uuid
 }
 
 type channelSplitAggregate struct {
-	apiKeyID         uuid.UUID
-	apiKeyName       string
-	maskedKey        string
-	requestCount     int64
-	successCount     int64
-	failureCount     int64
-	promptTokens     int64
-	completionTokens int64
-	totalTokens      int64
-	estimatedCost    float64
-	currency         string
+	apiKeyID                 uuid.UUID
+	apiKeyName               string
+	maskedKey                string
+	requestCount             int64
+	successCount             int64
+	failureCount             int64
+	promptTokens             int64
+	completionTokens         int64
+	cachedTokens             int64
+	cacheWriteTokens         int64
+	cacheCreationInputTokens int64
+	cacheWriteCost           float64
+	totalTokens              int64
+	estimatedCost            float64
+	currency                 string
+	costByCurrency           map[string]float64
 }
 
 func channelSplitItemsFromRows(rows []store.RequestUsageDailySummary, siteIDs []uuid.UUID, apiKeys map[uuid.UUID]store.APIKey) []ChannelSplitItem {
@@ -604,24 +619,16 @@ func channelSplitItemsFromRows(rows []store.RequestUsageDailySummary, siteIDs []
 		item := byAPIKey[apiKeyID]
 		if item == nil {
 			item = &channelSplitAggregate{
-				apiKeyID:   apiKeyID,
-				apiKeyName: strings.TrimSpace(row.APIKeyName),
-				currency:   "USD",
+				apiKeyID:       apiKeyID,
+				apiKeyName:     strings.TrimSpace(row.APIKeyName),
+				currency:       "USD",
+				costByCurrency: map[string]float64{},
 			}
 			byAPIKey[apiKeyID] = item
 		}
-		item.requestCount += row.RequestCount
-		item.successCount += row.SuccessCount
-		item.failureCount += row.FailureCount
-		item.promptTokens += row.PromptTokens
-		item.completionTokens += row.CompletionTokens
-		item.totalTokens += row.TotalTokens
-		item.estimatedCost += row.EstimatedCost
+		addChannelSplitAggregate(item, row)
 		if item.apiKeyName == "" {
 			item.apiKeyName = strings.TrimSpace(row.APIKeyName)
-		}
-		if row.Currency != "" {
-			item.currency = row.Currency
 		}
 	}
 
@@ -634,28 +641,25 @@ func channelSplitItemsFromRows(rows []store.RequestUsageDailySummary, siteIDs []
 			aggregate.maskedKey = apiKey.MaskedKey
 		}
 		items = append(items, ChannelSplitItem{
-			APIKeyID:         aggregate.apiKeyID.String(),
-			APIKeyName:       aggregate.apiKeyName,
-			MaskedKey:        aggregate.maskedKey,
-			RequestCount:     aggregate.requestCount,
-			SuccessCount:     aggregate.successCount,
-			FailureCount:     aggregate.failureCount,
-			PromptTokens:     aggregate.promptTokens,
-			CompletionTokens: aggregate.completionTokens,
-			TotalTokens:      aggregate.totalTokens,
-			EstimatedCost:    aggregate.estimatedCost,
-			Currency:         channelSplitStringDefault(aggregate.currency, "USD"),
+			APIKeyID:                 aggregate.apiKeyID.String(),
+			APIKeyName:               aggregate.apiKeyName,
+			MaskedKey:                aggregate.maskedKey,
+			RequestCount:             aggregate.requestCount,
+			SuccessCount:             aggregate.successCount,
+			FailureCount:             aggregate.failureCount,
+			PromptTokens:             aggregate.promptTokens,
+			CompletionTokens:         aggregate.completionTokens,
+			CachedTokens:             aggregate.cachedTokens,
+			CacheWriteTokens:         aggregate.cacheWriteTokens,
+			CacheCreationInputTokens: aggregate.cacheCreationInputTokens,
+			CacheWriteCost:           aggregate.cacheWriteCost,
+			TotalTokens:              aggregate.totalTokens,
+			EstimatedCost:            aggregate.estimatedCost,
+			CostByCurrency:           cloneChannelSplitCurrencyMap(aggregate.costByCurrency),
+			Currency:                 channelSplitCurrency(aggregate.currency),
 		})
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].EstimatedCost != items[j].EstimatedCost {
-			return items[i].EstimatedCost > items[j].EstimatedCost
-		}
-		if items[i].TotalTokens != items[j].TotalTokens {
-			return items[i].TotalTokens > items[j].TotalTokens
-		}
-		return items[i].APIKeyName < items[j].APIKeyName
-	})
+	channelSplitSortItems(items)
 
 	var totalCost float64
 	var totalTokens int64
@@ -674,24 +678,77 @@ func channelSplitItemsFromRows(rows []store.RequestUsageDailySummary, siteIDs []
 	return items
 }
 
+func addChannelSplitAggregate(item *channelSplitAggregate, row store.RequestUsageDailySummary) {
+	item.requestCount += row.RequestCount
+	item.successCount += row.SuccessCount
+	item.failureCount += row.FailureCount
+	item.promptTokens += row.PromptTokens
+	item.completionTokens += row.CompletionTokens
+	item.cachedTokens += row.CachedTokens
+	item.cacheWriteTokens += row.CacheWriteTokens
+	item.cacheCreationInputTokens += row.CacheCreationInputTokens
+	item.cacheWriteCost += row.CacheWriteCost
+	item.totalTokens += row.TotalTokens
+	item.estimatedCost += row.EstimatedCost
+	if item.costByCurrency == nil {
+		item.costByCurrency = map[string]float64{}
+	}
+	item.costByCurrency[channelSplitCurrency(row.Currency)] += row.EstimatedCost
+	if row.Currency != "" {
+		item.currency = channelSplitCurrency(row.Currency)
+	}
+}
+
+func channelSplitSortItems(items []ChannelSplitItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].EstimatedCost != items[j].EstimatedCost {
+			return items[i].EstimatedCost > items[j].EstimatedCost
+		}
+		if items[i].TotalTokens != items[j].TotalTokens {
+			return items[i].TotalTokens > items[j].TotalTokens
+		}
+		return items[i].APIKeyName < items[j].APIKeyName
+	})
+}
+
+func channelSplitCurrency(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if value == "" {
+		return "USD"
+	}
+	return value
+}
+
+func cloneChannelSplitCurrencyMap(values map[string]float64) map[string]float64 {
+	if len(values) == 0 {
+		return map[string]float64{}
+	}
+	result := make(map[string]float64, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
+}
+
 func channelSplitSummaryFromItems(items []ChannelSplitItem, target channelSplitTarget, dateRange channelSplitWindow, now time.Time, timeZone config.TimeZone) ChannelSplitSummary {
 	firstSite := channelSplitSite{}
 	if len(target.Sites) > 0 {
 		firstSite = target.Sites[0]
 	}
 	summary := ChannelSplitSummary{
-		SiteID:      channelSplitUUIDString(firstSite.ID),
-		SiteName:    firstSite.Name,
-		SiteSlug:    firstSite.Slug,
-		SiteType:    firstSite.SiteType,
-		SiteIDs:     channelSplitTargetSiteIDs(target),
-		SiteNames:   channelSplitTargetSiteNames(target),
-		TargetLabel: channelSplitTargetLabel(target),
-		RangeAll:    dateRange.All,
-		TimeZone:    timeZone.Name,
-		GeneratedAt: timeZone.Format(now, time.RFC3339),
-		Currency:    "USD",
-		APIKeyCount: len(items),
+		SiteID:         channelSplitUUIDString(firstSite.ID),
+		SiteName:       firstSite.Name,
+		SiteSlug:       firstSite.Slug,
+		SiteType:       firstSite.SiteType,
+		SiteIDs:        channelSplitTargetSiteIDs(target),
+		SiteNames:      channelSplitTargetSiteNames(target),
+		TargetLabel:    channelSplitTargetLabel(target),
+		RangeAll:       dateRange.All,
+		TimeZone:       timeZone.Name,
+		GeneratedAt:    timeZone.Format(now, time.RFC3339),
+		Currency:       "USD",
+		CostByCurrency: map[string]float64{},
+		APIKeyCount:    len(items),
 	}
 	if dateRange.DateFrom != nil {
 		summary.DateFrom = dateRange.DateFrom.Format("2006-01-02")
@@ -723,8 +780,19 @@ func channelSplitSummaryFromItems(items []ChannelSplitItem, target channelSplitT
 		summary.FailureCount += item.FailureCount
 		summary.PromptTokens += item.PromptTokens
 		summary.CompletionTokens += item.CompletionTokens
+		summary.CachedTokens += item.CachedTokens
+		summary.CacheWriteTokens += item.CacheWriteTokens
+		summary.CacheCreationInputTokens += item.CacheCreationInputTokens
+		summary.CacheWriteCost += item.CacheWriteCost
 		summary.TotalTokens += item.TotalTokens
 		summary.EstimatedCost += item.EstimatedCost
+		costByCurrency := item.CostByCurrency
+		if len(costByCurrency) == 0 && item.EstimatedCost != 0 {
+			costByCurrency = map[string]float64{channelSplitCurrency(item.Currency): item.EstimatedCost}
+		}
+		for currency, cost := range costByCurrency {
+			summary.CostByCurrency[currency] += cost
+		}
 		if item.Currency != "" {
 			summary.Currency = item.Currency
 		}

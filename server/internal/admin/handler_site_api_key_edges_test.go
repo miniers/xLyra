@@ -187,6 +187,7 @@ func TestCreateSiteAPIKeyRejectsInvalidPayloadBeforeServiceWork(t *testing.T) {
 	}{
 		{name: "invalid json", body: `{`, code: "invalid_json"},
 		{name: "missing secret", body: `{"api_key":"  ","secret":"\t"}`, code: "invalid_api_key"},
+		{name: "invalid timezone", body: `{"api_key":"sk-test","reset_timezone":"Invalid/Timezone"}`, code: "invalid_reset_timezone"},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -251,3 +252,69 @@ func assertSiteAPIKeyAdminError(
 
 	assertAdminErrorCode(t, rec, http.StatusBadRequest, code)
 }
+
+func TestUpdateSiteAPIKeyRejectsInvalidTimezone(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{}
+	siteID := uuid.New().String()
+	apiKeyID := uuid.New().String()
+
+	assertSiteAPIKeyAdminError(t, handler.UpdateSiteAPIKey, http.MethodPut, "/api/v1/sites/"+siteID+"/api-keys/"+apiKeyID, `{"reset_timezone":"Invalid/Timezone"}`, siteID, apiKeyID, "invalid_reset_timezone")
+}
+
+func TestResolveSiteCredentialsRateLimits(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{}
+	rpm := int64(60)
+	rpd := int64(1500)
+	tz := "America/Los_Angeles"
+
+	req := adminTestRequest(http.MethodPost, "/api/v1/sites", "")
+	rec := adminPerform(func(w http.ResponseWriter, r *http.Request) {
+		payload := siteUpsertRequest{
+			SiteType: "openai",
+			APIKeys: []siteAPIKeyRequest{
+				{
+					APIKey:        "sk-valid-key",
+					Name:          "Test Key",
+					RPMLimit:      &rpm,
+					RPDLimit:      &rpd,
+					ResetTimezone: &tz,
+				},
+			},
+		}
+		creds, ok := handler.resolveSiteCredentials(w, r, payload, true)
+		if !ok || len(creds) != 1 {
+			t.Fatalf("resolveSiteCredentials failed, ok=%v len=%d", ok, len(creds))
+		}
+		metaJSON, err := json.Marshal(creds[0].Meta)
+		if err != nil {
+			t.Fatalf("failed to marshal meta: %v", err)
+		}
+		cfg := store.SiteCredentialRateLimitFromMeta(metaJSON)
+		if cfg == nil || cfg.RPMLimit == nil || *cfg.RPMLimit != 60 || cfg.RPDLimit == nil || *cfg.RPDLimit != 1500 || cfg.ResetTimezone != tz {
+			t.Fatalf("unexpected rate limit config: %#v", cfg)
+		}
+	}, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	badTz := "Invalid/Zone"
+	recBad := adminPerform(func(w http.ResponseWriter, r *http.Request) {
+		payload := siteUpsertRequest{
+			SiteType: "openai",
+			APIKeys: []siteAPIKeyRequest{
+				{
+					APIKey:        "sk-valid-key",
+					ResetTimezone: &badTz,
+				},
+			},
+		}
+		handler.resolveSiteCredentials(w, r, payload, true)
+	}, req)
+	assertAdminErrorCode(t, recBad, http.StatusBadRequest, "invalid_reset_timezone")
+}
+

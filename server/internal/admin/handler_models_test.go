@@ -41,6 +41,7 @@ func TestCanonicalModelHandlersRequireCatalogService(t *testing.T) {
 		{name: "create model", method: http.MethodPost, target: "/api/v1/models", body: `{"model_key":"gpt-5"}`, call: handler.CreateModel},
 		{name: "update model", req: adminRequestWithRouteParam(http.MethodPatch, "/api/v1/models/"+modelID, "", "modelID", modelID), body: `{"model_key":"gpt-5"}`, call: handler.UpdateModel},
 		{name: "delete model", req: adminRequestWithRouteParam(http.MethodDelete, "/api/v1/models/"+modelID, "", "modelID", modelID), call: handler.DeleteModel},
+		{name: "update expiry rescue", req: adminRequestWithRouteParam(http.MethodPut, "/api/v1/models/"+modelID+"/routing-expiry-rescue", "", "modelID", modelID), body: `{"enabled":true}`, call: handler.UpdateModelRoutingExpiryRescue},
 		{name: "create alias", req: adminRequestWithRouteParam(http.MethodPost, "/api/v1/models/"+modelID+"/aliases", "", "modelID", modelID), body: `{"alias":"gpt-latest"}`, call: handler.CreateModelAlias},
 		{name: "delete alias", req: adminRequestWithRouteParam(http.MethodDelete, "/api/v1/models/"+modelID+"/aliases/"+aliasID, "", "modelID", modelID), call: handler.DeleteModelAlias},
 		{name: "bind site model", req: adminRequestWithRouteParam(http.MethodPatch, "/api/v1/site-models/"+siteModelID+"/canonical", "", "siteModelID", siteModelID), body: `{"canonical_model_id":"` + modelID + `"}`, call: handler.BindSiteModelCanonical},
@@ -118,6 +119,13 @@ func TestModelHandlersRejectInvalidRouteIDsBeforeCatalogWork(t *testing.T) {
 			code:   "invalid_model_id",
 		},
 		{
+			name:   "expiry rescue invalid model id",
+			req:    adminRequestWithRouteParam(http.MethodPut, "/api/v1/models/bad-id/routing-expiry-rescue", "", "modelID", "bad-id"),
+			call:   handler.UpdateModelRoutingExpiryRescue,
+			status: http.StatusBadRequest,
+			code:   "invalid_model_id",
+		},
+		{
 			name:   "bind site model invalid site model id",
 			req:    adminRequestWithRouteParam(http.MethodPatch, "/api/v1/site-models/bad-id/canonical", "", "siteModelID", "bad-id"),
 			call:   handler.BindSiteModelCanonical,
@@ -135,6 +143,17 @@ func TestModelHandlersRejectInvalidRouteIDsBeforeCatalogWork(t *testing.T) {
 			assertAdminErrorCode(t, rec, tc.status, tc.code)
 		})
 	}
+}
+
+func TestUpdateModelRoutingPreferenceRejectsUnknownValueBeforeRepositoryAccess(t *testing.T) {
+	t.Parallel()
+
+	handler := Handler{catalog: catalog.NewService(nil)}
+	modelID := uuid.NewString()
+	req := adminRequestWithRouteParam(http.MethodPut, "/api/v1/models/"+modelID+"/routing-preference", "", "modelID", modelID)
+	req.Body = ioNopCloserString(`{"routing_preference":"balanced"}`)
+	rec := adminPerform(handler.UpdateModelRoutingPreference, req)
+	assertAdminErrorCode(t, rec, http.StatusBadRequest, "canonical_model_routing_preference_update_failed")
 }
 
 func TestCanonicalModelRequestToInputPreservesFields(t *testing.T) {
@@ -200,6 +219,12 @@ func TestCanonicalModelItemPayloadIncludesAliasesStatsAndProviderIcon(t *testing
 	}
 	if payload["site_model_count"] != 3 || payload["site_count"] != 2 {
 		t.Fatalf("unexpected stats: %#v", payload)
+	}
+	if payload["routing_preference"] != store.RoutingPreferenceDefault {
+		t.Fatalf("routing_preference = %#v, want %q", payload["routing_preference"], store.RoutingPreferenceDefault)
+	}
+	if payload["routing_expiry_rescue_enabled"] != false {
+		t.Fatalf("routing_expiry_rescue_enabled = %#v, want false", payload["routing_expiry_rescue_enabled"])
 	}
 
 	capabilities, ok := payload["capabilities"].(map[string]any)

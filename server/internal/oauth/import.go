@@ -508,7 +508,17 @@ func (s *ImportService) updateImportedSiteMeta(ctx context.Context, siteService 
 	if len(existing.Meta) > 0 {
 		_ = json.Unmarshal(existing.Meta, &meta)
 	}
-	for _, key := range []string{"oauth_provider", "oauth_connection_id", "oauth_account_id", "oauth_email", "oauth_plan_type", "oauth_subscription_tier", "oauth_project_id"} {
+	for _, key := range []string{
+		"oauth_provider",
+		"oauth_connection_id",
+		"oauth_account_id",
+		"oauth_email",
+		"oauth_plan_type",
+		"oauth_subscription_tier",
+		"oauth_project_id",
+		"oauth_subscription_active_start",
+		"oauth_subscription_active_until",
+	} {
 		delete(meta, key)
 	}
 	siteMeta := map[string]any{
@@ -519,6 +529,11 @@ func (s *ImportService) updateImportedSiteMeta(ctx context.Context, siteService 
 	}
 	if planType, ok := connectionMeta["plan_type"].(string); ok && strings.TrimSpace(planType) != "" {
 		siteMeta["oauth_plan_type"] = strings.TrimSpace(planType)
+	}
+	for _, key := range []string{"chatgpt_subscription_active_start", "chatgpt_subscription_active_until"} {
+		if value := connectionMeta[key]; value != nil {
+			siteMeta["oauth_"+strings.TrimPrefix(key, "chatgpt_")] = value
+		}
 	}
 	if strings.TrimSpace(s.proxyID) != "" {
 		siteMeta["proxy_id"] = strings.TrimSpace(s.proxyID)

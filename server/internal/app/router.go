@@ -211,7 +211,7 @@ func NewRouterWithGatewayWithOAuth(cfg config.Config, logger *slog.Logger, db *s
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key", "X-Access-Token", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-API-Key", "X-Access-Token", "X-CSRF-Token", "X-Request-ID"},
 		ExposedHeaders:   []string{gateway.RouteSiteHeader},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -327,6 +327,7 @@ func NewRouterWithGatewayWithOAuth(cfg config.Config, logger *slog.Logger, db *s
 				})
 				protected.Get("/traffic-flow/topology", adminHandler.TrafficFlowTopology)
 				protected.Get("/traffic-flow/stream", adminHandler.TrafficFlowStream)
+				protected.Post("/traffic-flow/requests/{requestID}/cancel", adminHandler.CancelTrafficFlowRequest)
 				protected.Get("/settings/site-groups", adminHandler.ListSiteGroups)
 				protected.Post("/settings/site-groups", adminHandler.CreateSiteGroup)
 				protected.Get("/settings/site-groups/{siteGroupID}", adminHandler.GetSiteGroup)
@@ -376,6 +377,7 @@ func NewRouterWithGatewayWithOAuth(cfg config.Config, logger *slog.Logger, db *s
 				protected.Put("/sites/{siteID}/api-keys/{apiKeyID}/secret", adminHandler.UpdateSiteAPIKeySecret)
 				protected.Put("/sites/{siteID}/api-keys/{apiKeyID}/models", adminHandler.UpdateSiteAPIKeyModel)
 				protected.Post("/sites/{siteID}/api-keys/{apiKeyID}/refresh", adminHandler.RefreshSiteAPIKey)
+				protected.Post("/sites/{siteID}/api-keys/{apiKeyID}/clear-cooldown", adminHandler.ClearSiteAPIKeyCooldown)
 				protected.Get("/sites/{siteID}/grok/accounts", adminHandler.ListGrokAccounts)
 				protected.Post("/sites/{siteID}/grok/device/start", adminHandler.StartGrokDeviceLogin)
 				protected.Post("/sites/{siteID}/grok/device/poll", adminHandler.PollGrokDeviceLogin)
@@ -418,6 +420,11 @@ func NewRouterWithGatewayWithOAuth(cfg config.Config, logger *slog.Logger, db *s
 				protected.Delete("/models/{modelID}", adminHandler.DeleteModel)
 				protected.Get("/models/{modelID}/matrix", adminHandler.GetModelMatrix)
 				protected.Put("/models/{modelID}/pricing", adminHandler.UpdateModelPricing)
+				protected.Put("/models/{modelID}/routing-preference", adminHandler.UpdateModelRoutingPreference)
+				protected.Get("/models/{modelID}/routing-lock", adminHandler.GetModelRoutingLock)
+				protected.Put("/models/{modelID}/routing-lock", adminHandler.UpdateModelRoutingLock)
+				protected.Delete("/models/{modelID}/routing-lock", adminHandler.DeleteModelRoutingLock)
+				protected.Put("/models/{modelID}/routing-expiry-rescue", adminHandler.UpdateModelRoutingExpiryRescue)
 				protected.Post("/models/{modelID}/pricing/reset", adminHandler.ResetModelPricing)
 				protected.Post("/models/{modelID}/aliases", adminHandler.CreateModelAlias)
 				protected.Delete("/models/{modelID}/aliases/{aliasID}", adminHandler.DeleteModelAlias)
@@ -436,6 +443,8 @@ func NewRouterWithGatewayWithOAuth(cfg config.Config, logger *slog.Logger, db *s
 				protected.Get("/routes/cooldowns", adminHandler.ListRouteCooldowns)
 				protected.Post("/routes/cooldowns", adminHandler.CreateRouteCooldown)
 				protected.Post("/routes/cooldowns/clear", adminHandler.ClearRouteCooldown)
+				protected.Post("/routes/anomalies/clear", adminHandler.ClearRouteAnomaly)
+				protected.Post("/routes/score-adjustments", adminHandler.AdjustRouteScore)
 				protected.Get("/routes/candidates", adminHandler.ListRouteCandidates)
 				protected.Get("/settings/system-proxy", settingsHandler.GetSystemProxy)
 				protected.Put("/settings/system-proxy", settingsHandler.UpdateSystemProxy)

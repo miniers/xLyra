@@ -199,6 +199,7 @@ func TestDisableSiteOnPermanentErrorSkipsStoreWhenErrorIsTemporaryOrSiteMissing(
 	siteID := uuid.New()
 
 	service.disableSiteOnPermanentError(context.Background(), nil, store.OAuthConnection{SiteID: &siteID}, "temporary network timeout")
+	service.disableSiteOnPermanentError(context.Background(), nil, store.OAuthConnection{SiteID: &siteID}, "invalid_grant")
 	service.disableSiteOnPermanentError(context.Background(), nil, store.OAuthConnection{}, "invalid_grant")
 }
 

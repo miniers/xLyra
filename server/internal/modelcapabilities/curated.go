@@ -143,7 +143,7 @@ func UsesModelNameEndpointInference(siteType string) bool {
 	}
 	switch siteType {
 	case "newapi", "codex", "antigravity",
-		"opencode_go",
+		"opencode_go", "nvidia", "command_code", "cline_pass",
 		"deepseek", "minimax", "xiaomi_mimo", "moonshot", "kimi_code",
 		"google", "google_gemini", "zhipu", "glm_code":
 		return false

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -568,7 +569,7 @@ func (h Handler) RefreshOAuthConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	details, err := h.oauth.RefreshCodexConnection(r.Context(), connectionID)
 	if err != nil {
-		h.writeError(w, r, http.StatusBadRequest, "oauth_connection_refresh_failed", err.Error())
+		h.writeError(w, r, http.StatusBadRequest, oauthConnectionRefreshErrorCode(err), err.Error())
 		return
 	}
 	var refreshPayload any = nil
@@ -593,6 +594,13 @@ func (h Handler) RefreshOAuthConnection(w http.ResponseWriter, r *http.Request) 
 		"connection": h.oauthConnectionDetailsPayload(r, details, resetCredits),
 		"refresh":    refreshPayload,
 	})
+}
+
+func oauthConnectionRefreshErrorCode(err error) string {
+	if errors.Is(err, oauthsvc.ErrCodexReauthorizationRequired) {
+		return "oauth_reauthorization_required"
+	}
+	return "oauth_connection_refresh_failed"
 }
 
 func (h Handler) ListOAuthConnectionResetCredits(w http.ResponseWriter, r *http.Request) {
@@ -1143,6 +1151,11 @@ func oauthSiteMeta(connection store.OAuthConnection) map[string]any {
 	if projectID, _ := connectionMeta["project_id"].(string); strings.TrimSpace(projectID) != "" {
 		meta["oauth_project_id"] = strings.TrimSpace(projectID)
 	}
+	for _, key := range []string{"chatgpt_subscription_active_start", "chatgpt_subscription_active_until"} {
+		if value := connectionMeta[key]; value != nil {
+			meta["oauth_"+strings.TrimPrefix(key, "chatgpt_")] = value
+		}
+	}
 	return meta
 }
 
@@ -1299,6 +1312,9 @@ func (h Handler) oauthConnectionPayload(r *http.Request, connection store.OAuthC
 		}
 		if lastErrorAt, ok := meta["last_error_at"].(string); ok && strings.TrimSpace(lastErrorAt) != "" {
 			payload["last_error_at"] = strings.TrimSpace(lastErrorAt)
+		}
+		if lastErrorCode, ok := meta["last_error_code"].(string); ok && strings.TrimSpace(lastErrorCode) != "" {
+			payload["last_error_code"] = strings.TrimSpace(lastErrorCode)
 		}
 		if refreshable, ok := meta["refreshable"].(bool); ok {
 			payload["refreshable"] = refreshable

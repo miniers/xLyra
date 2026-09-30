@@ -30,23 +30,23 @@ type quotaWindowObservation struct {
 }
 
 type QuotaEstimateWindowView struct {
-	Status              string     `json:"status"`
-	RemainingPercent    *float64   `json:"remaining_percent,omitempty"`
-	EstimatedTotal      *float64   `json:"estimated_total,omitempty"`
-	EstimatedRemaining  *float64   `json:"estimated_remaining,omitempty"`
-	SpendRatePerHour    *float64   `json:"spend_rate_per_hour,omitempty"`
-	ExhaustInSeconds    *int64     `json:"exhaust_in_seconds,omitempty"`
-	ResetAt             *time.Time `json:"reset_at,omitempty"`
-	ObservedFrom        *time.Time `json:"observed_from,omitempty"`
-	ObservedTo          *time.Time `json:"observed_to,omitempty"`
-	RequestCount        int64      `json:"request_count"`
-	SystemCost          float64    `json:"system_cost"`
-	SampleCount         int        `json:"sample_count"`
-	CumulativeUsedPct   float64    `json:"cumulative_used_percent"`
-	Confidence          string     `json:"confidence"`
-	ExternalUsageHint   bool       `json:"external_usage_hint,omitempty"`
-	PreviousTotal       *float64   `json:"previous_estimated_total,omitempty"`
-	Currency            string     `json:"currency"`
+	Status             string     `json:"status"`
+	RemainingPercent   *float64   `json:"remaining_percent,omitempty"`
+	EstimatedTotal     *float64   `json:"estimated_total,omitempty"`
+	EstimatedRemaining *float64   `json:"estimated_remaining,omitempty"`
+	SpendRatePerHour   *float64   `json:"spend_rate_per_hour,omitempty"`
+	ExhaustInSeconds   *int64     `json:"exhaust_in_seconds,omitempty"`
+	ResetAt            *time.Time `json:"reset_at,omitempty"`
+	ObservedFrom       *time.Time `json:"observed_from,omitempty"`
+	ObservedTo         *time.Time `json:"observed_to,omitempty"`
+	RequestCount       int64      `json:"request_count"`
+	SystemCost         float64    `json:"system_cost"`
+	SampleCount        int        `json:"sample_count"`
+	CumulativeUsedPct  float64    `json:"cumulative_used_percent"`
+	Confidence         string     `json:"confidence"`
+	ExternalUsageHint  bool       `json:"external_usage_hint,omitempty"`
+	PreviousTotal      *float64   `json:"previous_estimated_total,omitempty"`
+	Currency           string     `json:"currency"`
 }
 
 type QuotaEstimateView struct {
@@ -487,4 +487,3 @@ func defaultCurrency(value string) string {
 	}
 	return value
 }
-

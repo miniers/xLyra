@@ -138,6 +138,13 @@ type routeSelectionRequest struct {
 	FailoverLimit       int         `json:"failover_limit"`
 }
 
+type routeLockRequest struct {
+	SiteModelID uuid.UUID  `json:"site_model_id"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	Policy      string     `json:"policy"`
+	Reason      string     `json:"reason"`
+}
+
 type routeCooldownRequest struct {
 	SiteID           uuid.UUID  `json:"site_id"`
 	SiteModelID      *uuid.UUID `json:"site_model_id"`
@@ -153,6 +160,17 @@ type routeCooldownClearRequest struct {
 	SiteModelID      *uuid.UUID `json:"site_model_id"`
 	SiteCredentialID *uuid.UUID `json:"site_credential_id"`
 	Source           string     `json:"source"`
+}
+
+type routeAnomalyClearRequest struct {
+	CanonicalModelID uuid.UUID `json:"canonical_model_id"`
+	SiteModelID      uuid.UUID `json:"site_model_id"`
+}
+
+type routeScoreAdjustmentRequest struct {
+	CanonicalModelID uuid.UUID `json:"canonical_model_id"`
+	SiteModelID      uuid.UUID `json:"site_model_id"`
+	Direction        string    `json:"direction"`
 }
 
 type siteUpsertRequest struct {
@@ -173,10 +191,14 @@ type siteUpsertRequest struct {
 }
 
 type siteAPIKeyRequest struct {
-	APIKey                 string   `json:"api_key"`
-	Name                   string   `json:"name"`
-	RoutingPriority        *float64 `json:"routing_priority"`
-	UpstreamCostMultiplier *float64 `json:"upstream_cost_multiplier"`
+	APIKey                       string   `json:"api_key"`
+	Name                         string   `json:"name"`
+	RoutingPriority              *float64 `json:"routing_priority"`
+	UpstreamCostMultiplier       *float64 `json:"upstream_cost_multiplier"`
+	UpstreamCostMultiplierSource *string  `json:"upstream_cost_multiplier_source"`
+	RPMLimit                     *int64   `json:"rpm_limit"`
+	RPDLimit                     *int64   `json:"rpd_limit"`
+	ResetTimezone                *string  `json:"reset_timezone"`
 }
 
 type oauthAuthorizeRequest struct {
@@ -220,22 +242,27 @@ type siteRequestHeader struct {
 }
 
 type siteGatewayRequest struct {
-	RequestTimeoutMS               *int     `json:"request_timeout_ms"`
-	ConnectTimeoutMS               *int     `json:"connect_timeout_ms"`
-	ResponseHeaderTimeoutMS        *int     `json:"response_header_timeout_ms"`
-	MaxConcurrency                 *int     `json:"max_concurrency"`
-	MaxModelConcurrency            *int     `json:"max_model_concurrency"`
-	MaxCredentialConcurrency       *int     `json:"max_credential_concurrency"`
-	MaxIdleConns                   *int     `json:"max_idle_conns"`
-	MaxIdleConnsPerHost            *int     `json:"max_idle_conns_per_host"`
-	MaxConnsPerHost                *int     `json:"max_conns_per_host"`
-	IdleConnTimeoutMS              *int     `json:"idle_conn_timeout_ms"`
-	ResponsesToolPolicy            string   `json:"responses_tool_policy"`
-	DisabledResponsesTools         []string `json:"disabled_responses_tools"`
-	ResponsesImageGenerationPolicy string   `json:"responses_image_generation_policy"`
-	ImpersonateCodexClient         *bool    `json:"impersonate_codex_client"`
-	ImpersonateClaudeCodeClient    *bool    `json:"impersonate_claude_code_client"`
-	QuotaProbe                     *string  `json:"quota_probe"`
+	RequestTimeoutMS                  *int     `json:"request_timeout_ms"`
+	ConnectTimeoutMS                  *int     `json:"connect_timeout_ms"`
+	ResponseHeaderTimeoutMS           *int     `json:"response_header_timeout_ms"`
+	MaxSameSiteCredentialRetries      *int     `json:"max_same_site_credential_retries"`
+	FirstByteTimeoutMS                *int     `json:"first_byte_timeout_ms"`
+	ClearMaxSameSiteCredentialRetries bool     `json:"clear_max_same_site_credential_retries"`
+	ClearFirstByteTimeoutMS           bool     `json:"clear_first_byte_timeout_ms"`
+	ClearMaxConcurrency               bool     `json:"clear_max_concurrency"`
+	MaxConcurrency                    *int     `json:"max_concurrency"`
+	MaxModelConcurrency               *int     `json:"max_model_concurrency"`
+	MaxCredentialConcurrency          *int     `json:"max_credential_concurrency"`
+	MaxIdleConns                      *int     `json:"max_idle_conns"`
+	MaxIdleConnsPerHost               *int     `json:"max_idle_conns_per_host"`
+	MaxConnsPerHost                   *int     `json:"max_conns_per_host"`
+	IdleConnTimeoutMS                 *int     `json:"idle_conn_timeout_ms"`
+	ResponsesToolPolicy               string   `json:"responses_tool_policy"`
+	DisabledResponsesTools            []string `json:"disabled_responses_tools"`
+	ResponsesImageGenerationPolicy    string   `json:"responses_image_generation_policy"`
+	ImpersonateCodexClient            *bool    `json:"impersonate_codex_client"`
+	ImpersonateClaudeCodeClient       *bool    `json:"impersonate_claude_code_client"`
+	QuotaProbe                        *string  `json:"quota_probe"`
 }
 
 func (r *siteGatewayRequest) toSiteGatewayConfig() *site.GatewayConfig {
@@ -243,22 +270,27 @@ func (r *siteGatewayRequest) toSiteGatewayConfig() *site.GatewayConfig {
 		return nil
 	}
 	return &site.GatewayConfig{
-		RequestTimeoutMS:               r.RequestTimeoutMS,
-		ConnectTimeoutMS:               r.ConnectTimeoutMS,
-		ResponseHeaderTimeoutMS:        r.ResponseHeaderTimeoutMS,
-		MaxConcurrency:                 r.MaxConcurrency,
-		MaxModelConcurrency:            r.MaxModelConcurrency,
-		MaxCredentialConcurrency:       r.MaxCredentialConcurrency,
-		MaxIdleConns:                   r.MaxIdleConns,
-		MaxIdleConnsPerHost:            r.MaxIdleConnsPerHost,
-		MaxConnsPerHost:                r.MaxConnsPerHost,
-		IdleConnTimeoutMS:              r.IdleConnTimeoutMS,
-		ResponsesToolPolicy:            r.ResponsesToolPolicy,
-		DisabledResponsesTools:         r.DisabledResponsesTools,
-		ResponsesImageGenerationPolicy: r.ResponsesImageGenerationPolicy,
-		ImpersonateCodexClient:         r.ImpersonateCodexClient,
-		ImpersonateClaudeCodeClient:    r.ImpersonateClaudeCodeClient,
-		QuotaProbe:                     r.QuotaProbe,
+		RequestTimeoutMS:                  r.RequestTimeoutMS,
+		ConnectTimeoutMS:                  r.ConnectTimeoutMS,
+		ResponseHeaderTimeoutMS:           r.ResponseHeaderTimeoutMS,
+		MaxSameSiteCredentialRetries:      r.MaxSameSiteCredentialRetries,
+		FirstByteTimeoutMS:                r.FirstByteTimeoutMS,
+		ClearMaxSameSiteCredentialRetries: r.ClearMaxSameSiteCredentialRetries,
+		ClearFirstByteTimeoutMS:           r.ClearFirstByteTimeoutMS,
+		ClearMaxConcurrency:               r.ClearMaxConcurrency,
+		MaxConcurrency:                    r.MaxConcurrency,
+		MaxModelConcurrency:               r.MaxModelConcurrency,
+		MaxCredentialConcurrency:          r.MaxCredentialConcurrency,
+		MaxIdleConns:                      r.MaxIdleConns,
+		MaxIdleConnsPerHost:               r.MaxIdleConnsPerHost,
+		MaxConnsPerHost:                   r.MaxConnsPerHost,
+		IdleConnTimeoutMS:                 r.IdleConnTimeoutMS,
+		ResponsesToolPolicy:               r.ResponsesToolPolicy,
+		DisabledResponsesTools:            r.DisabledResponsesTools,
+		ResponsesImageGenerationPolicy:    r.ResponsesImageGenerationPolicy,
+		ImpersonateCodexClient:            r.ImpersonateCodexClient,
+		ImpersonateClaudeCodeClient:       r.ImpersonateClaudeCodeClient,
+		QuotaProbe:                        r.QuotaProbe,
 	}
 }
 

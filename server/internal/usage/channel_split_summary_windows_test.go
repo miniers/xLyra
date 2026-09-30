@@ -61,6 +61,48 @@ func TestChannelSplitItemsPreferCostThenTokensAndDefaultName(t *testing.T) {
 	}
 }
 
+func TestChannelSplitItemsIncludeCacheUsageAndCurrencyBreakdown(t *testing.T) {
+	t.Parallel()
+
+	siteID := uuid.New()
+	apiKeyID := uuid.New()
+	items := channelSplitItemsFromRows([]store.RequestUsageDailySummary{
+		{
+			SiteID:                   uuid.NullUUID{UUID: siteID, Valid: true},
+			APIKeyID:                 uuid.NullUUID{UUID: apiKeyID, Valid: true},
+			RequestCount:             2,
+			SuccessCount:             1,
+			FailureCount:             1,
+			PromptTokens:             100,
+			CompletionTokens:         50,
+			CachedTokens:             25,
+			CacheWriteTokens:         10,
+			CacheCreationInputTokens: 5,
+			TotalTokens:              150,
+			CacheWriteCost:           0.2,
+			EstimatedCost:            1.5,
+			Currency:                 "USD",
+		},
+		{
+			SiteID:        uuid.NullUUID{UUID: siteID, Valid: true},
+			APIKeyID:      uuid.NullUUID{UUID: apiKeyID, Valid: true},
+			EstimatedCost: 2,
+			Currency:      "EUR",
+		},
+	}, []uuid.UUID{siteID}, map[uuid.UUID]store.APIKey{})
+
+	if len(items) != 1 {
+		t.Fatalf("items = %#v, want one api key", items)
+	}
+	item := items[0]
+	if item.CachedTokens != 25 || item.CacheWriteTokens != 10 || item.CacheCreationInputTokens != 5 || item.CacheWriteCost != 0.2 {
+		t.Fatalf("cache usage = %#v", item)
+	}
+	if item.CostByCurrency["USD"] != 1.5 || item.CostByCurrency["EUR"] != 2 {
+		t.Fatalf("cost by currency = %#v", item.CostByCurrency)
+	}
+}
+
 func TestChannelSplitSummaryUsesSingleSiteLabelAndCurrencyDefault(t *testing.T) {
 	t.Parallel()
 

@@ -18,6 +18,7 @@ func TestModelKeysNormalizeDecoratedInputsAndCanonicalizeUpstreamNames(t *testin
 		{input: "deepseek/DeepSeek V3.1!!!", want: "deepseek-v3.1"},
 		{input: "model/google/Gemini___2.5   Flash", want: "gemini-2.5-flash"},
 		{input: "xai/...Grok---4.Image++", want: "grok-4.image-plus-plus"},
+		{input: "cline-pass/qwen3.8-max", want: "qwen3.8-max"},
 	}
 	for _, tt := range normalizeCases {
 		tt := tt
@@ -38,6 +39,7 @@ func TestModelKeysNormalizeDecoratedInputsAndCanonicalizeUpstreamNames(t *testin
 		{input: "official-tts-1-business", want: "tts-1"},
 		{input: "vendor-gpt-search-business", want: "gpt"},
 		{input: "search-business", want: "search-business"},
+		{input: "cline-pass/qwen3.8-max", want: "qwen3.8-max"},
 	}
 	for _, tt := range canonicalCases {
 		tt := tt

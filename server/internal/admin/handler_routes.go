@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -146,6 +147,69 @@ func (h Handler) ClearRouteCooldown(w http.ResponseWriter, r *http.Request) {
 	h.writePayload(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (h Handler) ClearRouteAnomaly(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+
+	var payload routeAnomalyClearRequest
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+	if payload.CanonicalModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_canonical_model_id", "canonical_model_id is required")
+		return
+	}
+	if payload.SiteModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_site_model_id", "site_model_id is required")
+		return
+	}
+
+	if err := h.router.ClearRouteAnomaly(r.Context(), payload.CanonicalModelID, payload.SiteModelID); err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "route_anomaly_clear_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writePayload(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h Handler) AdjustRouteScore(w http.ResponseWriter, r *http.Request) {
+	if h.router == nil {
+		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
+		return
+	}
+
+	var payload routeScoreAdjustmentRequest
+	if !h.decodeJSON(w, r, &payload) {
+		return
+	}
+	if payload.CanonicalModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_canonical_model_id", "canonical_model_id is required")
+		return
+	}
+	if payload.SiteModelID == uuid.Nil {
+		h.writeError(w, r, http.StatusBadRequest, "invalid_site_model_id", "site_model_id is required")
+		return
+	}
+
+	item, err := h.router.AdjustRouteScore(r.Context(), payload.CanonicalModelID, payload.SiteModelID, payload.Direction)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, "route_score_adjustment_failed", err.Error())
+		return
+	}
+
+	h.invalidateGatewayModelsCache()
+	h.writePayload(w, http.StatusOK, map[string]any{
+		"ok": true,
+		"adjustment": map[string]any{
+			"delta":        item.Delta,
+			"active_until": timeString(item.ActiveUntil),
+		},
+	})
+}
+
 func (h Handler) ListRouteCandidates(w http.ResponseWriter, r *http.Request) {
 	if h.router == nil {
 		h.writeError(w, r, http.StatusServiceUnavailable, "router_service_unavailable", "router service is not available")
@@ -164,6 +228,10 @@ func (h Handler) ListRouteCandidates(w http.ResponseWriter, r *http.Request) {
 		Debug:    debug,
 	})
 	if err != nil {
+		if errors.Is(err, routeengine.ErrRouteLockUnavailable) {
+			h.writeError(w, r, http.StatusServiceUnavailable, "route_lock_unavailable", err.Error())
+			return
+		}
 		h.writeError(w, r, http.StatusBadRequest, "route_candidates_failed", err.Error())
 		return
 	}
@@ -171,11 +239,12 @@ func (h Handler) ListRouteCandidates(w http.ResponseWriter, r *http.Request) {
 	items := routeCandidatePayloads(result.Items, debug)
 
 	h.writePayload(w, http.StatusOK, map[string]any{
-		"canonical_model": canonicalModelPayload(result.CanonicalModel),
+		"canonical_model": canonicalModelPayloadWithRouteLock(result.CanonicalModel, result.RoutingLock),
 		"items":           items,
 		"meta": map[string]any{
-			"count": len(items),
-			"debug": debug,
+			"count":        len(items),
+			"debug":        debug,
+			"routing_lock": routeLockPayload(result.RoutingLock),
 		},
 	})
 }
@@ -193,6 +262,10 @@ func (h Handler) SelectRoute(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := h.router.Plan(r.Context(), query)
 	if err != nil {
+		if errors.Is(err, routeengine.ErrRouteLockUnavailable) {
+			h.writeError(w, r, http.StatusServiceUnavailable, "route_lock_unavailable", err.Error())
+			return
+		}
 		h.writeError(w, r, http.StatusBadRequest, "route_select_failed", err.Error())
 		return
 	}
@@ -221,6 +294,10 @@ func (h Handler) FailoverRoute(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := h.router.Plan(r.Context(), query)
 	if err != nil {
+		if errors.Is(err, routeengine.ErrRouteLockUnavailable) {
+			h.writeError(w, r, http.StatusServiceUnavailable, "route_lock_unavailable", err.Error())
+			return
+		}
 		h.writeError(w, r, http.StatusBadRequest, "route_failover_failed", err.Error())
 		return
 	}
@@ -231,6 +308,7 @@ func (h Handler) FailoverRoute(w http.ResponseWriter, r *http.Request) {
 		"excluded_site_ids":       uuidStrings(query.ExcludeSiteIDs),
 		"excluded_site_model_ids": uuidStrings(query.ExcludeSiteModelIDs),
 		"failover_count":          len(plan.Failover),
+		"routing_lock":            routeLockPayload(plan.RoutingLock),
 	}
 	h.writePayload(w, http.StatusOK, response)
 }
@@ -404,12 +482,13 @@ func routeTraceAttemptPayload(item store.RequestLogDetail) map[string]any {
 
 func routeSelectionPlanPayload(plan routeengine.SelectionPlan, debug bool) map[string]any {
 	return map[string]any{
-		"canonical_model": canonicalModelPayload(plan.CanonicalModel),
+		"canonical_model": canonicalModelPayloadWithRouteLock(plan.CanonicalModel, plan.RoutingLock),
 		"selected":        routeCandidatePayload(plan.Selected, debug),
 		"failover":        routeCandidatePayloads(plan.Failover, debug),
 		"meta": map[string]any{
 			"debug":          debug,
 			"failover_count": len(plan.Failover),
+			"routing_lock":   routeLockPayload(plan.RoutingLock),
 		},
 	}
 }
@@ -456,8 +535,9 @@ func routeCandidatePayloads(items []routeengine.Candidate, debug bool) []map[str
 
 func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]any {
 	payload := map[string]any{
-		"rank":  item.Rank,
-		"score": item.Score,
+		"rank":   item.Rank,
+		"score":  item.Score,
+		"locked": item.Locked,
 		"site": map[string]any{
 			"id":                               item.Site.ID.String(),
 			"name":                             item.Site.Name,
@@ -476,17 +556,26 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 			"supported_endpoint_types":   store.AvailableModelEndpointTypes(item.Model.SupportedEndpointTypes),
 		},
 		"health": map[string]any{
-			"status":                item.Health.Status,
-			"recent_success_rate":   pointerFloat64Value(item.Health.RecentSuccessRate),
-			"recent_avg_latency_ms": pointerInt64Value(item.Health.RecentAvgLatencyMS),
-			"consecutive_failures":  item.Health.ConsecutiveFailures,
-			"model_success_rate":    pointerFloat64Value(item.Health.ModelSuccessRate),
-			"model_avg_latency_ms":  pointerInt64Value(item.Health.ModelAvgLatencyMS),
-			"model_request_count":   item.Health.ModelRequestCount,
+			"status":                          item.Health.Status,
+			"recent_success_rate":             pointerFloat64Value(item.Health.RecentSuccessRate),
+			"recent_avg_latency_ms":           pointerInt64Value(item.Health.RecentAvgLatencyMS),
+			"consecutive_failures":            item.Health.ConsecutiveFailures,
+			"model_success_rate":              pointerFloat64Value(item.Health.ModelSuccessRate),
+			"model_avg_latency_ms":            pointerInt64Value(item.Health.ModelAvgLatencyMS),
+			"model_request_count":             item.Health.ModelRequestCount,
+			"model_total_request_count":       item.Health.ModelTotalRequestCount,
+			"model_last_used_at":              timePtrValue(item.Health.ModelLastUsedAt),
+			"model_avg_first_byte_latency_ms": pointerInt64Value(item.Health.ModelAvgFirstByteLatencyMS),
+			"model_first_byte_request_count":  item.Health.ModelFirstByteRequestCount,
+			"model_cache_hit_rate":            pointerFloat64Value(item.Health.ModelCacheHitRate),
+			"model_cache_request_count":       item.Health.ModelCacheRequestCount,
 		},
 		"availability": map[string]any{
-			"available_api_key_count": item.Availability.AvailableAPIKeys,
-			"total_api_key_count":     item.Availability.TotalAPIKeys,
+			"available_api_key_count":        item.Availability.AvailableAPIKeys,
+			"total_api_key_count":            item.Availability.TotalAPIKeys,
+			"subscription_key_count":         item.Availability.SubscriptionKeyCount,
+			"subscription_remaining_seconds": pointerInt64Value(item.Availability.SubscriptionRemainingSeconds),
+			"subscription_expires_at":        timePtrValue(item.Availability.SubscriptionExpiresAt),
 		},
 		"credential": map[string]any{
 			"id":                       pointerUUIDValue(item.Credential.ID),
@@ -503,14 +592,59 @@ func routeCandidatePayload(item routeengine.Candidate, debug bool) map[string]an
 			"base_per_request_value":   pointerFloat64Value(item.Pricing.BasePerRequestValue),
 			"input_value":              pointerFloat64Value(item.Pricing.InputValue),
 			"output_value":             pointerFloat64Value(item.Pricing.OutputValue),
+			"cache_read_ratio":         pointerFloat64Value(item.Pricing.CacheReadRatio),
 			"per_request_value":        pointerFloat64Value(item.Pricing.PerRequestValue),
 			"upstream_cost_multiplier": item.Pricing.UpstreamCostMultiplier,
 			"billing_type":             pointerStringValue(item.Pricing.BillingType),
 			"quota_type":               pointerInt64Value(item.Pricing.QuotaType),
 		},
+		"automatic_anomaly":       routeCandidateAnomalyPayload(item.AutomaticAnomaly),
+		"manual_score_adjustment": item.ManualScoreAdjustment,
 	}
 	if debug {
 		payload["score_breakdown"] = item.ScoreBreakdown
+		payload["score_profiles"] = routeCandidateScoreProfilesPayload(item.ScoreProfiles)
+	}
+	return payload
+}
+
+func routeCandidateAnomalyPayload(anomaly store.RouteAnomaly) map[string]any {
+	metrics := make([]map[string]any, 0, len(anomaly.Metrics))
+	for _, metric := range anomaly.Metrics {
+		metrics = append(metrics, map[string]any{
+			"metric":           metric.Metric,
+			"penalty":          metric.Penalty,
+			"recent_value":     metric.RecentValue,
+			"baseline_value":   metric.BaselineValue,
+			"recent_samples":   metric.RecentSamples,
+			"baseline_samples": metric.BaselineSamples,
+			"reason":           metric.Reason,
+		})
+	}
+	return map[string]any{
+		"active":       anomaly.Active,
+		"penalty":      anomaly.Penalty,
+		"metrics":      metrics,
+		"active_until": timePtrValue(anomaly.ActiveUntil),
+	}
+}
+
+func routeCandidateScoreProfilesPayload(profiles map[string]routeengine.CandidateScoreProfile) map[string]any {
+	payload := make(map[string]any, len(profiles))
+	for _, preference := range []string{
+		store.RoutingPreferenceDefault,
+		store.RoutingPreferenceValue,
+		store.RoutingPreferenceSpeed,
+	} {
+		profile, ok := profiles[preference]
+		if !ok {
+			continue
+		}
+		payload[preference] = map[string]any{
+			"rank":      profile.Rank,
+			"score":     profile.Score,
+			"breakdown": profile.Breakdown,
+		}
 	}
 	return payload
 }

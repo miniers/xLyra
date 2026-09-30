@@ -50,6 +50,9 @@ func TestListAPIKeysOfflineDefaultAndSyncViews(t *testing.T) {
 			if body.Meta["count"] != float64(1) || body.Meta["view"] != tc.wantView {
 				t.Fatalf("meta = %#v, want count=1 view=%#v", body.Meta, tc.wantView)
 			}
+			if tc.name == "default" && body.Meta["order_revision"] != store.APIKeyOrderRevision([]store.APIKey{apiKey}) {
+				t.Fatalf("order_revision = %#v, want current visible order revision", body.Meta["order_revision"])
+			}
 		})
 	}
 }

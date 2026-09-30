@@ -155,6 +155,8 @@ func NormalizeModelKey(value string) string {
 	value = strings.TrimPrefix(value, "xai/")
 	value = strings.TrimPrefix(value, "moonshotai/")
 	value = strings.TrimPrefix(value, "nvidia/")
+	value = strings.TrimPrefix(value, "cline-pass/")
+	value = strings.TrimPrefix(value, "cline_pass/")
 	value = strings.ReplaceAll(value, "+", " plus ")
 	value = modelKeySeparatorPattern.ReplaceAllString(value, "-")
 	value = strings.Trim(value, "-.")
@@ -174,6 +176,8 @@ func NormalizeModelKeyPrefix(value string) string {
 	value = strings.TrimPrefix(value, "xai/")
 	value = strings.TrimPrefix(value, "moonshotai/")
 	value = strings.TrimPrefix(value, "nvidia/")
+	value = strings.TrimPrefix(value, "cline-pass/")
+	value = strings.TrimPrefix(value, "cline_pass/")
 	value = strings.ReplaceAll(value, "+", " plus ")
 	value = modelKeySeparatorPattern.ReplaceAllString(value, "-")
 	value = strings.TrimLeft(value, "-.")
@@ -334,6 +338,23 @@ func (s *Service) UpdatePricing(ctx context.Context, id uuid.UUID, input UpdateC
 		params.CacheWrite1hRatio = nullFloat64FromPtr(input.CacheWrite1hRatio)
 	}
 	return store.NewCanonicalModelRepository(s.db.DB()).UpdatePricing(ctx, params)
+}
+
+func (s *Service) UpdateRoutingPreference(ctx context.Context, id uuid.UUID, preference string) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	if !store.ValidRoutingPreference(preference) {
+		return store.CanonicalModel{}, fmt.Errorf("invalid routing preference %q", preference)
+	}
+	return store.NewCanonicalModelRepository(s.db.DB()).UpdateRoutingPreference(ctx, id, preference)
+}
+
+func (s *Service) UpdateRoutingExpiryRescue(ctx context.Context, id uuid.UUID, enabled bool) (store.CanonicalModel, error) {
+	if id == uuid.Nil {
+		return store.CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+	return store.NewCanonicalModelRepository(s.db.DB()).UpdateRoutingExpiryRescue(ctx, id, enabled)
 }
 
 func nullFloat64FromPtr(value *float64) sql.NullFloat64 {
