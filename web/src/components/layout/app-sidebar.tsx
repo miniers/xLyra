@@ -1,23 +1,30 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, PanelLeftClose } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { getAppNavSections } from '@/lib/navigation'
 import { useMobileDevice } from '@/hooks/use-media-query'
 import { AppLogo } from '@/components/common/app-logo'
 import { UserAccountMenu } from '@/components/layout/user-account-menu'
+import { Button } from '@/components/ui/button'
+import { useSidebarStore } from '@/stores/sidebar-store'
 import { useAgentAvailability } from '@/features/agent/lib/use-agent-availability'
+import { CollapsedSidebar } from '@/components/layout/collapsed-sidebar'
 
 type AppSidebarProps = {
   className?: string
   onNavigate?: () => void
+  collapsible?: boolean
 }
 
-export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
-  const { t } = useTranslation('common')
+export function AppSidebar({ className, onNavigate, collapsible = false }: AppSidebarProps) {
+  const { t } = useTranslation(['common', 'components'])
   const location = useLocation()
   const isMobileDevice = useMobileDevice()
+  const storeCollapsed = useSidebarStore((s) => s.isCollapsed)
+  const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed)
+  const isCollapsed = collapsible && storeCollapsed
   const agentAvailable = useAgentAvailability()
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({})
 
@@ -35,6 +42,17 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
     items: section.items.filter((item) => !item.desktopOnly || !isMobileDevice),
   }))
 
+  if (isCollapsed) {
+    return (
+      <CollapsedSidebar
+        className={className}
+        navSections={navSections}
+        onNavigate={handleNavigate}
+        onExpand={toggleCollapsed}
+      />
+    )
+  }
+
   return (
     <div
       className={cn(
@@ -42,12 +60,26 @@ export function AppSidebar({ className, onNavigate }: AppSidebarProps) {
         className,
       )}
     >
-      <div className="flex items-center gap-3 border-b border-[hsl(var(--divider))] px-6 py-6">
-        <AppLogo className="size-10 rounded-2xl shadow-[0_14px_32px_rgba(0,0,0,0.12)]" decorative />
-        <div className="min-w-0 space-y-1">
-          <p className="truncate text-base font-semibold text-foreground">xLyra</p>
-          <p className="text-muted-soft truncate text-xs">Gateway Dark Admin</p>
+      <div className="flex items-center justify-between border-b border-[hsl(var(--divider))] px-5 py-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <AppLogo className="size-10 shrink-0 rounded-2xl shadow-[0_14px_32px_rgba(0,0,0,0.12)]" decorative />
+          <div className="min-w-0 space-y-0.5">
+            <p className="truncate text-base font-semibold text-foreground">xLyra</p>
+            <p className="text-muted-soft truncate text-xs">Gateway Dark Admin</p>
+          </div>
         </div>
+        {collapsible && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0 text-muted-soft hover:text-foreground hover:bg-[hsl(var(--surface-subtle))]"
+            onClick={toggleCollapsed}
+            title={t('navigation.collapseSidebar', { ns: 'components' })}
+            aria-label={t('navigation.collapseSidebar', { ns: 'components' })}
+          >
+            <PanelLeftClose className="size-4" />
+          </Button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">

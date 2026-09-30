@@ -15,6 +15,16 @@
       "siteRefreshCron": "Site Refresh Cron",
       "newAPICheckinCron": "NewAPI Checkin Cron"
     },
+    "gateway": {
+      "title": "Gateway failover",
+      "description": "Configure session affinity, same-site credential retries, and first-byte timeout.",
+      "sessionAffinity": "Session affinity",
+      "sessionAffinityDesc": "Prefer the route that most recently served the same session to improve upstream cache reuse. Disable to restore normal route order.",
+      "sameSiteRetries": "Same-site credential retries",
+      "sameSiteRetriesDesc": "Applies to pre-output transport, timeout, and 5xx failures. Range: 0–20.",
+      "firstByteTimeout": "Global first-byte timeout (ms)",
+      "firstByteTimeoutDesc": "Switch credentials when the upstream produces no valid first output. 0 disables it."
+    },
     "whitelist": {
       "title": "IP Whitelist",
       "ipAddress": "IP Address",
@@ -34,6 +44,14 @@
       "requestDetailRetentionDays": "Request Detail Retention Days",
       "requestDetailRetentionDesc": "After daily summaries are complete, request_logs and usage_records older than this value are cleaned up."
     },
+    "serviceWorker": {
+      "title": "Service Worker",
+      "description": "Manually check and update the frontend Service Worker when a version update fails.",
+      "update": "Update Service Worker",
+      "updating": "Updating Service Worker...",
+      "updated": "Service Worker update check started",
+      "updateFailed": "Service Worker update failed"
+    },
     "validation": {
       "cronInvalid": "Cron expression is invalid",
       "cronInvalidWithMessage": "Cron expression is invalid: {{message}}",
@@ -48,7 +66,10 @@
       "retentionDaysPositive": "Retention days must be a positive integer",
       "sessionLifetimeRequired": "Please enter session lifetime",
       "sessionLifetimeInteger": "Session lifetime must be an integer (hours)",
-      "sessionLifetimeRange": "Session lifetime must be between 0 and 720 hours"
+      "sessionLifetimeRange": "Session lifetime must be between 0 and 720 hours",
+      "gatewayRetries": "Retries must be an integer from 0 to 20",
+      "gatewayTimeout": "First-byte timeout must be an integer from 0 to 600000",
+      "gatewayInvalid": "Gateway configuration is invalid"
     }
   },
   "profile": {

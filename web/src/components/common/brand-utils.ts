@@ -25,6 +25,7 @@ const lightBrandIconPaths: Record<string, string> = {
 
 export function siteTypeIconPath(siteType: string, resolvedMode: 'light' | 'dark' = 'dark'): string | undefined {
   const type = siteType.trim().toLowerCase()
+  if (type === 'nvidia') return '/brand-icons/nvidia.png'
   if (type === 'openai' || type === 'openai_compatible') return resolveThemedIconPath('/brand-icons/openai.png', 'OpenAI', resolvedMode)
   if (type === 'anthropic') return '/brand-icons/anthropic.png'
   if (type === 'google_gemini') return '/brand-icons/google.png'
@@ -36,6 +37,8 @@ export function siteTypeIconPath(siteType: string, resolvedMode: 'light' | 'dark
   if (type === 'moonshot') return '/brand-icons/moonshot.png'
   if (type === 'kimi_code') return '/brand-icons/moonshot.png'
   if (type === 'zhipu' || type === 'glm_code') return '/brand-icons/zhipu.png'
+  if (type === 'command_code') return '/brand-icons/commandcode.svg'
+  if (type === 'cline_pass' || type === 'cline') return '/brand-icons/cline.png'
   if (type === 'newapi') return '/brand-icons/newapi.png'
   if (type === 'xlyra') return '/brand-icons/xlyra.png'
   if (type === 'codex') return '/oauth-icons/codex.svg'

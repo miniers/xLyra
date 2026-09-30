@@ -1,4 +1,4 @@
-import { Fragment, useRef, type RefObject } from 'react'
+import { Fragment, useRef, useMemo, type RefObject } from 'react'
 import { DataTableHeader, TableColumnResizeHandle } from '@/components/common/data-table-header'
 import { useTableColumnSizing } from '@/hooks/use-table-column-sizing'
 import { useTranslation } from 'react-i18next'
@@ -7,28 +7,38 @@ import { EmptyState } from '@/components/common/empty-state'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { RequestLogItem } from '@/features/requests/api/requests'
 import { RequestDetailRow } from '@/features/requests/components/request-detail-row'
+import { RequestLiveControls } from '@/features/requests/components/request-live-controls'
 import { RequestModelMapping } from '@/features/requests/components/request-model-mapping'
 import { RequestTiming } from '@/features/requests/components/request-timing'
 import { requestFailoverBadgeClassName } from '@/features/requests/lib/request-badge-styles'
+import styles from '@/features/requests/components/requests-list.module.css'
 import { REQUEST_TABLE_COLUMN_SIZING } from '@/features/requests/lib/request-table-columns'
 import {
   formatCurrency,
   formatDateTime,
   formatInteger,
   formatTokenCompact,
+  formatTPS,
   requestCacheTokens,
   requestCacheWriteTokens,
+  requestLogDisplayTimestamp,
   requestHasFailover,
+  requestIsInProgress,
+  requestPhaseLabel,
   requestResponseModeLabel,
   requestResponseModeVariant,
+  requestTPS,
 } from '@/features/requests/lib/request-utils'
+import { requestLogDisplayKey, type RequestLogDisplayItem } from '@/features/requests/lib/request-live'
+import { useRequestListAnimation } from '@/hooks/use-request-list-animation'
 
 type RequestsTableProps = {
-  items: RequestLogItem[]
+  items: RequestLogDisplayItem[]
   expandedId: string | null
   onExpandedIdChange: (id: string | null) => void
+  pendingRequestID?: string | null
+  onRequestCancel?: (requestID: string) => void
   scrollContainerRef?: RefObject<HTMLDivElement | null>
   className?: string
 }
@@ -44,17 +54,22 @@ const requestTableHeaders = [
   { id: 'input', label: 'table.headers.input', className: 'px-4 py-3 font-medium text-right' },
   { id: 'output', label: 'table.headers.output', className: 'px-4 py-3 font-medium text-right' },
   { id: 'cost', label: 'table.headers.cost', className: 'px-4 py-3 font-medium text-right' },
+  { id: 'actions', label: 'table.headers.actions', className: 'px-3 py-3 font-medium text-right' },
 ] as const
 
 export function RequestsTable({
   items,
   expandedId,
   onExpandedIdChange,
+  pendingRequestID = null,
+  onRequestCancel,
   scrollContainerRef,
   className,
 }: RequestsTableProps) {
   const { t, i18n } = useTranslation('requests')
   const tableRef = useRef<HTMLTableElement>(null)
+  const itemKeys = useMemo(() => items.map(requestLogDisplayKey), [items])
+  useRequestListAnimation(tableRef, itemKeys)
   const sizing = useTableColumnSizing(tableRef, REQUEST_TABLE_COLUMN_SIZING)
   if (!items.length) {
     return (
@@ -95,17 +110,26 @@ export function RequestsTable({
         </DataTableHeader>
         <tbody>
           {items.map((item) => {
-            const expanded = expandedId === item.id
+            const rowKey = requestLogDisplayKey(item)
+            const expanded = expandedId === rowKey
             const cacheTokens = requestCacheTokens(item)
             const cacheWriteTokens = requestCacheWriteTokens(item)
+            const inProgress = requestIsInProgress(item)
             const hasCacheRead = typeof cacheTokens === 'number' && cacheTokens > 0
             const hasCacheWrite = typeof cacheWriteTokens === 'number' && cacheWriteTokens > 0
 
             return (
-              <Fragment key={item.id}>
+              <Fragment key={rowKey}>
                 <tr
-                  className="cursor-pointer border-t border-[hsl(var(--glass-divider))] [&>td]:transition-colors hover:[&>td]:bg-[hsl(var(--surface-subtle))] hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md"
-                  onClick={() => onExpandedIdChange(expanded ? null : item.id)}
+                  data-request-list-item={rowKey}
+                  data-request-list-parent={item.parent_request_id ?? item.request_id}
+                  data-request-list-live={item.is_live === true ? 'true' : 'false'}
+                  data-request-list-handoff={item.display_key ? 'true' : 'false'}
+                  className={cn(
+                    'cursor-pointer border-t border-[hsl(var(--glass-divider))] [&>td]:transition-colors hover:[&>td]:bg-[hsl(var(--surface-subtle))] hover:[&>td:first-child]:rounded-l-md hover:[&>td:last-child]:rounded-r-md',
+                    item.is_live === true && styles.enter,
+                  )}
+                  onClick={() => onExpandedIdChange(expanded ? null : rowKey)}
                 >
                       <td className="px-4 py-4 align-middle">
                         {expanded ? (
@@ -115,7 +139,7 @@ export function RequestsTable({
                         )}
                       </td>
                       <td className="px-4 py-4 align-middle text-sm text-foreground">
-                        {formatDateTime(item.created_at, i18n.language)}
+                        {formatDateTime(requestLogDisplayTimestamp(item), i18n.language)}
                       </td>
                       <td className="px-4 py-4 align-middle">
                         <RequestModelMapping item={item} className="text-sm font-medium text-foreground" />
@@ -141,9 +165,14 @@ export function RequestsTable({
                       <td className="overflow-hidden px-1 py-4 align-middle text-center">
                         <div className="flex flex-col items-center gap-1 text-xs leading-4">
                           <div className="flex flex-wrap items-center justify-center gap-1.5">
-                            <StatusBadge status={item.success ? 'healthy' : 'error'} className="shrink-0 px-2 py-0.5 text-xs leading-4">
-                              {item.success ? t('table.success') : t('table.failure')}
+                            <StatusBadge status={inProgress ? 'syncing' : item.success ? 'healthy' : 'error'} className="shrink-0 px-2 py-0.5 text-xs leading-4">
+                              {inProgress ? t('table.inProgress') : item.success ? t('table.success') : t('table.failure')}
                             </StatusBadge>
+                            {inProgress ? (
+                              <Badge variant="accent" className="shrink-0 px-2 py-0.5 text-xs leading-4">
+                                {requestPhaseLabel(item, t)}
+                              </Badge>
+                            ) : null}
                             <Badge
                               variant={requestResponseModeVariant(item)}
                               className="shrink-0 px-2 py-0.5 text-xs font-medium tracking-wide"
@@ -168,7 +197,7 @@ export function RequestsTable({
                         <RequestTiming item={item} />
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
-                        <div>{formatInteger(item.usage.prompt_tokens)}</div>
+                        <div>{item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.prompt_tokens)}</div>
                         {(hasCacheRead || hasCacheWrite) ? (
                           <div className="text-muted-soft whitespace-nowrap text-xs">
                             {hasCacheRead && hasCacheWrite
@@ -181,10 +210,21 @@ export function RequestsTable({
                         ) : null}
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
-                        {formatInteger(item.usage.completion_tokens)}
+                        <div>{item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.completion_tokens)}</div>
+                        <div className="text-muted-soft whitespace-nowrap text-xs">
+                          {formatTPS(requestTPS(item))}
+                        </div>
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
                         {formatCurrency(item.usage.estimated_cost, item.usage.currency)}
+                      </td>
+                      <td className="px-3 py-4 align-middle">
+                        <RequestLiveControls
+                          item={item}
+                          compact
+                          pending={pendingRequestID === item.request_id}
+                          onCancel={onRequestCancel ?? (() => undefined)}
+                        />
                       </td>
                 </tr>
                 {expanded ? (

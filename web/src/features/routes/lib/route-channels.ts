@@ -1,7 +1,7 @@
 import type { RouteCandidateItem, RouteCooldown } from '@/features/routes/api/routes'
 import type { CanonicalModelMatrixRow, Site, SiteAPIKey, SiteAPIKeyModel } from '@/features/sites/api/sites'
 import { siteUsesAPIKeyChannels } from '@/features/routes/lib/route-format'
-import type { PendingChannelState, RouteChannelRow } from '@/features/routes/lib/types'
+import type { PendingChannelState, RouteChannelRow, RouteSiteModelGroup } from '@/features/routes/lib/types'
 
 const routeChannelNameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
 
@@ -47,6 +47,74 @@ export function routeChannelRowsFromMatrix(
   return rows.sort(compareRouteChannelRows)
 }
 
+export function routeSiteModelGroupsFromChannels(
+  rows: RouteChannelRow[],
+  candidates: RouteCandidateItem[] = [],
+): RouteSiteModelGroup[] {
+  const groups = new Map<string, RouteSiteModelGroup>()
+
+  for (const row of rows) {
+    let group = groups.get(row.siteModelId)
+    if (!group) {
+      group = {
+        siteModelId: row.siteModelId,
+        siteId: row.siteId,
+        siteName: row.siteName,
+        siteType: row.siteType,
+        upstreamName: row.upstreamName,
+        siteEnabled: row.siteEnabled,
+        siteModelEnabled: row.siteModelEnabled,
+        current: false,
+        locked: false,
+        cooling: false,
+        routable: false,
+        enabledChannelCount: 0,
+        routableChannelCount: 0,
+        channels: [],
+        candidate: row.candidate,
+      }
+      groups.set(row.siteModelId, group)
+    }
+
+    group.channels.push(row)
+    group.current ||= Boolean(row.current)
+    group.locked ||= Boolean(row.locked || row.candidate?.locked)
+    group.cooling ||= Boolean(row.cooling)
+    group.routable ||= row.routable
+    group.enabledChannelCount += row.enabled ? 1 : 0
+    group.routableChannelCount += row.routable ? 1 : 0
+    group.candidate ??= row.candidate
+  }
+
+  for (const candidate of candidates) {
+    const siteModelId = candidate.model.site_model_id
+    if (groups.has(siteModelId)) {
+      groups.get(siteModelId)!.candidate ??= candidate
+      continue
+    }
+
+    groups.set(siteModelId, {
+      siteModelId,
+      siteId: candidate.site.id,
+      siteName: candidate.site.name,
+      siteType: candidate.site.site_type,
+      upstreamName: candidate.model.upstream_model_name,
+      siteEnabled: true,
+      siteModelEnabled: true,
+      current: false,
+      locked: Boolean(candidate.locked),
+      cooling: false,
+      routable: true,
+      enabledChannelCount: 0,
+      routableChannelCount: 0,
+      channels: [],
+      candidate,
+    })
+  }
+
+  return [...groups.values()]
+}
+
 function compareRouteChannelRows(a: RouteChannelRow, b: RouteChannelRow) {
   if (a.enabled !== b.enabled) return a.enabled ? -1 : 1
 
@@ -85,6 +153,7 @@ function buildRouteChannelRows(input: {
   matrixRow?: CanonicalModelMatrixRow
 }): RouteChannelRow[] {
   const siteModelEnabled = isRouteModelEnabled(input.siteModelStatus)
+  const usesAPIKeyChannels = siteUsesAPIKeyChannels(input.site)
   if (input.siteModelStatus === 'unavailable') return []
 
   const siteModelRow = (): RouteChannelRow => {
@@ -103,14 +172,15 @@ function buildRouteChannelRows(input: {
       current: input.current,
       cooling: input.cooling,
       candidate: input.candidate,
+      locked: input.candidate?.locked,
       pricing: input.candidate?.pricing ?? (input.matrixRow ? pickMatrixPricing(input.matrixRow) : undefined),
       enabled,
-      routable: enabled && !input.cooling,
+      routable: enabled && !input.cooling && (!usesAPIKeyChannels || (input.matrixRow?.available_api_key_count ?? 0) > 0),
       toggleDisabled: !input.site.enabled,
     }
   }
 
-  if (!siteUsesAPIKeyChannels(input.site)) {
+  if (!usesAPIKeyChannels) {
     return [siteModelRow()]
   }
 
@@ -154,6 +224,7 @@ function buildRouteChannelRows(input: {
       current: input.current && (!input.currentCredentialId || input.currentCredentialId === apiKey.id),
       cooling: input.cooling,
       candidate: input.candidate,
+      locked: input.candidate?.locked,
       pricing: input.candidate?.credential.id === apiKey.id
         ? input.candidate.pricing
         : input.matrixRow
@@ -398,6 +469,41 @@ export function routeChannelStatus(row: RouteChannelRow, t?: TFunction) {
   }
 }
 
+export function routeSiteModelStatus(group: Pick<RouteSiteModelGroup, 'routable' | 'cooling' | 'siteEnabled' | 'siteModelEnabled'>, t?: TFunction) {
+  if (group.routable) {
+    return {
+      label: t ? t('channels.routable') : '可路由',
+      badgeVariant: 'neutral' as const,
+    }
+  }
+
+  if (group.cooling) {
+    return {
+      label: t ? t('channels.cooling') : '冷却中',
+      badgeVariant: 'warning' as const,
+    }
+  }
+
+  if (!group.siteEnabled) {
+    return {
+      label: t ? t('channels.siteDisabled') : '站点停用',
+      badgeVariant: 'warning' as const,
+    }
+  }
+
+  if (!group.siteModelEnabled) {
+    return {
+      label: t ? t('channels.modelDisabled') : '模型停用',
+      badgeVariant: 'warning' as const,
+    }
+  }
+
+  return {
+    label: t ? t('channels.notCandidate') : '未进入候选',
+    badgeVariant: 'neutral' as const,
+  }
+}
+
 export function routeChannelSwitchDisabledReason(row: RouteChannelRow, pending?: PendingChannelState, t?: TFunction) {
   if (pending) return t ? t('channels.updating') : '正在更新'
   if (!row.siteEnabled) return t ? t('channels.siteDisabledHint') : '站点已停用，不能切换模型'
@@ -405,11 +511,15 @@ export function routeChannelSwitchDisabledReason(row: RouteChannelRow, pending?:
   return undefined
 }
 
-function routeModelCooling(cooldowns: RouteCooldown[], siteId: string, siteModelId: string) {
-  return cooldowns.some((cooldown) => {
+export function routeModelCooldown(cooldowns: RouteCooldown[], siteId: string, siteModelId: string) {
+  return cooldowns.find((cooldown) => {
     if (cooldown.site_model_id) {
       return cooldown.site_model_id === siteModelId
     }
     return cooldown.site_id === siteId && !cooldown.site_credential_id
   })
+}
+
+function routeModelCooling(cooldowns: RouteCooldown[], siteId: string, siteModelId: string) {
+  return Boolean(routeModelCooldown(cooldowns, siteId, siteModelId))
 }

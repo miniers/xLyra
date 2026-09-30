@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import cronstrue from 'cronstrue/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, RotateCcw, Save } from 'lucide-react'
+import { LoaderCircle, RefreshCw, RotateCcw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,7 @@ import {
   updateGeneralSettings,
   type GeneralSettingsConfig,
 } from '@/features/settings/api/settings'
+import { updateServiceWorker } from '@/lib/pwa-update'
 import { toast } from '@/lib/toast'
 
 const generalSettingsKey = ['settings', 'general'] as const
@@ -35,6 +36,9 @@ type GeneralSettingsDraft = {
   requestDetailCleanupEnabled: boolean
   requestDetailRetentionDays: string
   sessionLifetimeHours: string
+  sessionAffinityEnabled: boolean
+  maxSameSiteCredentialRetries: string
+  firstByteTimeoutMS: string
 }
 
 const DEFAULT_GENERAL_SETTINGS: GeneralSettingsDraft = {
@@ -48,6 +52,9 @@ const DEFAULT_GENERAL_SETTINGS: GeneralSettingsDraft = {
   requestDetailCleanupEnabled: true,
   requestDetailRetentionDays: '90',
   sessionLifetimeHours: '24',
+  sessionAffinityEnabled: true,
+  maxSameSiteCredentialRetries: '0',
+  firstByteTimeoutMS: '0',
 }
 
 const logLevels = ['debug', 'info', 'warn', 'error'] as const
@@ -71,6 +78,7 @@ export function GeneralSettingsPage() {
     },
   })
   const [draft, setDraft] = useState<GeneralSettingsDraft>(DEFAULT_GENERAL_SETTINGS)
+  const [serviceWorkerUpdating, setServiceWorkerUpdating] = useState(false)
 
   useEffect(() => {
     if (generalQuery.data) {
@@ -85,6 +93,8 @@ export function GeneralSettingsPage() {
   const retentionError = draft.cleanupEnabled ? validateRetentionDays(draft.retentionDays, t) : undefined
   const requestDetailRetentionError = draft.requestDetailCleanupEnabled ? validateRetentionDays(draft.requestDetailRetentionDays, t) : undefined
   const sessionLifetimeError = validateSessionLifetimeHours(draft.sessionLifetimeHours, t)
+  const maxSameSiteCredentialRetriesError = validateGatewayInteger(draft.maxSameSiteCredentialRetries, 0, 20, t('general.validation.gatewayRetries'))
+  const firstByteTimeoutError = validateGatewayInteger(draft.firstByteTimeoutMS, 0, 600000, t('general.validation.gatewayTimeout'))
 
   function patchDraft(patch: Partial<GeneralSettingsDraft>) {
     setDraft((current) => ({ ...current, ...patch }))
@@ -115,11 +125,29 @@ export function GeneralSettingsPage() {
       toast.error(t('general.validation.sessionLifetimeInvalid'), { description: sessionLifetimeError })
       return
     }
+    if (maxSameSiteCredentialRetriesError || firstByteTimeoutError) {
+      toast.error(t('general.validation.gatewayInvalid'), { description: maxSameSiteCredentialRetriesError ?? firstByteTimeoutError })
+      return
+    }
     saveMutation.mutate(draftToGeneralSettings(draft))
   }
 
   function handleReset() {
     setDraft(generalQuery.data ? generalSettingsToDraft(generalQuery.data) : DEFAULT_GENERAL_SETTINGS)
+  }
+
+  async function handleServiceWorkerUpdate() {
+    setServiceWorkerUpdating(true)
+    try {
+      await updateServiceWorker()
+      toast.success(t('general.serviceWorker.updated'))
+    } catch (error) {
+      toast.error(t('general.serviceWorker.updateFailed'), {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setServiceWorkerUpdating(false)
+    }
   }
 
   if (generalQuery.isLoading) {
@@ -257,6 +285,28 @@ export function GeneralSettingsPage() {
       </section>
 
       <section className="space-y-4 border-t border-[hsl(var(--divider))] pt-6">
+        <h4 className="text-sm font-semibold text-foreground">{t('general.gateway.title')}</h4>
+        <p className="text-muted-soft text-xs">{t('general.gateway.description')}</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField label={t('general.gateway.sessionAffinity')} description={t('general.gateway.sessionAffinityDesc')}>
+            <div className="flex h-11 items-center gap-3">
+              <Switch
+                checked={draft.sessionAffinityEnabled}
+                onCheckedChange={(sessionAffinityEnabled) => patchDraft({ sessionAffinityEnabled })}
+                aria-label={t('general.gateway.sessionAffinity')}
+              />
+            </div>
+          </FormField>
+          <FormField label={t('general.gateway.sameSiteRetries')} description={t('general.gateway.sameSiteRetriesDesc')} error={maxSameSiteCredentialRetriesError}>
+            <Input type="text" inputMode="numeric" value={draft.maxSameSiteCredentialRetries} onChange={(event) => patchDraft({ maxSameSiteCredentialRetries: event.target.value })} />
+          </FormField>
+          <FormField label={t('general.gateway.firstByteTimeout')} description={t('general.gateway.firstByteTimeoutDesc')} error={firstByteTimeoutError}>
+            <Input type="text" inputMode="numeric" value={draft.firstByteTimeoutMS} onChange={(event) => patchDraft({ firstByteTimeoutMS: event.target.value })} />
+          </FormField>
+        </div>
+      </section>
+
+      <section className="space-y-4 border-t border-[hsl(var(--divider))] pt-6">
         <h4 className="text-sm font-semibold text-foreground">{t('general.data.title')}</h4>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -287,6 +337,15 @@ export function GeneralSettingsPage() {
         </div>
       </section>
 
+      <section className="space-y-4 border-t border-[hsl(var(--divider))] pt-6">
+        <h4 className="text-sm font-semibold text-foreground">{t('general.serviceWorker.title')}</h4>
+        <p className="text-muted-soft text-xs">{t('general.serviceWorker.description')}</p>
+        <Button variant="outline" onClick={handleServiceWorkerUpdate} disabled={serviceWorkerUpdating}>
+          {serviceWorkerUpdating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {serviceWorkerUpdating ? t('general.serviceWorker.updating') : t('general.serviceWorker.update')}
+        </Button>
+      </section>
+
       <div className="flex items-center gap-3 border-t border-[hsl(var(--divider))] pt-6">
         <Button onClick={handleSave} disabled={saveMutation.isPending}>
           {saveMutation.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -313,6 +372,9 @@ function generalSettingsToDraft(config: GeneralSettingsConfig): GeneralSettingsD
     requestDetailCleanupEnabled: config.data?.request_detail_cleanup_enabled ?? true,
     requestDetailRetentionDays: String(config.data?.request_detail_retention_days ?? 90),
     sessionLifetimeHours: String(config.security?.session_lifetime_hours ?? 24),
+    sessionAffinityEnabled: config.gateway?.session_affinity_enabled ?? true,
+    maxSameSiteCredentialRetries: String(config.gateway?.max_same_site_credential_retries ?? 0),
+    firstByteTimeoutMS: String(config.gateway?.first_byte_timeout_ms ?? 0),
   }
 }
 
@@ -337,6 +399,11 @@ function draftToGeneralSettings(draft: GeneralSettingsDraft): GeneralSettingsCon
     },
     security: {
       session_lifetime_hours: Number(draft.sessionLifetimeHours.trim()),
+    },
+    gateway: {
+      session_affinity_enabled: draft.sessionAffinityEnabled,
+      max_same_site_credential_retries: Number(draft.maxSameSiteCredentialRetries.trim()),
+      first_byte_timeout_ms: Number(draft.firstByteTimeoutMS.trim()),
     },
   }
 }
@@ -424,5 +491,13 @@ function validateSessionLifetimeHours(value: string, t: (key: string) => string)
   const parsed = Number(trimmed)
   if (!Number.isInteger(parsed)) return t('general.validation.sessionLifetimeInteger')
   if (parsed < 0 || parsed > 720) return t('general.validation.sessionLifetimeRange')
+  return undefined
+}
+
+function validateGatewayInteger(value: string, min: number, max: number, message: string) {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return message
+  const parsed = Number(trimmed)
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) return message
   return undefined
 }

@@ -65,7 +65,7 @@ export type ResponsesToolPolicy = 'passthrough' | 'compatibility'
 export type ResponsesHostedTool = 'image_generation'
 export type ResponsesImageGenerationPolicy =
   'passthrough' | 'strip_auto_tool' | 'disabled'
-export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'deepseek' | 'moonshot'
+export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'command_code' | 'deepseek' | 'moonshot' | 'cline_pass'
 
 export type SiteQuotaProbeSummary = {
   status?: string
@@ -113,6 +113,8 @@ export type SiteGatewayConfig = {
   request_timeout_ms?: number
   connect_timeout_ms?: number
   response_header_timeout_ms?: number
+  max_same_site_credential_retries?: number
+  first_byte_timeout_ms?: number
   max_concurrency?: number
   max_model_concurrency?: number
   max_credential_concurrency?: number
@@ -261,6 +263,8 @@ export type SiteModelTestInput = {
   siteCredentialId?: string
 }
 
+export type RoutingPreference = 'default' | 'value' | 'speed'
+
 export type CanonicalModel = {
   id: string
   model_key: string
@@ -269,6 +273,8 @@ export type CanonicalModel = {
   category: string
   capabilities: Record<string, unknown>
   status: string
+  routing_preference?: RoutingPreference
+  routing_expiry_rescue_enabled?: boolean
   created_at: string
   updated_at: string
   /** Gateway-declared reasoning effort spec (levels/mode/thinking_mandatory); absent when undeclared. */
@@ -347,6 +353,9 @@ export type SiteAPIKey = {
   upstream_name?: string
   routing_priority: number
   upstream_cost_multiplier: number
+  upstream_cost_multiplier_source?: 'manual' | 'auto' | string
+  upstream_cost_multiplier_probe?: SiteAPIKeyMultiplierProbe | null
+  upstream_cost_multiplier_history?: SiteAPIKeyMultiplierChange[]
   group?: string | null
   key: string
   copy_key?: string
@@ -357,23 +366,54 @@ export type SiteAPIKey = {
   can_complete?: boolean
   models: string[]
   model_items?: SiteAPIKeyModel[]
-  usage?: {
-    data?: {
-      total_available?: number | null
-      total_granted?: number | null
-      unlimited_quota?: boolean
-    }
-    source?: string
-    official_realtime_available?: boolean
-    available?: boolean
-    limit_name?: string
-    workspace?: string
-    retry_after_seconds?: number
-    reset_at?: string
-    observed_at?: string
-  }
+  usage?: SiteAPIKeyUsage
   quota_probe?: SiteQuotaProbeResult | null
+  rpm_limit?: number
+  rpd_limit?: number
+  rpm_used?: number
+  rpd_used?: number
+  reset_timezone?: string
+  cooling?: boolean
+  cooldown_reason?: string
+  cooldown_active_until?: string
+  cooldown_remaining_seconds?: number
   message?: string
+}
+
+export type SiteAPIKeyMultiplierProbe = {
+  status?: string
+  source?: string
+  resolved_rate_multiplier?: number
+  effective_rate_multiplier?: number
+  probed_at?: string
+  error?: string
+}
+
+export type SiteAPIKeyMultiplierChange = {
+  changed_at: string
+  from: number
+  to: number
+  source: string
+}
+
+export type SiteAPIKeyUsage = {
+  data?: SiteAPIKeyUsageData
+  source?: string
+  official_realtime_available?: boolean
+  available?: boolean
+  limit_name?: string
+  workspace?: string
+  retry_after_seconds?: number
+  reset_at?: string
+  observed_at?: string
+}
+
+export type SiteAPIKeyUsageData = {
+  total_available?: number | null
+  total_granted?: number | null
+  total_used?: number | null
+  unlimited_quota?: boolean
+  expires_at?: string | number | null
 }
 
 export type SiteAPIKeyModel = {
@@ -526,6 +566,12 @@ export type SiteUpsertInput = {
   }
   requestHeaders?: { key: string; value: string }[]
   gateway?: {
+    maxConcurrency?: number
+    maxSameSiteCredentialRetries?: number
+    firstByteTimeoutMs?: number
+    clearMaxConcurrency?: boolean
+    clearMaxSameSiteCredentialRetries?: boolean
+    clearFirstByteTimeoutMs?: boolean
     responsesToolPolicy?: ResponsesToolPolicy
     disabledResponsesTools?: ResponsesHostedTool[]
     impersonateCodexClient?: boolean
@@ -540,6 +586,10 @@ export type SiteCreateAPIKeyInput = {
   name: string
   routingPriority: number
   upstreamCostMultiplier?: number
+  upstreamCostMultiplierSource?: 'manual' | 'auto'
+  rpmLimit?: number
+  rpdLimit?: number
+  resetTimezone?: string
 }
 
 export type CreateSiteInput = SiteUpsertInput
@@ -686,6 +736,14 @@ function siteUpsertBody(input: SiteUpsertInput) {
     request_headers: input.requestHeaders?.map((h) => ({ key: h.key, value: h.value })),
     gateway: input.gateway
       ? {
+          max_concurrency: input.gateway.maxConcurrency,
+          max_same_site_credential_retries:
+            input.gateway.maxSameSiteCredentialRetries,
+          first_byte_timeout_ms: input.gateway.firstByteTimeoutMs,
+          clear_max_concurrency: input.gateway.clearMaxConcurrency,
+          clear_max_same_site_credential_retries:
+            input.gateway.clearMaxSameSiteCredentialRetries,
+          clear_first_byte_timeout_ms: input.gateway.clearFirstByteTimeoutMs,
           responses_tool_policy: input.gateway.responsesToolPolicy,
           disabled_responses_tools: input.gateway.disabledResponsesTools,
           impersonate_codex_client: input.gateway.impersonateCodexClient,
@@ -700,6 +758,10 @@ function siteUpsertBody(input: SiteUpsertInput) {
       name: apiKey.name,
       routing_priority: apiKey.routingPriority,
       upstream_cost_multiplier: apiKey.upstreamCostMultiplier,
+      upstream_cost_multiplier_source: apiKey.upstreamCostMultiplierSource,
+      rpm_limit: apiKey.rpmLimit,
+      rpd_limit: apiKey.rpdLimit,
+      reset_timezone: apiKey.resetTimezone,
     })),
     newapi: input.newapi
       ? {
@@ -827,6 +889,10 @@ export type SiteAPIKeyConfigInput = {
   name?: string
   routingPriority?: number
   upstreamCostMultiplier?: number
+  upstreamCostMultiplierSource?: 'manual' | 'auto'
+  rpmLimit?: number
+  rpdLimit?: number
+  resetTimezone?: string
 }
 
 export async function createSiteAPIKey(
@@ -840,6 +906,10 @@ export async function createSiteAPIKey(
       name: input.name,
       routing_priority: input.routingPriority,
       upstream_cost_multiplier: input.upstreamCostMultiplier,
+      upstream_cost_multiplier_source: input.upstreamCostMultiplierSource,
+      rpm_limit: input.rpmLimit,
+      rpd_limit: input.rpdLimit,
+      reset_timezone: input.resetTimezone,
     },
   })
 }
@@ -860,6 +930,23 @@ export async function listCanonicalModels() {
   return apiFetch<{ items: CanonicalModelItem[]; meta?: { count?: number } }>(
     '/api/v1/models',
   )
+}
+
+export async function updateCanonicalModelRoutingPreference(
+  modelId: string,
+  routingPreference: RoutingPreference,
+) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-preference`, {
+    method: 'PUT',
+    body: { routing_preference: routingPreference },
+  })
+}
+
+export async function updateCanonicalModelRoutingExpiryRescue(modelId: string, enabled: boolean) {
+  return apiFetch<{ model: CanonicalModel }>(`/api/v1/models/${modelId}/routing-expiry-rescue`, {
+    method: 'PUT',
+    body: { enabled },
+  })
 }
 
 export async function createCanonicalModel(input: CreateCanonicalModelInput) {
@@ -947,7 +1034,20 @@ export async function updateSiteAPIKeyConfig(
         name: input.name,
         routing_priority: input.routingPriority,
         upstream_cost_multiplier: input.upstreamCostMultiplier,
+        upstream_cost_multiplier_source: input.upstreamCostMultiplierSource,
+        rpm_limit: input.rpmLimit,
+        rpd_limit: input.rpdLimit,
+        reset_timezone: input.resetTimezone,
       },
+    },
+  )
+}
+
+export async function clearSiteAPIKeyCooldown(siteId: string, apiKeyId: string) {
+  return apiFetch<{ api_key: SiteAPIKey }>(
+    `/api/v1/sites/${siteId}/api-keys/${apiKeyId}/clear-cooldown`,
+    {
+      method: 'POST',
     },
   )
 }

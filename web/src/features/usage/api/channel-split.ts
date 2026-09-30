@@ -23,8 +23,13 @@ export type ChannelSplitSummary = {
   failure_count: number
   prompt_tokens: number
   completion_tokens: number
+  cached_tokens: number
+  cache_write_tokens: number
+  cache_creation_input_tokens: number
+  cache_write_cost: number
   total_tokens: number
   estimated_cost: number
+  cost_by_currency?: Record<string, number>
   currency: string
   api_key_count: number
 }
@@ -38,8 +43,13 @@ export type ChannelSplitItem = {
   failure_count: number
   prompt_tokens: number
   completion_tokens: number
+  cached_tokens: number
+  cache_write_tokens: number
+  cache_creation_input_tokens: number
+  cache_write_cost: number
   total_tokens: number
   estimated_cost: number
+  cost_by_currency?: Record<string, number>
   currency: string
   token_share: number
   cost_share: number

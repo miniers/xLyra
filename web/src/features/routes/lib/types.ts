@@ -34,10 +34,29 @@ export type RouteChannelRow = {
   current?: boolean
   cooling?: boolean
   candidate?: RouteCandidateItem
+  locked?: boolean
   pricing?: CanonicalModelMatrixRow['pricing'][number] | RouteCandidateItem['pricing']
   enabled: boolean
   routable: boolean
   toggleDisabled?: boolean
+}
+
+export type RouteSiteModelGroup = {
+  siteModelId: string
+  siteId: string
+  siteName: string
+  siteType: string
+  upstreamName: string
+  siteEnabled: boolean
+  siteModelEnabled: boolean
+  current: boolean
+  locked: boolean
+  cooling: boolean
+  routable: boolean
+  enabledChannelCount: number
+  routableChannelCount: number
+  channels: RouteChannelRow[]
+  candidate?: RouteCandidateItem
 }
 
 export type PendingChannelState = {

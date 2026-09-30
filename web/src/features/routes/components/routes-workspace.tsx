@@ -20,18 +20,28 @@ import {
   type SiteModel,
   updateSiteAPIKeyModelStatus,
   updateSiteModelStatus,
+  updateCanonicalModelRoutingPreference,
+  updateCanonicalModelRoutingExpiryRescue,
+  type RoutingPreference,
 } from '@/features/sites/api/sites'
 import { sortSitesByName } from '@/features/sites/lib/site-utils'
 import {
+  adjustRouteScore,
+  clearRouteAnomaly,
   clearRouteCooldown,
+  deleteModelRoutingLock,
+  updateModelRoutingLock,
   listRouteCandidates,
   listRouteCooldowns,
   listRoutes,
   listRouteTraces,
   routeQueryKeys,
   selectRoute,
+  temporaryRouteLockExpiresAt,
   type RouteCooldown,
+  type RouteLockPolicy,
   type RouteOverviewItem,
+  type RouteScoreAdjustmentDirection,
 } from '@/features/routes/api/routes'
 import { FilterColumn, SortColumn } from '@/features/routes/components/route-filter-sidebar'
 import { MobileRoutesFilterBar } from '@/features/routes/components/mobile-routes-filter-bar'
@@ -165,14 +175,16 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
       failoverLimit: 3,
     }),
     enabled: Boolean(activeModelKey),
+    refetchInterval: 30_000,
   })
   const candidatesQuery = useQuery({
     queryKey: routeQueryKeys.candidates({
       modelKey: activeModelKey,
-      debug: false,
+      debug: true,
     }),
-    queryFn: () => listRouteCandidates(activeModelKey),
+    queryFn: () => listRouteCandidates(activeModelKey, { debug: true }),
     enabled: Boolean(activeModelKey),
+    refetchInterval: 30_000,
   })
   const tracesQuery = useQuery({
     queryKey: routeQueryKeys.traces({
@@ -235,7 +247,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.overview({ windowHours: 24 }) })
       if (activeModelKey) {
         await queryClient.invalidateQueries({ queryKey: routeQueryKeys.selection({ modelKey: activeModelKey, debug: true, failoverLimit: 3 }) })
-        await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: false }) })
+        await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: true }) })
       }
       toast.success(t('workspace.toast.cooldownCleared'))
     },
@@ -243,6 +255,112 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
       toast.error(t('workspace.toast.cooldownClearFailed'), {
         description: error.message,
       })
+    },
+  })
+
+  const toggleSiteModelMutation = useMutation({
+    mutationFn: async ({ siteId, siteModelId, enabled }: { siteId: string; siteModelId: string; enabled: boolean }) => {
+      return updateSiteModelStatus(siteId, siteModelId, { enabled })
+    },
+    onSuccess: async (_, variables) => {
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: sitesQueryKeys.models(variables.siteId) })
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'routes-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('details.table.toggleSuccess'))
+    },
+    onError: (error) => {
+      toast.error(t('details.table.toggleFailed'), { description: error.message })
+    },
+  })
+
+  const clearAnomalyMutation = useMutation({
+    mutationFn: clearRouteAnomaly,
+    onSuccess: async () => {
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.automaticAnomalyCleared'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.automaticAnomalyClearFailed'), {
+        description: error.message,
+      })
+    },
+  })
+
+  const adjustScoreMutation = useMutation({
+    mutationFn: adjustRouteScore,
+    onSuccess: async () => {
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.temporaryScoreAdjusted'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.temporaryScoreAdjustFailed'), {
+        description: error.message,
+      })
+    },
+  })
+
+  const routingPreferenceMutation = useMutation({
+    mutationFn: ({ modelId, preference }: { modelId: string; preference: RoutingPreference }) =>
+      updateCanonicalModelRoutingPreference(modelId, preference),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'canonical-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.preferenceUpdated'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.preferenceUpdateFailed'), {
+        description: error.message,
+      })
+    },
+  })
+
+  const routingLockMutation = useMutation({
+    mutationFn: ({
+      modelId,
+      siteModelId,
+      expiresAt,
+      policy,
+      reason,
+    }: {
+      modelId: string
+      siteModelId: string
+      expiresAt?: string | null
+      policy?: RouteLockPolicy
+      reason?: string
+    }) => updateModelRoutingLock({ modelId, siteModelId, expiresAt, policy, reason }),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.routingLock(variables.modelId) })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.routingLockUpdated'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.routingLockUpdateFailed'), { description: error.message })
+    },
+  })
+
+  const routingLockDeleteMutation = useMutation({
+    mutationFn: deleteModelRoutingLock,
+    onSuccess: async (_data, modelId) => {
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.routingLock(modelId) })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.routingLockRemoved'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.routingLockRemoveFailed'), { description: error.message })
+    },
+  })
+
+  const routingExpiryRescueMutation = useMutation({
+    mutationFn: ({ modelId, enabled }: { modelId: string; enabled: boolean }) =>
+      updateCanonicalModelRoutingExpiryRescue(modelId, enabled),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: [...sitesQueryKeys.all, 'canonical-models'] })
+      await invalidateRouteModelQueries()
+      toast.success(t('workspace.toast.expiryRescueUpdated'))
+    },
+    onError: (error) => {
+      toast.error(t('workspace.toast.expiryRescueUpdateFailed'), { description: error.message })
     },
   })
 
@@ -272,13 +390,14 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     await queryClient.invalidateQueries({ queryKey: routeQueryKeys.overview({ windowHours: 24 }) })
     if (activeModelKey) {
       await queryClient.invalidateQueries({ queryKey: routeQueryKeys.selection({ modelKey: activeModelKey, debug: true, failoverLimit: 3 }) })
-      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: false }) })
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.candidates({ modelKey: activeModelKey, debug: true }) })
     }
   }
 
   function renderRouteDetails(item?: RouteOverviewItem, compact = false) {
     const allCooldowns = cooldownsQuery.data?.items ?? EMPTY_COOLDOWNS
-    const canonicalId = item?.canonical_model.id ?? ''
+    const canonicalId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id ?? ''
+    const canonical = canonicalMap.get(canonicalId)
     const cooldowns = canonicalId
       ? filterCooldownsForCanonicalModel(allCooldowns, canonicalId, modelsMap)
       : EMPTY_COOLDOWNS
@@ -286,6 +405,7 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
     return (
       <RouteModelDetails
         item={item}
+        canonical={canonical}
         selectionQuery={selectionQuery}
         candidatesQuery={candidatesQuery}
         tracesQuery={tracesQuery}
@@ -294,7 +414,13 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
         modelsMap={modelsMap}
         apiKeysMap={apiKeysMap}
         cooldownsLoading={cooldownsQuery.isLoading}
-        clearingId={clearCooldownMutation.variables?.siteId}
+        clearingId={clearCooldownMutation.isPending ? clearCooldownMutation.variables?.siteId : undefined}
+        anomalyClearingSiteModelId={clearAnomalyMutation.isPending ? clearAnomalyMutation.variables?.siteModelId : undefined}
+        scoreAdjustingSiteModelId={adjustScoreMutation.isPending ? adjustScoreMutation.variables?.siteModelId : undefined}
+        scoreAdjustingDirection={adjustScoreMutation.isPending ? adjustScoreMutation.variables?.direction : undefined}
+        routingPreferencePending={routingPreferenceMutation.isPending}
+        routingLockPending={routingLockMutation.isPending || routingLockDeleteMutation.isPending}
+        routingExpiryRescuePending={routingExpiryRescueMutation.isPending}
         pendingChannelState={pendingChannelState}
         compact={compact}
         onToggleChannel={handleToggleChannel}
@@ -304,6 +430,58 @@ export function RoutesWorkspace({ initialSearch = '' }: { initialSearch?: string
           siteCredentialId: cooldown.site_credential_id,
           source: cooldown.source,
         })}
+        onClearAutomaticAnomaly={(candidate) => {
+          if (canonicalId) {
+            clearAnomalyMutation.mutate({
+              canonicalModelId: canonicalId,
+              siteModelId: candidate.model.site_model_id,
+            })
+          }
+        }}
+        onAdjustScore={(candidate, direction: RouteScoreAdjustmentDirection) => {
+          if (canonicalId) {
+            adjustScoreMutation.mutate({
+              canonicalModelId: canonicalId,
+              siteModelId: candidate.model.site_model_id,
+              direction,
+            })
+          }
+        }}
+        onRoutingPreferenceChange={(preference) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingPreferenceMutation.mutate({ modelId, preference })
+        }}
+        onRoutingLockChange={(input) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingLockMutation.mutate({ modelId, ...input })
+        }}
+        onRoutingLockChannel={(siteModelId) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) {
+            routingLockMutation.mutate({
+              modelId,
+              siteModelId,
+              expiresAt: temporaryRouteLockExpiresAt(),
+              policy: 'fallback',
+            })
+          }
+        }}
+        onRoutingLockDelete={() => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingLockDeleteMutation.mutate(modelId)
+        }}
+        onRoutingExpiryRescueChange={(enabled) => {
+          const modelId = item?.canonical_model.id ?? selectionQuery.data?.canonical_model.id
+          if (modelId) routingExpiryRescueMutation.mutate({ modelId, enabled })
+        }}
+        togglingSiteModelId={toggleSiteModelMutation.isPending ? toggleSiteModelMutation.variables?.siteModelId : undefined}
+        onToggleSiteModel={(group, enabled) => {
+          toggleSiteModelMutation.mutate({
+            siteId: group.siteId,
+            siteModelId: group.siteModelId,
+            enabled,
+          })
+        }}
       />
     )
   }

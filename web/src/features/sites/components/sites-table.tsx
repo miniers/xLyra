@@ -204,10 +204,15 @@ export function SitesTable({
             </span>
           )
         }
-        const totalTokens = usage.total_tokens ?? 0
-        const cost = usage.estimated_cost ?? 0
+        const totalTokens = typeof usage.total_tokens === 'number' && Number.isFinite(usage.total_tokens) && usage.total_tokens > 0
+          ? formatCompactTokens(usage.total_tokens)
+          : '—'
+        const cost = typeof usage.estimated_cost === 'number' && Number.isFinite(usage.estimated_cost) && usage.estimated_cost > 0
+          ? usage.estimated_cost
+          : null
         const currency = usage.currency?.trim().toUpperCase()
         const costPrefix = currency === 'CNY' || currency === 'RMB' ? '¥' : '$'
+        const costLabel = cost == null ? '—' : `${costPrefix}${cost.toFixed(2)}`
         return (
           <div
             role="button"
@@ -222,8 +227,8 @@ export function SitesTable({
               }
             }}
           >
-            <span className="text-foreground">{formatCompactTokens(totalTokens)}</span>
-            <span className="text-muted-soft">{costPrefix}{cost.toFixed(2)}</span>
+            <span className="text-foreground">{totalTokens}</span>
+            <span className="text-muted-soft">{costLabel}</span>
           </div>
         )
       },

@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { isNVIDIAFreeModel, siteModelDisplayName } from '@/features/sites/lib/site-model-items'
 import { ErrorDetails } from '@/components/common/error-details'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   LoaderCircle,
   PencilLine,
   RefreshCw,
+  RotateCcw,
   Settings2,
+  Snowflake,
   Trash2,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -38,6 +41,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/lib/toast'
 import {
+  clearSiteAPIKeyCooldown,
   createSiteAPIKey,
   deleteSiteAPIKey,
   listSiteAPIKeys,
@@ -54,6 +58,7 @@ import {
   type SiteAPIKeyModel,
   type SiteModel,
 } from '@/features/sites/api/sites'
+import { formatRemainingSeconds } from '@/features/dashboard/lib/dashboard-utils'
 import { routeQueryKeys } from '@/features/routes/api/routes'
 import {
   apiKeyModels,
@@ -61,8 +66,10 @@ import {
   accountBalanceDetails,
   formatAPIKeyValue,
   formatDisplayQuota,
+  formatDateTime,
   formatProbeAmount,
   isNewAPISite,
+  quotaProbeCurrency,
   siteAPIKeyGroupBadgeVariant,
 } from '@/features/sites/lib/site-utils'
 import {
@@ -80,6 +87,10 @@ import {
   parseSiteAPIKeyForm,
   type APIKeyFormDraft,
 } from '@/features/sites/components/site-api-key-form-data'
+import {
+  SiteAPIKeyQuotaDetailsContent,
+  SiteQuotaDetailsPopover,
+} from '@/features/sites/components/site-quota-details'
 import { useMobileLayout } from '@/hooks/use-media-query'
 
 const EMPTY_API_KEYS: SiteAPIKey[] = []
@@ -107,7 +118,7 @@ export function SiteAPIKeysDraw({
   )
   const [editingAPIKey, setEditingAPIKey] = useState<SiteAPIKey | null>(null)
   const [deletingAPIKey, setDeletingAPIKey] = useState<SiteAPIKey | null>(null)
-  const [newAPIKeyDraft, setNewAPIKeyDraft] = useState(
+  const [newAPIKeyDraft, setNewAPIKeyDraft] = useState<APIKeyFormDraft>(
     DEFAULT_API_KEY_FORM_DRAFT,
   )
   const [configDraft, setConfigDraft] = useState<APIKeyFormDraft>(
@@ -119,7 +130,7 @@ export function SiteAPIKeysDraw({
     site?.supports_api_key_cost_multiplier === true
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    const timer = window.setInterval(() => setNow(Date.now()), 10_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -151,12 +162,18 @@ export function SiteAPIKeysDraw({
     ])
   }
   const createAPIKeyMutation = useMutation({
-    mutationFn: (input: {
-      apiKey: string
-      name: string
-      routingPriority: number
-      upstreamCostMultiplier?: number
-    }) => {
+    mutationFn: (
+      input: {
+        apiKey: string
+        name?: string
+        routingPriority?: number
+        upstreamCostMultiplier?: number
+        upstreamCostMultiplierSource?: 'manual' | 'auto'
+        rpmLimit?: number
+        rpdLimit?: number
+        resetTimezone?: string
+      },
+    ) => {
       if (!site) throw new Error('site required')
       return createSiteAPIKey(site.id, input)
     },
@@ -230,9 +247,13 @@ export function SiteAPIKeysDraw({
   const updateConfigMutation = useMutation({
     mutationFn: (input: {
       apiKeyId: string
-      name: string
-      routingPriority: number
+      name?: string
+      routingPriority?: number
       upstreamCostMultiplier?: number
+      upstreamCostMultiplierSource?: 'manual' | 'auto'
+      rpmLimit?: number
+      rpdLimit?: number
+      resetTimezone?: string
     }) => {
       if (!site) throw new Error('site required')
       return updateSiteAPIKeyConfig(site.id, input.apiKeyId, input)
@@ -253,6 +274,26 @@ export function SiteAPIKeysDraw({
     },
     onError: (error) =>
       toast.error(t('apiKeys.toast.updateFailed'), {
+        description: error.message,
+      }),
+  })
+  const clearCooldownMutation = useMutation({
+    mutationFn: (apiKeyId: string) => {
+      if (!site) throw new Error('site required')
+      return clearSiteAPIKeyCooldown(site.id, apiKeyId)
+    },
+    onSuccess: async (result) => {
+      queryClient.setQueryData(
+        queryKey,
+        (current: { items: SiteAPIKey[] } | undefined) =>
+          replaceAPIKey(current, result.api_key),
+      )
+      await queryClient.invalidateQueries({ queryKey: routeQueryKeys.all })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      toast.success(t('apiKeys.toast.cooldownCleared'))
+    },
+    onError: (error) =>
+      toast.error(t('apiKeys.toast.clearCooldownFailed'), {
         description: error.message,
       }),
   })
@@ -278,7 +319,6 @@ export function SiteAPIKeysDraw({
       )
       setEditingAPIKey(null)
       setSecretInput('')
-      onOpenChange(false)
       await queryClient.invalidateQueries({
         queryKey: [...sitesQueryKeys.all, 'canonical-models'],
       })
@@ -594,16 +634,31 @@ export function SiteAPIKeysDraw({
                         (entry) => entry.label === 'balance',
                       ) ?? probe.entries[0])
                     : undefined
+                  const probeCurrency = probeEntry ? quotaProbeCurrency(probeEntry.unit) : { prefix: '$', suffix: '' }
                   const probeText = probeEntry
                     ? probeEntry.unlimited
                       ? probeEntry.used != null
-                        ? `$${formatProbeAmount(probeEntry.used)} / ∞`
+                        ? `${probeCurrency.prefix}${formatProbeAmount(probeEntry.used)} / ∞${probeCurrency.suffix}`
                         : '∞'
                       : probeEntry.remaining != null
-                        ? `$${formatProbeAmount(probeEntry.remaining)}${probeEntry.limit != null ? ' / $' + formatProbeAmount(probeEntry.limit) : ''}`
+                        ? `${probeCurrency.prefix}${formatProbeAmount(probeEntry.remaining)}${probeEntry.limit != null ? ' / ' + probeCurrency.prefix + formatProbeAmount(probeEntry.limit) : ''}${probeCurrency.suffix}`
                         : null
                     : null
                   const probeFailed = Boolean(probe && probe.status !== 'ok')
+                  const usageData = item.usage?.data
+                  const hasUsageDetails = Boolean(
+                    usageData && (
+                      usageData.unlimited_quota === true ||
+                      usageData.total_available != null ||
+                      usageData.total_granted != null ||
+                      usageData.total_used != null ||
+                      usageData.expires_at != null
+                    ),
+                  )
+                  const hasQuotaDetails = Boolean(probe || hasUsageDetails)
+                  const compactQuotaText = probeFailed
+                    ? t('apiKeys.quotaProbeFailed')
+                    : openCodeGoQuotaText ?? probeText ?? quotaText ?? '-'
 
             return (
               <div
@@ -645,21 +700,64 @@ export function SiteAPIKeysDraw({
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-soft">
                         {site?.supports_multiple_api_keys ? (
-                          <>
-                            <Badge variant="neutral">
-                              {t('apiKeys.routingPriority')}:{' '}
-                              {formatAPIKeyNumber(item.routing_priority ?? 1)}
-                            </Badge>
-                            {supportsCostMultiplier ? (
-                              <Badge variant="neutral">
-                                {t('apiKeys.costMultiplier')}:{' '}
-                                {formatAPIKeyNumber(
-                                  item.upstream_cost_multiplier ?? 1,
+                          <Badge variant="neutral">
+                            {t('apiKeys.routingPriority')}:{' '}
+                            {formatAPIKeyNumber(item.routing_priority ?? 1)}
+                          </Badge>
+                        ) : null}
+                        {supportsCostMultiplier ? (
+                          <Badge variant="neutral">
+                            {t('apiKeys.costMultiplier')}:{' '}
+                            {formatAPIKeyNumber(
+                              item.upstream_cost_multiplier ?? 1,
+                            )}
+                            x · {item.upstream_cost_multiplier_source === 'auto'
+                              ? t('apiKeys.multiplierAuto')
+                              : t('apiKeys.multiplierManual')}
+                          </Badge>
+                        ) : null}
+                        {Boolean(item.rpm_limit || item.rpd_limit) && (
+                          <Badge
+                            variant="neutral"
+                            title={t('apiKeys.rateLimitUsageTitle', {
+                              rpm: item.rpm_limit ? `${item.rpm_used ?? 0}/${item.rpm_limit}` : '-',
+                              rpd: item.rpd_limit ? `${item.rpd_used ?? 0}/${item.rpd_limit}` : '-',
+                            })}
+                          >
+                            {item.rpm_limit ? `${item.rpm_used ?? 0}/${item.rpm_limit} RPM` : null}
+                            {item.rpm_limit && item.rpd_limit ? ' · ' : null}
+                            {item.rpd_limit ? `${item.rpd_used ?? 0}/${item.rpd_limit} RPD` : null}
+                          </Badge>
+                        )}
+                        {item.cooling ? (
+                          <Badge
+                            variant="warning"
+                            className="flex items-center gap-1 font-medium"
+                            title={item.cooldown_reason}
+                          >
+                            <Snowflake className="h-3 w-3" />
+                            <span>{t('apiKeys.cooling')}</span>
+                            {item.cooldown_remaining_seconds || item.cooldown_active_until ? (
+                              <span>
+                                (
+                                {formatRemainingSeconds(
+                                  item.cooldown_active_until
+                                    ? Math.max(
+                                        0,
+                                        Math.ceil(
+                                          (new Date(
+                                            item.cooldown_active_until,
+                                          ).getTime() -
+                                            now) /
+                                            1000,
+                                        ),
+                                      )
+                                    : (item.cooldown_remaining_seconds ?? 0),
                                 )}
-                                x
-                              </Badge>
+                                )
+                              </span>
                             ) : null}
-                          </>
+                          </Badge>
                         ) : null}
                         {item.upstream_name &&
                         item.upstream_name !== item.name ? (
@@ -668,6 +766,47 @@ export function SiteAPIKeysDraw({
                           </span>
                         ) : null}
                       </div>
+
+                      {supportsCostMultiplier && item.upstream_cost_multiplier_probe ? (
+                        <div
+                          className="text-xs text-muted-soft"
+                          title={item.upstream_cost_multiplier_probe.error}
+                        >
+                          {t('apiKeys.multiplierProbe')}:{' '}
+                          {item.upstream_cost_multiplier_probe.resolved_rate_multiplier != null
+                            ? `${formatAPIKeyNumber(item.upstream_cost_multiplier_probe.resolved_rate_multiplier)}x`
+                            : multiplierProbeStatusLabel(item.upstream_cost_multiplier_probe.status, t)}
+                          {item.upstream_cost_multiplier_probe.effective_rate_multiplier != null
+                            ? ` · ${t('apiKeys.multiplierPeakHint')} ${formatAPIKeyNumber(item.upstream_cost_multiplier_probe.effective_rate_multiplier)}x`
+                            : ''}
+                          {item.upstream_cost_multiplier_probe.probed_at
+                            ? ` · ${formatDateTime(item.upstream_cost_multiplier_probe.probed_at)}`
+                            : ''}
+                          {item.upstream_cost_multiplier_probe.error
+                            ? ` · ${item.upstream_cost_multiplier_probe.error}`
+                            : ''}
+                        </div>
+                      ) : null}
+                      {supportsCostMultiplier && item.upstream_cost_multiplier_history?.length ? (
+                        <details className="text-xs text-muted-soft">
+                          <summary className="cursor-pointer hover:text-foreground">
+                            {t('apiKeys.multiplierHistory', {
+                              count: item.upstream_cost_multiplier_history.length,
+                            })}
+                          </summary>
+                          <div className="mt-2 space-y-1 pl-3">
+                            {[...item.upstream_cost_multiplier_history]
+                              .reverse()
+                              .map((change, index) => (
+                                <div key={`${change.changed_at}:${index}`}>
+                                  {formatDateTime(change.changed_at)} ·{' '}
+                                  {formatAPIKeyNumber(change.from)}x →{' '}
+                                  {formatAPIKeyNumber(change.to)}x · {change.source}
+                                </div>
+                              ))}
+                          </div>
+                        </details>
+                      ) : null}
 
                       <button
                         type="button"
@@ -723,12 +862,20 @@ export function SiteAPIKeysDraw({
                                 </div>
                               ))}
                             </div>
-                          ) : (openCodeGoQuotaText ?? probeText ?? quotaText) ? (
-                            <span className="tabular-nums whitespace-normal" title={site?.site_type === 'opencode_go' ? t('apiKeys.openCodeGoUnavailable') : undefined}>
-                              {openCodeGoQuotaText ?? probeText ?? quotaText}
-                            </span>
                           ) : (
-                            <span>-</span>
+                            <SiteQuotaDetailsPopover
+                              enabled={hasQuotaDetails}
+                              description={compactQuotaText}
+                              content={<SiteAPIKeyQuotaDetailsContent apiKey={item} showIdentity={false} />}
+                            >
+                              {(openCodeGoQuotaText ?? probeText ?? quotaText) ? (
+                                <span className="tabular-nums whitespace-normal" title={site?.site_type === 'opencode_go' ? t('apiKeys.openCodeGoUnavailable') : undefined}>
+                                  {openCodeGoQuotaText ?? probeText ?? quotaText}
+                                </span>
+                              ) : (
+                                <span>-</span>
+                              )}
+                            </SiteQuotaDetailsPopover>
                           )}
                           <button
                             type="button"
@@ -753,32 +900,63 @@ export function SiteAPIKeysDraw({
                               {t('apiKeys.complete')}
                             </Button>
                           ) : null}
-                          {site?.supports_multiple_api_keys ? (
+                          {item.cooling ? (
                             <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7"
-                              title={t('apiKeys.editConfig')}
-                              aria-label={t('apiKeys.editConfigLabel', {
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-amber-500/50 text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
+                              disabled={
+                                clearCooldownMutation.isPending &&
+                                clearCooldownMutation.variables === item.id
+                              }
+                              title={item.cooldown_reason || t('apiKeys.clearCooldown')}
+                              aria-label={t('apiKeys.clearCooldownLabel', {
                                 name: item.name || t('apiKeys.defaultKey'),
                               })}
-                              onClick={() => {
-                                setConfiguringAPIKey(item)
-                                setConfigDraft({
-                                  name: item.display_name ?? item.name ?? '',
-                                  apiKey: '',
-                                  routingPriority: String(
-                                    item.routing_priority ?? 1,
-                                  ),
-                                  upstreamCostMultiplier: String(
-                                    item.upstream_cost_multiplier ?? 1,
-                                  ),
-                                })
-                              }}
+                              onClick={() =>
+                                clearCooldownMutation.mutate(item.id)
+                              }
                             >
-                              <Settings2 className="h-3.5 w-3.5" />
+                              {clearCooldownMutation.isPending &&
+                              clearCooldownMutation.variables === item.id ? (
+                                <LoaderCircle className="h-3 w-3 animate-spin mr-1" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3 mr-1" />
+                              )}
+                              {t('apiKeys.clearCooldown')}
                             </Button>
                           ) : null}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            title={t('apiKeys.editConfig')}
+                            aria-label={t('apiKeys.editConfigLabel', {
+                              name: item.name || t('apiKeys.defaultKey'),
+                            })}
+                            onClick={() => {
+                              setConfiguringAPIKey(item)
+                              setConfigDraft({
+                                name: item.display_name ?? item.name ?? '',
+                                apiKey: '',
+                                routingPriority: String(
+                                  item.routing_priority ?? 1,
+                                ),
+                                upstreamCostMultiplier: String(
+                                  item.upstream_cost_multiplier ?? 1,
+                                ),
+                                upstreamCostMultiplierSource:
+                                  item.upstream_cost_multiplier_source === 'auto'
+                                    ? 'auto'
+                                    : 'manual',
+                                rpmLimit: item.rpm_limit ? String(item.rpm_limit) : '',
+                                rpdLimit: item.rpd_limit ? String(item.rpd_limit) : '',
+                                resetTimezone: item.reset_timezone ?? '',
+                              })
+                            }}
+                          >
+                            <Settings2 className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             size="icon"
                             variant="ghost"
@@ -1544,6 +1722,23 @@ function apiKeySyncBadge(status?: string | null): {
   }
 }
 
+function multiplierProbeStatusLabel(
+  status: string | undefined,
+  t: (key: string) => string,
+) {
+  switch ((status ?? '').toLowerCase()) {
+    case 'ok':
+      return t('apiKeys.multiplierProbeOk')
+    case 'error':
+      return t('apiKeys.multiplierProbeError')
+    case 'incomplete':
+    case 'unsupported':
+      return t('apiKeys.multiplierProbeIncomplete')
+    default:
+      return t('apiKeys.multiplierProbeUnknown')
+  }
+}
+
 function canAddOfficialAPIKey(site: Site): boolean {
   return site.supports_multiple_api_keys === true
 }
@@ -1555,16 +1750,28 @@ function buildAPIKeyModelItems(
   onConfigure: (model: SiteAPIKeyModel) => void,
 ): ModelsDrawItem[] {
   if (!apiKey) return []
-  const models = apiKeyModels(apiKey)
+  const siteModelByKey = new Map<string, SiteModel>()
+  for (const siteModel of siteModels) {
+    siteModelByKey.set(siteModel.id, siteModel)
+    siteModelByKey.set(siteModel.upstream_model_name, siteModel)
+  }
+  const modelForAPIKeyModel = (model: SiteAPIKeyModel) => siteModelByKey.get(model.site_model_id ?? '') ?? siteModelByKey.get(model.name.trim())
+  const models = [...apiKeyModels(apiKey)].sort((a, b) => {
+    const left = modelForAPIKeyModel(a)
+    const right = modelForAPIKeyModel(b)
+    return Number(isNVIDIAFreeModel(right)) - Number(isNVIDIAFreeModel(left))
+      || (left ? siteModelDisplayName(left) : a.name).localeCompare(right ? siteModelDisplayName(right) : b.name)
+  })
   if (!models.length) return []
   return models.map((model) => {
     const name = model.name.trim()
-    const siteModel = siteModels.find((item) => item.id === model.site_model_id)
+    const siteModel = modelForAPIKeyModel(model)
     const siteTypes = endpointTypesFromCapabilities(siteModel?.capabilities)
     const protocolTypes = upstreamEndpointTypes(model, siteTypes)
     return {
       id: name,
-      displayName: name,
+      displayName: siteModel ? siteModelDisplayName(siteModel) : name,
+      copyName: name,
       upstreamName: protocolTypes.join(' '),
       protocols: protocolTypes.map((endpointType) => ({ label: formatEndpointTypeLabel(endpointType), enabled: true })),
       enabled: model.enabled,

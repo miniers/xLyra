@@ -1,12 +1,19 @@
-import { useMemo, useRef, useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ErrorState } from '@/components/common/error-state'
 import { PageHeader } from '@/components/common/page-header'
 import type { TokenUsageBreakdown } from '@/components/common/token-usage-hover-card'
 import { PaginationControls } from '@/components/ui/pagination'
-import { listDownstreamAPIKeys, listDownstreamAPIKeysIncludingInternal, downstreamAPIKeyQueryKeys } from '@/features/api-keys/api/api-keys'
-import { getRequestLogSummary, listRequestLogs, requestQueryKeys, type RequestLogItem } from '@/features/requests/api/requests'
+import { listDownstreamAPIKeys, listDownstreamAPIKeysIncludingInternal, downstreamAPIKeyQueryKeys } from "@/features/api-keys/api/api-keys"
+import {
+  createRequestActivityStream,
+  cancelRequestActivity,
+  getRequestLogSummary,
+  listRequestLogs,
+  requestQueryKeys,
+  type RequestLogItem,
+} from "@/features/requests/api/requests"
 import { RequestsFilterBar } from '@/features/requests/components/requests-filter-bar'
 import { RequestsMobileFilterBar } from '@/features/requests/components/requests-mobile-filter-bar'
 import { RequestsMobileList } from '@/features/requests/components/requests-mobile-list'
@@ -20,24 +27,77 @@ import {
   type RequestFilterState,
 } from '@/features/requests/lib/types'
 import { readRequestsAutoRefreshPreference, writeRequestsAutoRefreshPreference } from '@/features/requests/lib/request-preferences'
+import {
+  decodeRequestActivityEvent,
+  decodeRequestActivitySnapshot,
+  initialRequestActivityState,
+  mergeRequestLogItems,
+  removeRequestActivityRequest,
+  reduceRequestActivityEvent,
+  reduceRequestActivitySnapshot,
+} from '@/features/requests/lib/request-live'
+import { requestCacheHitRate } from '@/features/requests/lib/request-utils'
 import { listSites, sitesQueryKeys } from '@/features/sites/api/sites'
 import { sortSitesForDisplay } from '@/features/sites/lib/site-utils'
 import { useMobileLayout } from '@/hooks/use-media-query'
+import { APIError } from '@/lib/http'
+import { toast } from '@/lib/toast'
 
 const EMPTY_REQUESTS: RequestLogItem[] = []
 const EMPTY_SITES: Awaited<ReturnType<typeof listSites>>['items'] = []
 const EMPTY_API_KEYS: Awaited<ReturnType<typeof listDownstreamAPIKeys>>['items'] = []
 
+function isRequestActivityGoneError(error: unknown) {
+  return error instanceof APIError && ['request_not_found', 'request_not_active', 'request_control_unavailable'].includes(error.code ?? '')
+}
+
 export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: string }) {
   const { t } = useTranslation('requests')
   const isMobile = useMobileLayout()
+  const queryClient = useQueryClient()
   const initialSearchParams = useMemo(() => new URLSearchParams(initialSearch), [initialSearch])
   const [filters, setFilters] = useState<RequestFilterState>(() => requestFiltersFromSearchParams(initialSearchParams))
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(readRequestsAutoRefreshPreference)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [liveState, setLiveState] = useState(initialRequestActivityState)
+  const [handoffReadyRequestIDs, setHandoffReadyRequestIDs] = useState<Set<string>>(() => new Set())
+  const [pendingRequestID, setPendingRequestID] = useState<string | null>(null)
   const tableScrollRef = useRef<HTMLDivElement | null>(null)
+
+  const requestCancelMutation = useMutation({
+    mutationFn: (requestID: string) => cancelRequestActivity(requestID),
+    onSuccess: (_, requestID) => {
+      setLiveState((current) => removeRequestActivityRequest(current, requestID))
+      setHandoffReadyRequestIDs((current) => {
+        if (!current.has(requestID)) return current
+        const next = new Set(current)
+        next.delete(requestID)
+        return next
+      })
+      void queryClient.invalidateQueries({ queryKey: requestQueryKeys.all })
+      toast.success(t('actions.cancelSuccess'))
+    },
+    onError: (error, requestID) => {
+      if (isRequestActivityGoneError(error)) {
+        setLiveState((current) => removeRequestActivityRequest(current, requestID))
+        setHandoffReadyRequestIDs((current) => {
+          if (!current.has(requestID)) return current
+          const next = new Set(current)
+          next.delete(requestID)
+          return next
+        })
+        void queryClient.invalidateQueries({ queryKey: requestQueryKeys.all })
+        toast.info(t('actions.alreadyFinished'))
+        return
+      }
+      toast.error(t('actions.controlFailed'), { description: error instanceof Error ? error.message : undefined })
+    },
+    onSettled: () => {
+      setPendingRequestID(null)
+    },
+  })
 
   const requestListFilters = useMemo(() => requestFiltersToListFilters(filters), [filters])
   const requestListInput = useMemo(
@@ -93,8 +153,103 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
         cached: requestSummary?.cached_tokens ?? 0,
       }
     : null
+  const cacheHitRate = totalCostSupported
+    ? requestCacheHitRate(requestSummary?.prompt_tokens, requestSummary?.cached_tokens)
+    : null
   const totalCostLoading = !costUnsupportedByFilters && requestSummaryQuery.isFetching && !requestSummaryQuery.data
   const showPagination = totalItems > 0
+
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    let active = true
+    const stream = createRequestActivityStream()
+    const handleSnapshot = (event: Event) => {
+      const snapshot = decodeRequestActivitySnapshot((event as MessageEvent<string>).data)
+      if (snapshot) setLiveState((current) => reduceRequestActivitySnapshot(current, snapshot))
+    }
+    const handleEvent = (eventName: string) => (event: Event) => {
+      const activityEvent = decodeRequestActivityEvent(eventName, (event as MessageEvent<string>).data)
+      if (!activityEvent) return
+      setLiveState((current) => reduceRequestActivityEvent(current, activityEvent))
+      if (activityEvent.type === 'remove') {
+        const requestID = activityEvent.request_id
+        if (requestID) {
+          setHandoffReadyRequestIDs((current) => {
+            if (!current.has(requestID)) return current
+            const next = new Set(current)
+            next.delete(requestID)
+            return next
+          })
+        }
+        void queryClient.invalidateQueries({ queryKey: requestQueryKeys.all })
+        return
+      }
+
+      if (activityEvent.type === 'upsert' && activityEvent.request && ['completed', 'failed', 'cancelled'].includes(activityEvent.request.phase)) {
+        const requestID = activityEvent.request.request_id
+        void queryClient.invalidateQueries({ queryKey: requestQueryKeys.all }).then(() => {
+          if (!active) return
+          setHandoffReadyRequestIDs((current) => {
+            if (current.has(requestID)) return current
+            const next = new Set(current)
+            next.add(requestID)
+            return next
+          })
+        }).catch(() => undefined)
+      }
+    }
+
+    stream.addEventListener('snapshot', handleSnapshot)
+    stream.addEventListener('upsert', handleEvent('upsert'))
+    stream.addEventListener('remove', handleEvent('remove'))
+    stream.addEventListener('usage', handleEvent('usage'))
+    return () => {
+      active = false
+      stream.close()
+    }
+  }, [autoRefresh, queryClient])
+
+  const displayItems = useMemo(
+    () => mergeRequestLogItems(
+      items,
+      Object.values(liveState.requests),
+      requestListFilters,
+      page,
+      handoffReadyRequestIDs,
+      liveState.startedAtByRequestID,
+    ),
+    [handoffReadyRequestIDs, items, liveState.requests, liveState.startedAtByRequestID, page, requestListFilters],
+  )
+
+  useEffect(() => {
+    const readyRequestIDs = [...handoffReadyRequestIDs].filter((requestID) => (
+      displayItems.some((item) => item.display_key === `live:${requestID}` && item.is_live !== true)
+    ))
+    if (!readyRequestIDs.length) return
+
+    const frame = window.requestAnimationFrame(() => {
+      setExpandedId((current) => {
+        for (const requestID of readyRequestIDs) {
+          if (current !== `live:${requestID}`) continue
+          const replacement = displayItems.find((item) => item.display_key === current && item.is_live !== true)
+          if (replacement) return replacement.id
+        }
+        return current
+      })
+      setLiveState((current) => readyRequestIDs.reduce(
+        (nextState, requestID) => removeRequestActivityRequest(nextState, requestID),
+        current,
+      ))
+      setHandoffReadyRequestIDs((current) => {
+        const next = new Set(current)
+        for (const requestID of readyRequestIDs) next.delete(requestID)
+        return next
+      })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [displayItems, handoffReadyRequestIDs])
 
   function scrollTableTop() {
     window.requestAnimationFrame(() => {
@@ -137,7 +292,17 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
 
   function handleAutoRefreshChange(enabled: boolean) {
     setAutoRefresh(enabled)
+    if (!enabled) {
+      setLiveState(initialRequestActivityState())
+      setHandoffReadyRequestIDs(new Set())
+    }
     writeRequestsAutoRefreshPreference(enabled)
+  }
+
+  function handleRequestCancel(requestID: string) {
+    if (requestCancelMutation.isPending) return
+    setPendingRequestID(requestID)
+    requestCancelMutation.mutate(requestID)
   }
 
   if (requestsQuery.isLoading) {
@@ -189,6 +354,7 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
               isFetching={requestsQuery.isFetching || requestSummaryQuery.isFetching}
               totalCost={totalCost}
               tokenUsage={tokenUsage}
+              cacheHitRate={cacheHitRate}
               totalCostSupported={totalCostSupported}
               totalCostLoading={totalCostLoading}
               currency={requestSummary?.currency}
@@ -202,9 +368,11 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
 
         <div ref={tableScrollRef}>
           <RequestsMobileList
-            items={items}
+            items={displayItems}
             expandedId={expandedId}
             onExpandedIdChange={setExpandedId}
+            pendingRequestID={pendingRequestID}
+            onRequestCancel={handleRequestCancel}
           />
           {showPagination ? pagination : null}
         </div>
@@ -229,6 +397,7 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
           isFetching={requestsQuery.isFetching || requestSummaryQuery.isFetching}
           totalCost={totalCost}
           tokenUsage={tokenUsage}
+          cacheHitRate={cacheHitRate}
           totalCostSupported={totalCostSupported}
           totalCostLoading={totalCostLoading}
           currency={requestSummary?.currency}
@@ -240,9 +409,11 @@ export function RequestsWorkspace({ initialSearch = '' }: { initialSearch?: stri
       </div>
 
       <RequestsTable
-        items={items}
+        items={displayItems}
         expandedId={expandedId}
         onExpandedIdChange={setExpandedId}
+        pendingRequestID={pendingRequestID}
+        onRequestCancel={handleRequestCancel}
         scrollContainerRef={tableScrollRef}
       />
 

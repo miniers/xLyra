@@ -2,11 +2,11 @@ import type {
   AnalyticsSeriesPoint,
   AnalyticsUsage,
 } from '@/features/analytics/api/analytics'
-import { formatCompactNumber, formatDashboardCurrency } from '@/features/dashboard/lib/dashboard-utils'
+import { formatCompactNumber, formatDashboardCurrency, formatPercent } from '@/features/dashboard/lib/dashboard-utils'
 
 export type AnalyticsRangePreset = 'today' | 'yesterday' | '7d' | '30d' | '90d' | 'all' | 'custom'
 
-export type AnalyticsTrendMetric = 'cost' | 'tokens' | 'requests' | 'latency'
+export type AnalyticsTrendMetric = 'cost' | 'tokens' | 'requests' | 'latency' | 'cache-hit-rate'
 
 export type AnalyticsTrendDimension = 'site' | 'model'
 
@@ -108,12 +108,28 @@ export function formatCompactTick(value: number) {
   return String(Math.round(value))
 }
 
+export function analyticsCacheHitRate(inputTokens?: number | null, cachedTokens?: number | null) {
+  if (
+    typeof inputTokens !== 'number'
+    || !Number.isFinite(inputTokens)
+    || inputTokens <= 0
+    || typeof cachedTokens !== 'number'
+    || !Number.isFinite(cachedTokens)
+    || cachedTokens < 0
+  ) {
+    return null
+  }
+  return cachedTokens / inputTokens
+}
+
 export function formatTrendMetricValue(value: number, metric: AnalyticsTrendMetric, currency: string) {
   switch (metric) {
     case 'cost':
       return formatDashboardCurrency(value, currency, 4)
     case 'latency':
       return formatLatencyMs(value)
+    case 'cache-hit-rate':
+      return formatPercent(value)
     default:
       return formatCompactNumber(value)
   }
@@ -129,6 +145,8 @@ export function pointMetricValue(point: AnalyticsSeriesPoint, metric: AnalyticsT
       return point.requests
     case 'latency':
       return point.requests > 0 ? point.avg_latency_ms : null
+    case 'cache-hit-rate':
+      return analyticsCacheHitRate(point.prompt_tokens, point.cached_tokens)
   }
 }
 
@@ -159,7 +177,7 @@ export function buildTrendChart(
     for (const point of item.points) map.set(point.date, point)
     return map
   })
-  const nullable = metric === 'latency'
+  const nullable = metric === 'latency' || metric === 'cache-hit-rate'
   const data = slots.map((date) => {
     const row: AnalyticsTrendDatum = { date }
     pointsBySeries.forEach((points, index) => {

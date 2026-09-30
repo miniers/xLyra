@@ -24,6 +24,15 @@ export type ModelRule = {
   mode?: 'hard' | 'soft'
 }
 
+export type APIKeyModelGatewayConfig = {
+  first_byte_timeout_ms?: number | null
+}
+
+export type APIKeyGatewayConfig = {
+  first_byte_timeout_ms?: number | null
+  models?: Record<string, APIKeyModelGatewayConfig>
+}
+
 export type DownstreamAPIKeyModel = {
   id?: string
   api_key_id?: string
@@ -73,6 +82,7 @@ export type DownstreamAPIKey = {
   model_policy: DownstreamAPIKeyModelPolicy
   site_policy: DownstreamAPIKeyModelPolicy
   model_mappings?: ModelRule[] | null
+  gateway_config?: APIKeyGatewayConfig | null
   image_tool_bridge?: ImageToolBridgeConfig | null
   billing_multiplier?: number | null
   quota_limit?: number | null
@@ -113,6 +123,7 @@ export type APIKeyUpsertInput = {
   siteIds: string[]
   siteGroupIds: string[]
   modelMappings?: ModelRule[]
+  gatewayConfig?: APIKeyGatewayConfig | null
   imageToolBridge?: ImageToolBridgeConfig | null
   billingMultiplier?: number | null
   quotaLimit?: number | null
@@ -131,10 +142,10 @@ export const downstreamAPIKeyQueryKeys = {
   detail: (apiKeyId: string) => [...downstreamAPIKeyQueryKeys.all, 'detail', apiKeyId] as const,
 }
 
-export async function reorderDownstreamAPIKeys(ids: string[]) {
+export async function reorderDownstreamAPIKeys(ids: string[], revision: string) {
   return apiFetch<{ success: boolean }>('/api/v1/api-keys/order', {
     method: 'PUT',
-    body: { ids },
+    body: { ids, revision },
   })
 }
 
@@ -150,7 +161,7 @@ async function listDownstreamAPIKeysWithOptions(options?: { includeInternal?: bo
   const params = new URLSearchParams()
   if (options?.includeInternal) params.set('include_internal', 'true')
   const query = params.toString()
-  const result = await apiFetch<{ items: DownstreamAPIKey[]; meta?: { count?: number } }>(`/api/v1/api-keys${query ? `?${query}` : ''}`, { cache: 'no-store' })
+  const result = await apiFetch<{ items: DownstreamAPIKey[]; meta?: { count?: number; order_revision?: string } }>(`/api/v1/api-keys${query ? `?${query}` : ''}`, { cache: 'no-store' })
   return { ...result, items: sortAPIKeysForDisplay(result.items) }
 }
 
@@ -288,6 +299,7 @@ function apiKeyUpsertBody(input: APIKeyUpsertInput) {
     site_ids: input.sitePolicy === 'allow_list' ? input.siteIds : [],
     site_group_ids: input.sitePolicy === 'allow_list' ? input.siteGroupIds : [],
     model_mappings: input.modelMappings,
+    gateway_config: input.gatewayConfig ?? {},
     image_tool_bridge: input.imageToolBridge ?? null,
     billing_multiplier: input.billingMultiplier ?? null,
     quota_limit: input.quotaUnlimited ? null : input.quotaLimit,

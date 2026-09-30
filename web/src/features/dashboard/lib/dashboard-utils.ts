@@ -287,7 +287,7 @@ function normalizeCooldownScope(item: DashboardCooldownAPIItem): CooldownItem['s
   return 'site'
 }
 
-function formatRemainingSeconds(seconds: number) {
+export function formatRemainingSeconds(seconds: number) {
   if (seconds <= 0) return '0m'
   const minutes = Math.ceil(seconds / 60)
   if (minutes < 60) return `${minutes}m`
@@ -302,6 +302,8 @@ function formatCooldownReason(reason: string, source: string, t?: TFunction) {
     usage_limit_reached: t ? t('cooldownReasons.usage_limit_reached') : '账号额度达到限制',
     upstream_http_error: t ? t('cooldownReasons.upstream_http_error') : '上游请求异常',
     upstream_timeout: t ? t('cooldownReasons.upstream_timeout') : '上游请求超时',
+    credential_rpm_limit_reached: t ? t('cooldownReasons.credential_rpm_limit_reached') : '每分钟速率达到限制',
+    credential_rpd_limit_reached: t ? t('cooldownReasons.credential_rpd_limit_reached') : '每日速率达到限制',
   }
   const sourceMap: Record<string, string> = {
     site_health: t ? t('cooldownSources.site_health') : '健康检查',
@@ -333,7 +335,7 @@ function attentionSeverityLabel(severity: string, t?: TFunction) {
 
 function attentionIcon(type: string): ReactNode {
   if (type === 'missing_model_pricing') return createElement(BadgeDollarSign, { className: 'h-4 w-4' })
-  if (type === 'rate_limit_exceeded') return createElement(Gauge, { className: 'h-4 w-4' })
+  if (type === 'rate_limit_exceeded' || type === 'automatic_anomaly') return createElement(Gauge, { className: 'h-4 w-4' })
   if (type === 'active_cooldown' || type === 'high_latency') return createElement(Clock3, { className: 'h-4 w-4' })
   if (type === 'no_route_candidates' || type === 'low_route_candidates') return createElement(Route, { className: 'h-4 w-4' })
   return createElement(ShieldAlert, { className: 'h-4 w-4' })
@@ -349,6 +351,7 @@ function formatAttentionType(type: string, t?: TFunction) {
     high_failure_rate: t ? t('attentionTypes.high_failure_rate') : '站点请求失败率偏高',
     rate_limit_exceeded: t ? t('attentionTypes.rate_limit_exceeded') : '请求触发限流',
     high_latency: t ? t('attentionTypes.high_latency') : '请求延迟偏高',
+    automatic_anomaly: t ? t('attentionTypes.automatic_anomaly') : '路由自动异常降权',
   }
   return map[type] ?? type
 }
@@ -382,6 +385,16 @@ function formatAttentionTitle(item: DashboardAttentionItem, t?: TFunction) {
       return readString(subject, 'site_name')
         ? (t ? t('attention.title.high_latency_site_model', { site, model }) : `${site} / ${model} has high request latency`)
         : (t ? t('attention.title.high_latency_model', { model }) : `${model} has high request latency`)
+    case 'automatic_anomaly': {
+      const penalty = readNumber(metrics, 'penalty')
+      const remainingSeconds = readNumber(metrics, 'remaining_seconds')
+      const penaltyLabel = penalty != null ? Math.abs(Math.round(penalty)) : '-'
+      const remainingLabel = remainingSeconds != null ? formatRemainingSeconds(remainingSeconds) : '-'
+      const fallback = `${site} / ${model} has an automatic route anomaly penalty of ${penaltyLabel} points for ${remainingLabel}`
+      return t
+        ? t('attention.title.automatic_anomaly', { site, model, penalty: penaltyLabel, remaining: remainingLabel, defaultValue: fallback })
+        : fallback
+    }
     default:
       return item.title || formatAttentionType(item.type, t)
   }
@@ -415,6 +428,38 @@ function formatAttentionDetail(item: DashboardAttentionItem, t?: TFunction) {
       return t ? t('attention.detail.rate_limit_exceeded') : 'Downstream callers received 429 responses. Check global or API key RPM/TPM limits.'
     case 'high_latency':
       return t ? t('attention.detail.high_latency', { latency: p95Latency != null ? formatLatency(p95Latency) : '-' }) : `P95 latency is ${p95Latency != null ? formatLatency(p95Latency) : '-'}.`
+    case 'automatic_anomaly': {
+      const penalty = readNumber(metrics, 'penalty')
+      const remainingSeconds = readNumber(metrics, 'remaining_seconds')
+      const penaltyLabel = penalty != null ? Math.abs(Math.round(penalty)) : '-'
+      const remainingLabel = remainingSeconds != null ? formatRemainingSeconds(remainingSeconds) : '-'
+      const fallback = `Automatic anomaly down-rank is active, deducting ${penaltyLabel} points for ${remainingLabel}.`
+      const summary = t
+        ? t('attention.detail.automatic_anomaly', {
+            penalty: penaltyLabel,
+            remaining: remainingLabel,
+            defaultValue: fallback,
+          })
+        : fallback
+      const rawMetrics = readAutomaticAnomalyMetrics(metrics).map((metric) => {
+        if (metric.metric === 'first_byte_latency') {
+          const recent = formatLatency(metric.recent)
+          const baseline = formatLatency(metric.baseline)
+          return t
+            ? t('attention.detail.automatic_anomaly_first_byte', { recent, baseline, defaultValue: `first-byte recent ${recent} / baseline ${baseline}` })
+            : `first-byte recent ${recent} / baseline ${baseline}`
+        }
+        if (metric.metric === 'cache_hit_rate') {
+          const recent = formatPercent(metric.recent)
+          const baseline = formatPercent(metric.baseline)
+          return t
+            ? t('attention.detail.automatic_anomaly_cache', { recent, baseline, defaultValue: `cache hit recent ${recent} / baseline ${baseline}` })
+            : `cache hit recent ${recent} / baseline ${baseline}`
+        }
+        return `${metric.metric}: ${metric.recent} / ${metric.baseline}`
+      })
+      return rawMetrics.length > 0 ? `${summary} ${rawMetrics.join('；')}` : summary
+    }
     default:
       return item.description || formatAttentionType(item.type, t)
   }
@@ -457,6 +502,17 @@ function formatAttentionValue(item: DashboardAttentionItem, t?: TFunction) {
   if (item.type === 'high_latency') {
     const p95Latency = readNumber(metadata, 'p95_latency_ms')
     if (p95Latency != null) return formatLatency(p95Latency)
+  }
+
+  if (item.type === 'automatic_anomaly') {
+    const penalty = readNumber(metadata, 'penalty')
+    if (penalty != null) {
+      const penaltyLabel = Math.abs(Math.round(penalty))
+      const fallback = `-${penaltyLabel}`
+      return t
+        ? t('value.automatic_anomaly', { penalty: penaltyLabel, defaultValue: fallback })
+        : fallback
+    }
   }
 
   return item.primary_action?.label
@@ -523,6 +579,21 @@ function readString(source: Record<string, unknown>, key: string) {
   const value = source[key]
   if (typeof value === 'string' && value.trim() !== '') return value.trim()
   return null
+}
+
+function readAutomaticAnomalyMetrics(source: Record<string, unknown>) {
+  const value = source.metrics
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
+    const record = item as Record<string, unknown>
+    const metric = readString(record, 'metric')
+    const recent = readNumber(record, 'recent_value')
+    const baseline = readNumber(record, 'baseline_value')
+    if (!metric || recent == null || baseline == null) return []
+    return [{ metric, recent, baseline }]
+  })
 }
 
 function riskItem(input: {

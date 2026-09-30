@@ -3,6 +3,20 @@ import type { CanonicalModelItem, Site, SiteAPIKey, SiteModel } from '@/features
 import { modelNameIconInfo, siteModelIconInfo } from '@/features/sites/lib/model-icon'
 import { apiKeyModels, isNewAPISite } from '@/features/sites/lib/site-utils'
 
+export function isNVIDIAFreeModel(model: SiteModel | undefined): boolean {
+  return model?.capabilities?.source === 'nvidia_catalog' && model?.capabilities?.free_endpoint === true
+}
+
+export function siteModelDisplayName(model: SiteModel): string {
+  if (model.capabilities?.source === 'nvidia_catalog') return model.display_name || model.upstream_model_name
+  return model.upstream_model_name || model.id
+}
+
+export function compareSiteModels(a: SiteModel, b: SiteModel): number {
+  return Number(isNVIDIAFreeModel(b)) - Number(isNVIDIAFreeModel(a))
+    || (a.upstream_model_name || a.id || '').localeCompare(b.upstream_model_name || b.id || '')
+}
+
 export function buildDisplayModelItems(
   site: Site | null,
   models: SiteModel[],
@@ -13,9 +27,11 @@ export function buildDisplayModelItems(
   const canonicalMap = new Map(canonicalModels.map((model) => [model.id, model]))
 
   if (!isNewAPISite(site)) {
-    return models.map((model) => ({
+    const ordered = site.site_type.trim().toLowerCase() === 'nvidia' ? [...models].sort(compareSiteModels) : models
+    return ordered.map((model) => ({
       id: model.id,
-      displayName: model.upstream_model_name || model.id,
+      displayName: siteModelDisplayName(model),
+      copyName: model.upstream_model_name || model.id,
       enabled: model.status === 'active',
       icon: siteModelIconInfo(model, canonicalMap, site),
     }))

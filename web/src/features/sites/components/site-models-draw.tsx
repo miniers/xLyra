@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, LoaderCircle, Search, Trash2 } from 'lucide-react'
 import { ModelsDraw } from '@/components/common/models-draw'
+import { InlineModelTestButton } from '@/components/common/inline-model-test-button'
 import { BrandMark } from '@/components/common/brand-mark'
 import { copyToClipboard } from '@/components/common/copy-to-clipboard'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,7 @@ import {
   listSiteAPIKeys,
   listSiteModels,
   sitesQueryKeys,
+  testSiteModel,
   updateSiteAPIKeyModelStatus,
   updateSiteModelStatus,
   updateSiteModelsStatus,
@@ -69,6 +71,51 @@ export function SiteModelsDraw({
   const [enabled, setEnabled] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState<SiteModel | null>(null)
   const [manualManage, setManualManage] = useState(false)
+  const [testingModelId, setTestingModelId] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; latencyMs?: number | null; error?: string | null }>>({})
+
+  const testMutation = useMutation({
+    mutationFn: async (modelId: string) => {
+      if (!site) throw new Error('site required')
+      return testSiteModel(site.id, modelId)
+    },
+    onMutate: (modelId) => {
+      setTestingModelId(modelId)
+    },
+    onSuccess: (result, modelId) => {
+      setTestResults((prev) => ({
+        ...prev,
+        [modelId]: {
+          ok: result.ok,
+          latencyMs: result.result?.latency_ms ?? null,
+          error: result.ok ? null : (result.result?.error_message || t('components:modelsDraw.testFailed')),
+        },
+      }))
+      if (result.ok) {
+        toast.success(t('components:modelsDraw.testSuccess'), {
+          description: result.result?.latency_ms ? `${result.result.latency_ms}ms` : undefined,
+        })
+      } else {
+        toast.error(t('components:modelsDraw.testFailed'), {
+          description: result.result?.error_message || undefined,
+        })
+      }
+    },
+    onError: (error, modelId) => {
+      const message = error instanceof Error ? error.message : String(error)
+      setTestResults((prev) => ({
+        ...prev,
+        [modelId]: {
+          ok: false,
+          error: message,
+        },
+      }))
+      toast.error(t('components:modelsDraw.testFailed'), { description: message })
+    },
+    onSettled: () => {
+      setTestingModelId(null)
+    },
+  })
   const [search, setSearch] = useState('')
   const [collapsedKeyIds, setCollapsedKeyIds] = useState<Record<string, boolean>>({})
   const modelsQuery = useQuery({
@@ -245,10 +292,31 @@ export function SiteModelsDraw({
   const manualManageActive = manualManage && hasManualModels && open
   const dialogItems = useMemo(() => buildDisplayModelItems(site, items, liveAPIKeys, canonicalModelsQuery.data?.items).map((item) => {
     const model = modelsByID.get(item.id)
-    if (!manualManageActive || !model || !isManualSiteModel(model)) return item
+    const isModelTesting = testingModelId === item.id
+    const testResult = testResults[item.id]
+    const trailingAction = model && !item.id.startsWith('unmapped:') ? (
+      <InlineModelTestButton
+        isTesting={isModelTesting}
+        result={testResult}
+        disabled={testMutation.isPending}
+        onTest={() => {
+          if (!testMutation.isPending) {
+            testMutation.mutate(item.id)
+          }
+        }}
+      />
+    ) : undefined
+
+    if (!manualManageActive || !model || !isManualSiteModel(model)) {
+      return {
+        ...item,
+        trailingAction,
+      }
+    }
     const deleting = deleteMutation.isPending && deleteMutation.variables?.modelId === model.id
     return {
       ...item,
+      trailingAction,
       leadingAction: (
         <Button
           type="button"
@@ -264,7 +332,7 @@ export function SiteModelsDraw({
         </Button>
       ),
     }
-  }), [canonicalModelsQuery.data?.items, deleteMutation.isPending, deleteMutation.variables?.modelId, items, liveAPIKeys, manualManageActive, modelsByID, site, t])
+  }), [canonicalModelsQuery.data?.items, deleteMutation.isPending, deleteMutation.variables?.modelId, items, liveAPIKeys, manualManageActive, modelsByID, site, t, testMutation, testResults, testingModelId])
   const activeCanonicalModels = useMemo(
     () => (canonicalModelsQuery.data?.items ?? []).filter((model) => model.status === 'active'),
     [canonicalModelsQuery.data?.items],
@@ -360,6 +428,7 @@ export function SiteModelsDraw({
       setManualManage(false)
       setSearch('')
       setCollapsedKeyIds({})
+      setTestResults({})
     }
     onOpenChange(nextOpen)
   }

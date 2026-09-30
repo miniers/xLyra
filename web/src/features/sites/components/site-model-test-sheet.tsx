@@ -1,3 +1,4 @@
+import { compareSiteModels, siteModelDisplayName } from '@/features/sites/lib/site-model-items'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ErrorDetails } from '@/components/common/error-details'
@@ -42,10 +43,12 @@ type TestRecord =
 export function SiteModelTestSheet({
   site,
   models,
+  modelId,
   onOpenChange,
 }: {
   site: Site | null
   models: SiteModel[]
+  modelId?: string
   onOpenChange: (open: boolean) => void
 }) {
   const open = Boolean(site)
@@ -136,8 +139,9 @@ export function SiteModelTestSheet({
 
   const availableModels = useMemo(
     () => [...(modelsQuery.data?.items ?? EMPTY_MODELS)]
-      .sort((a, b) => a.upstream_model_name.localeCompare(b.upstream_model_name)),
-    [modelsQuery.data?.items],
+      .filter((model) => !modelId || model.id === modelId)
+      .sort(compareSiteModels),
+    [modelId, modelsQuery.data?.items],
   )
   const testableModels = useMemo(
     () => filterSiteModelTestModels({
@@ -273,7 +277,7 @@ export function SiteModelTestSheet({
                     size="sm"
                   />
                   <div className="truncate text-sm font-medium text-foreground" title={model.upstream_model_name}>
-                    {model.upstream_model_name}
+                    {siteModelDisplayName(model)}
                   </div>
                 </div>
               </td>

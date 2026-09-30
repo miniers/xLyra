@@ -353,6 +353,7 @@
 .traffic-flow-activity-phase { margin-left: auto; color: var(--model-color); font-size: 7px; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .traffic-flow-activity-empty { display: flex; align-items: center; padding: var(--flow-space-4); color: rgba(255, 255, 255, .42); font-size: 8px; letter-spacing: .13em; text-transform: uppercase; }
 .traffic-flow-activity-state { display: flex; flex: none; align-items: center; justify-content: center; gap: 8px; height: 36px; color: #e5e5e5; border-top: 1px solid rgba(255, 255, 255, .12); font-size: 7px; letter-spacing: .14em; }
+
 .traffic-flow-detail { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .traffic-flow-detail-body { display: grid; min-height: 0; flex: 1; gap: 0; overflow: auto; }
 .traffic-flow-detail-endpoint, .traffic-flow-detail-phase { display: grid; align-content: center; gap: 5px; min-height: 68px; padding: 0 var(--flow-space-4); border-bottom: 1px solid rgba(255, 255, 255, .08); }
@@ -366,6 +367,13 @@
 .traffic-flow-detail-phase i { color: #7d7d7d; font-size: 7px; font-style: normal; letter-spacing: .08em; }
 .traffic-flow-detail-close { display: grid; margin-left: auto; width: 28px; height: 28px; place-items: center; color: #8b8b8b; border: 0; border-radius: var(--flow-radius-sm); background: transparent; cursor: pointer; }
 .traffic-flow-detail-close:hover { color: #fff; }
+.traffic-flow-detail-controls { display: flex; align-items: center; gap: 6px; padding: var(--flow-space-3) var(--flow-space-4); }
+.traffic-flow-detail-controls button { display: inline-flex; height: 28px; align-items: center; gap: 6px; padding: 0 10px; color: #a8c9ba; border: 1px solid rgba(183, 216, 197, .28); border-radius: var(--flow-radius-sm); background: rgba(183, 216, 197, .035); cursor: pointer; font-size: 9px; white-space: nowrap; }
+.traffic-flow-detail-controls button:hover:not(:disabled) { color: #fff; border-color: rgba(215, 233, 225, .72); }
+.traffic-flow-detail-controls button:disabled { color: #555; border-color: rgba(255, 255, 255, .1); cursor: not-allowed; }
+.traffic-flow-activity-cancel { display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; font-size: 7px; color: #f87171; border: 1px solid rgba(248, 113, 113, .4); border-radius: var(--flow-radius-sm); background: rgba(248, 113, 113, .1); cursor: pointer; transition: all 150ms ease; }
+.traffic-flow-activity-cancel:hover:not(:disabled) { background: rgba(248, 113, 113, .25); color: #fca5a5; border-color: rgba(248, 113, 113, .7); }
+.traffic-flow-activity-cancel:disabled { opacity: .5; cursor: not-allowed; }
 
 .traffic-flow-footer {
   z-index: 5;

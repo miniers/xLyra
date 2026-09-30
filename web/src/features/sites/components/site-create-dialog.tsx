@@ -650,6 +650,7 @@ export function SiteCreateDialog({
     if (!apiKey) return
     setEditingAPIKeyIndex(index)
     setAPIKeyDraft({
+      ...DEFAULT_API_KEY_FORM_DRAFT,
       name: apiKey.name,
       apiKey: apiKey.apiKey,
       routingPriority: String(apiKey.routingPriority),
@@ -666,8 +667,8 @@ export function SiteCreateDialog({
     if (!parsed?.apiKey) return
     const nextAPIKey = {
       apiKey: parsed.apiKey,
-      name: parsed.name,
-      routingPriority: parsed.routingPriority,
+      name: parsed.name ?? '',
+      routingPriority: parsed.routingPriority ?? 1,
       upstreamCostMultiplier: parsed.upstreamCostMultiplier,
     }
     const next = [...apiKeys]

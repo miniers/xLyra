@@ -56,7 +56,7 @@ export function AnalyticsTrendPanel({
   const { t } = useTranslation('analytics')
   const [chartType, setChartType] = useState<AnalyticsChartType>('stacked-area')
 
-  const lineOnly = metric === 'latency'
+  const lineOnly = metric === 'latency' || metric === 'cache-hit-rate'
   const effectiveChartType: AnalyticsChartType = lineOnly ? 'line' : chartType
 
   const isHour = usage.meta.granularity === 'hour'
@@ -75,6 +75,7 @@ export function AnalyticsTrendPanel({
   const tickFormatter = (value: number) => {
     if (metric === 'cost') return formatDollarTick(value)
     if (metric === 'latency') return formatLatencyMs(value)
+    if (metric === 'cache-hit-rate') return formatTrendMetricValue(value, metric, usage.meta.currency)
     return formatCompactTick(value)
   }
 
@@ -92,6 +93,7 @@ export function AnalyticsTrendPanel({
             { label: t('trend.metrics.tokens'), value: 'tokens' as const },
             { label: t('trend.metrics.requests'), value: 'requests' as const },
             { label: t('trend.metrics.latency'), value: 'latency' as const },
+            { label: t('trend.metrics.cacheHitRate'), value: 'cache-hit-rate' as const },
           ]}
         />
       )}
@@ -100,6 +102,7 @@ export function AnalyticsTrendPanel({
         : t('trend.description', { from: usage.meta.from, to: usage.meta.to })}
       action={(
         <div className="flex flex-wrap items-center gap-4">
+          <div className="h-4 w-px bg-[hsl(var(--glass-divider))]" />
           <AnalyticsSlashTabs
             value={dimension}
             onValueChange={onDimensionChange}

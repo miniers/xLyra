@@ -9,11 +9,13 @@ import { RequestResponseModelBadge } from './request-response-model-badge'
 import {
   compactJoin,
   formatCurrency,
+  formatDateTime,
   formatFailureResponse,
   formatMetricValue,
   formatPerRequestPrice,
   formatPrice,
   formatTokenMetric,
+  formatTPS,
   requestCachePrice,
   requestCacheRatio,
   requestCacheTokens,
@@ -32,15 +34,19 @@ import {
   requestGroupName,
   requestGroupRatio,
   requestHasBillingDetails,
+  requestIsInProgress,
+  requestPhaseLabel,
   requestIsFastBilling,
   requestMappedModel,
   requestModelName,
+  requestResponseModeLabel,
+  requestTPS,
 } from '@/features/requests/lib/request-utils'
 
 export function RequestDetailRow({ item }: { item: RequestLogItem }) {
   return (
     <tr className="border-t border-[hsl(var(--glass-divider))]">
-      <td colSpan={10} className="rounded-md bg-[hsl(var(--surface-subtle))] px-6 py-5">
+      <td colSpan={11} className="rounded-md bg-[hsl(var(--surface-subtle))] px-6 py-5">
         <RequestDetailContent item={item} />
       </td>
     </tr>
@@ -48,11 +54,35 @@ export function RequestDetailRow({ item }: { item: RequestLogItem }) {
 }
 
 export function RequestDetailContent({ item }: { item: RequestLogItem }) {
-  const { t } = useTranslation('requests')
+  const { t, i18n } = useTranslation('requests')
+  const inProgress = requestIsInProgress(item)
   const detailQuery = useQuery({
     queryKey: requestQueryKeys.detail(item.id),
     queryFn: () => getRequestLog(item.id),
+    enabled: !inProgress,
   })
+
+  if (inProgress) {
+    return (
+      <div className="space-y-2.5 text-left text-sm">
+        <DetailRow label={t('detail.requestId')}>
+          <InlineItem label={t('detail.requestId')} value={item.request_id} tone="badge" />
+        </DetailRow>
+        <DetailRow label={t('detail.request')}>
+          <InlineItem label={t('detail.downstreamModel')} value={requestModelName(item)} tone="badge" />
+          <InlineItem label={t('detail.status')}>
+            <StatusBadge status="syncing">{t('detail.inProgress')}</StatusBadge>
+          </InlineItem>
+          <InlineItem label={t('detail.phase')} value={requestPhaseLabel(item, t)} tone="badge" />
+          <InlineItem label={t('detail.attempt')} value={item.attempt != null ? String(item.attempt) : null} tone="badge" />
+          <InlineItem label={t('detail.responseMode')} value={requestResponseModeLabel(item, t)} tone="badge" />
+          <InlineItem label={t('detail.site')} value={item.site.name} tone="badge" />
+          <InlineItem label={t('detail.apiKey')} value={item.api_key.name} tone="badge" />
+          <InlineItem label={t('detail.startedAt')} value={formatDateTime(item.started_at, i18n.language)} tone="badge" />
+        </DetailRow>
+      </div>
+    )
+  }
 
   if (detailQuery.isLoading) {
     return (
@@ -78,6 +108,7 @@ export function RequestDetailContent({ item }: { item: RequestLogItem }) {
   const cacheWriteTokens = requestCacheWriteTokens(detail)
   const cachePrice = requestCachePrice(detail)
   const costFormula = requestCostFormula(detail, t)
+  const tps = requestTPS(detail)
   const currency = detail.cost_calculation?.currency ?? detail.usage.currency ?? detail.pricing?.currency
   const totalCost = detail.cost_calculation?.estimated_cost ?? detail.usage.estimated_cost
   const groupName = requestGroupName(detail)
@@ -130,6 +161,9 @@ export function RequestDetailContent({ item }: { item: RequestLogItem }) {
           <DetailRow label={t('detail.usage')}>
             <InlineItem label={t('detail.input')} value={formatTokenMetric(detail.cost_calculation?.prompt_tokens ?? detail.usage.prompt_tokens)} tone="badge" />
             <InlineItem label={t('detail.output')} value={formatTokenMetric(detail.cost_calculation?.completion_tokens ?? detail.usage.completion_tokens)} tone="badge" />
+            {tps != null ? (
+              <InlineItem label={t('detail.tps')} value={formatTPS(tps)} tone="badge" />
+            ) : null}
             <InlineItem label={t('detail.cache')} value={formatTokenMetric(cacheTokens)} tone="badge" />
             {typeof cacheWriteTokens === 'number' && cacheWriteTokens > 0 ? (
               <InlineItem label={t('detail.cacheWrite')} value={formatTokenMetric(cacheWriteTokens)} tone="badge" />

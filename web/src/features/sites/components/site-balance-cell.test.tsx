@@ -8,7 +8,87 @@ import { MobileSitesList } from './mobile-sites-list'
 import { SiteBalanceCell, SiteBalanceDetailsContent } from './site-balance-cell'
 
 const i18n = createInstance()
-const site: Site = {
+
+beforeAll(async () => {
+  await i18n.init({ lng: 'zh', resources: { zh: { sites: translations } }, interpolation: { escapeValue: false } })
+})
+
+const commandCodeSite: Site = {
+  id: 'cc',
+  name: 'Command Code',
+  slug: 'cc',
+  site_type: 'command_code',
+  base_url: 'https://example.invalid',
+  status: 'active',
+  enabled: true,
+  routing_priority: 0,
+  meta: {},
+  created_at: '',
+  updated_at: '',
+  quota_probe: {
+    probe_type: 'command_code',
+    status: 'ok',
+    plan: 'GOAT',
+    expires_at: '2026-10-19T10:00:00Z',
+    entries: [
+      { label: 'balance', remaining: 25.5, unit: 'credits' },
+      { label: 'five_hour', remaining: 3.77, limit: 5, unit: 'credits', reset_at: '2026-09-19T10:00:00Z' },
+      { label: 'weekly', remaining: 27.5, limit: 40, unit: 'credits' },
+    ],
+  },
+}
+
+describe('Command Code balance cell', () => {
+  it('shows credits and both remaining window percentages in the list', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceCell site={commandCodeSite} />
+      </I18nextProvider>,
+    )
+    expect(html).toContain('25.50 credits')
+    expect(html).toContain('75.4%')
+    expect(html).toContain('68.8%')
+    expect(html).toContain('tabindex="0"')
+  })
+
+  it('shows plan, expiry, reset time, and full credit amounts in the details', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceDetailsContent site={commandCodeSite} />
+      </I18nextProvider>,
+    )
+    expect(html).toContain('GOAT')
+    expect(html).toContain('3.77 credits / 5.00 credits')
+    expect(html).toContain('到期时间')
+    expect(html).toContain('2026')
+  })
+
+  it('makes a failed probe visible while retaining previously fetched quota', () => {
+    const failed = { ...commandCodeSite, quota_probe: { ...commandCodeSite.quota_probe, status: 'error' } }
+    expect(renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceCell site={failed} />
+      </I18nextProvider>,
+    )).toContain('额度探测失败')
+    expect(renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceDetailsContent site={failed} />
+      </I18nextProvider>,
+    )).toContain('25.50 credits')
+  })
+
+  it('does not invent percentages when the window limit is unknown', () => {
+    const missing = { ...commandCodeSite, quota_probe: { probe_type: 'command_code', entries: [{ label: 'weekly', remaining: 3, unit: 'credits' }] } }
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceCell site={missing} />
+      </I18nextProvider>,
+    )
+    expect(html).not.toContain('%')
+  })
+})
+
+const glmSite: Site = {
   id: 'glm-site',
   name: 'GLM',
   slug: 'glm',
@@ -31,15 +111,11 @@ const site: Site = {
   },
 }
 
-beforeAll(async () => {
-  await i18n.init({ lng: 'zh', resources: { zh: { sites: translations } }, interpolation: { escapeValue: false } })
-})
-
 describe('GLM quota details', () => {
   it('renders separate quota rows in the shared tooltip and drawer content', () => {
     const markup = renderToStaticMarkup(
       <I18nextProvider i18n={i18n}>
-        <SiteBalanceDetailsContent site={site} />
+        <SiteBalanceDetailsContent site={glmSite} />
       </I18nextProvider>,
     )
     const rows = [...markup.matchAll(/<div[^>]*><span[^>]*>([^<]+)<\/span><span[^>]*>([^<]+)<\/span><\/div>/g)]
@@ -54,7 +130,7 @@ describe('GLM quota details', () => {
   it('includes all quota rows in the desktop tooltip description', () => {
     const markup = renderToStaticMarkup(
       <I18nextProvider i18n={i18n}>
-        <SiteBalanceCell site={site} />
+        <SiteBalanceCell site={glmSite} />
       </I18nextProvider>,
     )
     expect(markup).toContain('role="tooltip"')
@@ -66,7 +142,7 @@ describe('GLM quota details', () => {
     const markup = renderToStaticMarkup(
       <I18nextProvider i18n={i18n}>
         <MobileSitesList
-          items={[site]}
+          items={[glmSite]}
           modelsMap={{}}
           apiKeysMap={{}}
           validationSnapshots={{}}
@@ -74,7 +150,7 @@ describe('GLM quota details', () => {
           togglingSiteId={null}
           deletingSiteId={null}
           updatedAtMode="absolute"
-          now={Date.parse(site.updated_at)}
+          now={Date.parse(glmSite.updated_at)}
           onUpdatedAtModeChange={noop}
           onRefresh={noop}
           onToggleEnabled={noop}

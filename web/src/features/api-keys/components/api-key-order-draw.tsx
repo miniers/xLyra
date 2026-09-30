@@ -7,6 +7,7 @@ import { Draw, DrawBody, DrawContent, DrawDescription, DrawFooter, DrawHeader, D
 import { downstreamAPIKeyQueryKeys, listDownstreamAPIKeys, reorderDownstreamAPIKeys } from '@/features/api-keys/api/api-keys'
 import { moveAPIKey } from '@/features/api-keys/lib/api-key-order'
 import { analyticsQueryKeys } from '@/features/analytics/api/analytics'
+import { APIError } from '@/lib/http'
 import { toast } from '@/lib/toast'
 
 export function APIKeyOrderDraw({ initialData, onClose }: {
@@ -15,11 +16,12 @@ export function APIKeyOrderDraw({ initialData, onClose }: {
 }) {
   const { t } = useTranslation('api-keys')
   const queryClient = useQueryClient()
-  const [snapshot] = useState(initialData)
+  const [snapshot, setSnapshot] = useState(initialData)
   const [items, setItems] = useState(initialData.items)
+  const [conflict, setConflict] = useState(false)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const saveMutation = useMutation({
-    mutationFn: () => reorderDownstreamAPIKeys(items.map((item) => item.id)),
+    mutationFn: () => reorderDownstreamAPIKeys(items.map((item) => item.id), snapshot.meta?.order_revision ?? ''),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: downstreamAPIKeyQueryKeys.all }),
@@ -29,9 +31,24 @@ export function APIKeyOrderDraw({ initialData, onClose }: {
       toast.success(t('order.saved'))
       onClose()
     },
-    onError: (error) => toast.error(t('order.failed'), { description: error.message }),
+    onError: (error) => {
+      if (error instanceof APIError && error.code === 'api_key_order_conflict') {
+        setConflict(true)
+      } else {
+        toast.error(t('order.failed'), { description: error.message })
+      }
+    },
   })
-  const pending = saveMutation.isPending
+  const reloadMutation = useMutation({
+    mutationFn: () => queryClient.fetchQuery({ queryKey: downstreamAPIKeyQueryKeys.list(), queryFn: listDownstreamAPIKeys, staleTime: 0 }),
+    onSuccess: (data) => {
+      setSnapshot(data)
+      setItems(data.items)
+      setConflict(false)
+    },
+    onError: (error) => toast.error(t('workspace.loadFailed'), { description: error.message }),
+  })
+  const pending = saveMutation.isPending || reloadMutation.isPending
   const changed = items.some((item, index) => item.id !== snapshot.items[index]?.id)
 
   return (
@@ -42,23 +59,24 @@ export function APIKeyOrderDraw({ initialData, onClose }: {
           <DrawDescription>{t('order.description')}</DrawDescription>
         </DrawHeader>
         <DrawBody className="space-y-2">
+          {conflict ? <p role="alert" className="mb-4 text-sm text-destructive">{t('order.conflict')}</p> : null}
           <ol className="space-y-2" aria-label={t('order.title')}>
             {items.map((item, index) => (
               <li
                 key={item.id}
                 className="flex items-center gap-2 rounded-lg border border-[hsl(var(--glass-border))] p-2"
-                onDragOver={(event) => { if (draggedId && !pending) event.preventDefault() }}
+                onDragOver={(event) => { if (draggedId && !pending && !conflict) event.preventDefault() }}
                 onDrop={(event) => {
                   event.preventDefault()
-                  if (draggedId && !pending) setItems((current) => moveAPIKey(current, draggedId, item.id))
+                  if (draggedId && !pending && !conflict) setItems((current) => moveAPIKey(current, draggedId, item.id))
                   setDraggedId(null)
                 }}
               >
                 <Button
                   variant="ghost"
                   size="icon"
-                  draggable={!pending}
-                  disabled={pending}
+                  draggable={!pending && !conflict}
+                  disabled={pending || conflict}
                   aria-label={t('order.drag', { name: item.name })}
                   onDragStart={(event) => {
                     event.dataTransfer.setData('text/plain', item.id)
@@ -85,10 +103,10 @@ export function APIKeyOrderDraw({ initialData, onClose }: {
                   <div className="truncate text-sm font-medium">{item.name}</div>
                   <div className="truncate text-xs text-muted-foreground">{item.masked_key}</div>
                 </div>
-                <Button variant="ghost" size="icon" disabled={pending || index === 0} aria-label={t('order.up', { name: item.name })} onClick={() => setItems((current) => moveAPIKey(current, item.id, items[index - 1].id))}>
+                <Button variant="ghost" size="icon" disabled={pending || conflict || index === 0} aria-label={t('order.up', { name: item.name })} onClick={() => setItems((current) => moveAPIKey(current, item.id, items[index - 1].id))}>
                   <ArrowUp className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="icon" disabled={pending || index === items.length - 1} aria-label={t('order.down', { name: item.name })} onClick={() => setItems((current) => moveAPIKey(current, item.id, items[index + 1].id))}>
+                <Button variant="ghost" size="icon" disabled={pending || conflict || index === items.length - 1} aria-label={t('order.down', { name: item.name })} onClick={() => setItems((current) => moveAPIKey(current, item.id, items[index + 1].id))}>
                   <ArrowDown className="h-4 w-4" />
                 </Button>
               </li>
@@ -96,10 +114,17 @@ export function APIKeyOrderDraw({ initialData, onClose }: {
           </ol>
         </DrawBody>
         <DrawFooter className="flex justify-start gap-2">
-          <Button disabled={pending || !changed} onClick={() => saveMutation.mutate()}>
-            {pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-            {t('form.actions.save')}
-          </Button>
+          {conflict ? (
+            <Button disabled={pending} onClick={() => reloadMutation.mutate()}>
+              {pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {t('order.reload')}
+            </Button>
+          ) : (
+            <Button disabled={pending || !changed || !snapshot.meta?.order_revision} onClick={() => saveMutation.mutate()}>
+              {pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {t('form.actions.save')}
+            </Button>
+          )}
           <Button variant="ghost" disabled={pending} onClick={onClose}>{t('workspace.deleteDialog.cancel')}</Button>
         </DrawFooter>
       </DrawContent>

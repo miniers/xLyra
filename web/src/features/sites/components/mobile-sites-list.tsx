@@ -188,10 +188,15 @@ function MobileSiteCard({
   const isGrok = site.site_type === 'grok'
   const keyInfo = oauth || isGrok ? null : { enabled: apiKeys.filter((key) => key.enabled).length, total: apiKeys.length || site.api_key_count || 0 }
   const usage = site.usage
-  const totalTokens = usage?.total_tokens ?? 0
-  const cost = usage?.estimated_cost ?? 0
+  const totalTokens = typeof usage?.total_tokens === 'number' && Number.isFinite(usage.total_tokens) && usage.total_tokens > 0
+    ? formatCompactTokens(usage.total_tokens, false)
+    : '—'
+  const cost = typeof usage?.estimated_cost === 'number' && Number.isFinite(usage.estimated_cost) && usage.estimated_cost > 0
+    ? usage.estimated_cost
+    : null
   const currency = usage?.currency?.trim().toUpperCase()
   const costPrefix = currency === 'CNY' || currency === 'RMB' ? '¥' : '$'
+  const costLabel = cost == null ? '—' : `${costPrefix}${cost.toFixed(2)}`
   const updatedValue = siteDisplayUpdatedAt(site)
   const updatedLabel = updatedAtMode === 'absolute'
     ? formatDateTime(updatedValue, i18n.language)
@@ -236,7 +241,7 @@ function MobileSiteCard({
         <MobileMetric label={t('table.headers.priority')} value={formatRoutingPriority(site.routing_priority)} />
         <MobileMetricButton
           label={t('table.headers.usage')}
-          value={usage ? `${formatCompactTokens(totalTokens, false)} / ${costPrefix}${cost.toFixed(2)}` : '-'}
+          value={usage ? `${totalTokens} / ${costLabel}` : '-'}
           onClick={() => onOpenUsageSplit(site)}
         />
         <MobileMetricButton

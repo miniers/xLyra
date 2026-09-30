@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 export type ModelsDrawItem = {
   id: string
   displayName: string
+  copyName?: string
   upstreamName?: string
   enabled: boolean
   toggleDisabled?: boolean

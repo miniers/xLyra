@@ -92,12 +92,14 @@ export function formatSiteTypeLabel(siteType: string, siteTypes?: SiteTypeInfo[]
   if (t === 'anthropic') return 'Anthropic Claude'
   if (t === 'google_gemini') return 'Google Gemini'
   if (t === 'deepseek') return 'DeepSeek'
+  if (t === 'nvidia') return 'NVIDIA NIM'
   if (t === 'minimax') return 'MiniMax'
   if (t === 'xiaomi_mimo') return 'Xiaomi MiMo'
   if (t === 'moonshot') return 'Moonshot'
   if (t === 'kimi_code') return 'Kimi Code'
   if (t === 'zhipu') return 'GLM'
   if (t === 'glm_code') return 'GLM Code'
+  if (t === 'cline_pass') return 'ClinePass'
   return siteType
 }
 
@@ -210,7 +212,7 @@ export function formatProbeAmount(value: number) {
   }).format(value)
 }
 
-function quotaProbeCurrency(unit?: string) {
+export function quotaProbeCurrency(unit?: string) {
   const normalized = (unit ?? 'usd').trim().toUpperCase()
   if (normalized === '' || normalized === 'USD') return { prefix: '$', suffix: '' }
   if (normalized === 'CNY' || normalized === 'RMB') return { prefix: '¥', suffix: '' }
@@ -228,10 +230,16 @@ function formatProbePercent(value: number) {
 
 export function formatQuotaProbeBalance(probe: SiteQuotaProbeSummary | null | undefined) {
   if (!probe) return undefined
+  if (probe.probe_type === 'command_code') {
+    const balance = probe.entries?.find((entry) => entry.label === 'balance')
+    return typeof balance?.remaining === 'number'
+      ? `${formatProbeAmount(Math.max(0, balance.remaining))} credits`
+      : '-'
+  }
   if (probe.probe_type === 'deepseek' || probe.probe_type === 'moonshot') {
     return formatAccountBalance(probe.entries)
   }
-  if (probe.probe_type === 'kimi' || probe.probe_type === 'glm') {
+  if (probe.probe_type === 'kimi' || probe.probe_type === 'glm' || probe.probe_type === 'cline_pass') {
     return formatFiveHourWeeklyQuotaBalance(probe)
   }
   if (typeof probe.remaining_min !== 'number') {
@@ -335,8 +343,11 @@ export function siteBalanceDetails(site: Site, language?: string): SiteBalanceDe
   const probe = site.quota_probe
   if (probe) {
     const probeType = probe.probe_type
+    if (probeType === 'command_code') {
+      return sub2APIKeyQuotaDetails(probe, language)
+    }
     if (probeType === 'deepseek' || probeType === 'moonshot') return accountBalanceDetails(probe.entries)
-    if (probeType === 'kimi' || probeType === 'glm') {
+    if (probeType === 'kimi' || probeType === 'glm' || probeType === 'cline_pass') {
       return fiveHourWeeklyQuotaDetails(probe, language)
     }
     const { prefix, suffix } = quotaProbeCurrency(probe.unit)
@@ -371,6 +382,19 @@ const WINDOW_QUOTA_ENTRY_LABELS: Record<string, SiteBalanceDetailLabel> = {
   monthly: 'monthlyQuota',
 }
 
+export function commandCodeQuotaWindows(probe: SiteQuotaProbeSummary | null | undefined): SiteBalanceDetail[] {
+  if (probe?.probe_type !== 'command_code') return []
+  return WINDOW_QUOTA_ENTRY_ORDER.flatMap((key) => {
+    const entry = probe.entries?.find((item) => item.label === key)
+    if (!entry || typeof entry.remaining !== 'number' || typeof entry.limit !== 'number' || entry.limit <= 0) return []
+    return [{
+      label: WINDOW_QUOTA_ENTRY_LABELS[key],
+      value: formatProbePercent(Math.min(100, Math.max(0, entry.remaining / entry.limit * 100))),
+      valuePrefix: 'remaining' as const,
+    }]
+  })
+}
+
 function fiveHourWeeklyQuotaDetails(probe: SiteQuotaProbeSummary, language?: string): SiteBalanceDetail[] {
   const entries = probe.entries ?? []
   const ordered = WINDOW_QUOTA_ENTRY_ORDER
@@ -395,7 +419,7 @@ function fiveHourWeeklyQuotaDetails(probe: SiteQuotaProbeSummary, language?: str
 
 export function sub2APIKeyQuotaDetails(probe: SiteQuotaProbeResult | null | undefined, language?: string): SiteBalanceDetail[] {
   if (!probe?.entries?.length) return []
-  const order = ['balance', 'daily', 'weekly', 'monthly']
+  const order = ['balance', 'five_hour', 'daily', 'weekly', 'monthly']
   const entries = [...probe.entries].sort((left, right) => {
     const leftIndex = order.indexOf(left.label)
     const rightIndex = order.indexOf(right.label)
@@ -403,6 +427,7 @@ export function sub2APIKeyQuotaDetails(probe: SiteQuotaProbeResult | null | unde
   })
   const labels: Record<string, SiteBalanceDetailLabel> = {
     balance: 'accountBalance',
+    five_hour: 'fiveHourQuota',
     daily: 'dailyQuota',
     weekly: 'weeklyQuota',
     monthly: 'monthlyQuota',

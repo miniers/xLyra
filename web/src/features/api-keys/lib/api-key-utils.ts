@@ -20,6 +20,8 @@ const defaultFormValues: APIKeyFormValues = {
   modelPolicy: 'allow_all',
   siteModelIds: [],
   modelMappings: [],
+  gatewayFirstByteTimeoutMS: '',
+  gatewayModelTimeouts: {},
   imageBridgeEnabled: false,
   imageBridgeModel: '',
   imageBridgeSiteId: 'auto',
@@ -52,6 +54,8 @@ export function formValuesFromAPIKey(apiKey: DownstreamAPIKey | null): APIKeyFor
     modelPolicy,
     siteModelIds: apiKey.model_policy === 'allow_list' ? enabledSiteModelIds(apiKey) : [],
     modelMappings: apiKey.model_mappings ?? [],
+    gatewayFirstByteTimeoutMS: apiKey.gateway_config?.first_byte_timeout_ms == null ? '' : String(apiKey.gateway_config.first_byte_timeout_ms),
+    gatewayModelTimeouts: Object.fromEntries(Object.entries(apiKey.gateway_config?.models ?? {}).flatMap(([model, config]) => config.first_byte_timeout_ms == null ? [] : [[model, String(config.first_byte_timeout_ms)]])),
     imageBridgeEnabled: apiKey.image_tool_bridge?.enabled ?? false,
     imageBridgeModel: apiKey.image_tool_bridge?.model ?? '',
     imageBridgeSiteId: apiKey.image_tool_bridge?.site_id ?? 'auto',
@@ -155,6 +159,7 @@ export function toUpdateInput(
     sitePolicy,
     siteIds: sitePolicy === 'allow_list' ? enabledSiteIds(apiKey) : [],
     siteGroupIds: sitePolicy === 'allow_list' ? enabledSiteGroupIds(apiKey) : [],
+    gatewayConfig: apiKey.gateway_config ?? null,
     billingMultiplier: apiKey.billing_multiplier ?? null,
     quotaLimit: apiKey.quota_limit ?? null,
     quotaUnlimited: apiKey.quota_unlimited || apiKey.quota_limit == null,
@@ -314,6 +319,7 @@ export function formatSiteTypeLabel(siteType: string) {
   if (t === 'kimi_code') return 'Kimi Code'
   if (t === 'zhipu') return 'GLM'
   if (t === 'glm_code') return 'GLM Code'
+  if (t === 'cline_pass') return 'ClinePass'
   return siteType
 }
 

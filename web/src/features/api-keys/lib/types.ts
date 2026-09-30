@@ -11,6 +11,8 @@ export type APIKeyFormValues = {
   modelPolicy: 'allow_all' | 'allow_list'
   siteModelIds: string[]
   modelMappings: ModelRule[]
+  gatewayFirstByteTimeoutMS: string
+  gatewayModelTimeouts: Record<string, string>
   imageBridgeEnabled: boolean
   imageBridgeModel: string
   imageBridgeSiteId: string

@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { LoaderCircle, XCircle } from 'lucide-react'
+import { LoaderCircle, LockKeyhole, XCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,14 +12,20 @@ import { cn } from '@/lib/utils'
 import {
   listRouteCandidates,
   listRouteTraces,
+  getModelRoutingLock,
+  routeQueryKeys,
   selectRoute,
   type RouteCandidateItem,
   type RouteCooldown,
+  type RouteLockPolicy,
   type RouteOverviewItem,
+  type RouteScoreAdjustmentDirection,
   type RouteTrace,
 } from '@/features/routes/api/routes'
-import { getCanonicalModelMatrix, sitesQueryKeys, type Site, type SiteAPIKey, type SiteModel } from '@/features/sites/api/sites'
-import { findCurrentRouteChannel, routeChannelRowsFromMatrix, routeChannelStatus, routeChannelSwitchDisabledReason } from '@/features/routes/lib/route-channels'
+import { getCanonicalModelMatrix, sitesQueryKeys, type CanonicalModelItem, type RoutingPreference, type Site, type SiteAPIKey, type SiteModel } from '@/features/sites/api/sites'
+import { SiteModelTestSheet } from '@/features/sites/components/site-model-test-sheet'
+import { RouteSiteModelTable } from '@/features/routes/components/route-site-model-table'
+import { findCurrentRouteChannel, routeChannelRowsFromMatrix, routeChannelStatus, routeChannelSwitchDisabledReason, routeSiteModelGroupsFromChannels } from '@/features/routes/lib/route-channels'
 import { formatEndpointTypeLabel } from '@/features/models/lib/model-helpers'
 import {
   formatCooldownScope,
@@ -33,7 +39,8 @@ import {
   routeCooldownSourceLabel,
   routeCooldownTargetLabel,
 } from '@/features/routes/lib/route-format'
-import type { PendingChannelState, RouteChannelRow } from '@/features/routes/lib/types'
+import { formatRouteScore, routeModelScore, routeSiteScore } from '@/features/routes/lib/route-score'
+import type { PendingChannelState, RouteChannelRow, RouteSiteModelGroup } from '@/features/routes/lib/types'
 
 const EMPTY_TRACES: RouteTrace[] = []
 
@@ -43,6 +50,7 @@ type TracesQuery = UseQueryResult<Awaited<ReturnType<typeof listRouteTraces>>>
 
 export function RouteModelDetails({
   item,
+  canonical,
   selectionQuery,
   candidatesQuery,
   tracesQuery,
@@ -52,12 +60,28 @@ export function RouteModelDetails({
   apiKeysMap,
   cooldownsLoading,
   clearingId,
+  anomalyClearingSiteModelId,
+  scoreAdjustingSiteModelId,
+  scoreAdjustingDirection,
   pendingChannelState,
   onToggleChannel,
   onClearCooldown,
+  onClearAutomaticAnomaly,
+  onAdjustScore,
+  onRoutingPreferenceChange,
+  routingPreferencePending = false,
+  onRoutingLockChange,
+  onRoutingLockChannel,
+  onRoutingLockDelete,
+  routingLockPending = false,
+  onRoutingExpiryRescueChange,
+  routingExpiryRescuePending = false,
+  togglingSiteModelId,
+  onToggleSiteModel,
   compact = false,
 }: {
   item?: RouteOverviewItem
+  canonical?: CanonicalModelItem
   selectionQuery: SelectionQuery
   candidatesQuery: CandidatesQuery
   tracesQuery: TracesQuery
@@ -67,13 +91,38 @@ export function RouteModelDetails({
   apiKeysMap: Record<string, SiteAPIKey[]>
   cooldownsLoading: boolean
   clearingId?: string
+  anomalyClearingSiteModelId?: string
+  scoreAdjustingSiteModelId?: string
+  scoreAdjustingDirection?: RouteScoreAdjustmentDirection
   pendingChannelState?: PendingChannelState
   onToggleChannel: (row: RouteChannelRow, enabled: boolean) => void
   onClearCooldown: (item: RouteCooldown) => void
+  onClearAutomaticAnomaly: (candidate: RouteCandidateItem) => void
+  onAdjustScore: (candidate: RouteCandidateItem, direction: RouteScoreAdjustmentDirection) => void
+  onRoutingPreferenceChange?: (preference: RoutingPreference) => void
+  routingPreferencePending?: boolean
+  onRoutingLockChange?: (input: { siteModelId: string; expiresAt?: string | null; policy?: RouteLockPolicy; reason?: string }) => void
+  onRoutingLockChannel?: (siteModelId: string) => void
+  onRoutingLockDelete?: () => void
+  routingLockPending?: boolean
+  onRoutingExpiryRescueChange?: (enabled: boolean) => void
+  routingExpiryRescuePending?: boolean
+  togglingSiteModelId?: string
+  onToggleSiteModel?: (group: RouteSiteModelGroup, enabled: boolean) => void
   compact?: boolean
 }) {
   const { t } = useTranslation('routes')
   const modelId = item?.canonical_model.id || selectionQuery.data?.canonical_model.id || ''
+  const currentPreference = canonical?.routing_preference ?? selectionQuery.data?.canonical_model.routing_preference ?? 'default'
+  const currentExpiryRescueEnabled = canonical?.routing_expiry_rescue_enabled
+    ?? selectionQuery.data?.canonical_model.routing_expiry_rescue_enabled
+    ?? false
+  const routingLockQuery = useQuery({
+    queryKey: routeQueryKeys.routingLock(modelId),
+    queryFn: () => getModelRoutingLock(modelId),
+    enabled: Boolean(modelId),
+    refetchInterval: 30_000,
+  })
   const matrixQuery = useQuery({
     queryKey: [...sitesQueryKeys.all, 'routes-matrix', modelId],
     queryFn: () => getCanonicalModelMatrix(modelId),
@@ -88,6 +137,13 @@ export function RouteModelDetails({
     cooldowns,
   )
   const currentChannel = findCurrentRouteChannel(channelRows, selectionQuery.data?.selected)
+  const siteModelGroups = routeSiteModelGroupsFromChannels(channelRows, candidatesQuery.data?.items ?? [])
+  const routingLock = routingLockQuery.data
+    ? routingLockQuery.data.routing_lock
+    : selectionQuery.data?.canonical_model.routing_lock
+      ?? candidatesQuery.data?.canonical_model.routing_lock
+      ?? null
+  const [testTarget, setTestTarget] = useState<{ site: Site; model: SiteModel } | null>(null)
 
   return (
     <div className={cn('border-t border-[hsl(var(--glass-divider))] pb-4 pt-3', compact ? 'px-3' : 'px-4')}>
@@ -111,13 +167,37 @@ export function RouteModelDetails({
         <TabsContent value="routing">
           <div className="space-y-5">
             <CurrentRouteSection query={selectionQuery} currentChannel={currentChannel} t={t} />
-            <UpstreamCoverageSection
-              rows={channelRows}
-              loading={matrixQuery.isLoading || candidatesQuery.isLoading}
+            <RouteSiteModelTable
+              key={modelId}
+              groups={siteModelGroups}
+              loading={matrixQuery.isLoading}
               error={matrixQuery.isError ? matrixQuery.error.message : undefined}
+              preference={currentPreference}
+              routingPreferencePending={routingPreferencePending}
+              onRoutingPreferenceChange={onRoutingPreferenceChange}
+              rescueEnabled={currentExpiryRescueEnabled}
+              rescuePending={routingExpiryRescuePending}
+              onRescueChange={onRoutingExpiryRescueChange}
               pendingChannelState={pendingChannelState}
               onToggleChannel={onToggleChannel}
-              t={t}
+              anomalyClearingSiteModelId={anomalyClearingSiteModelId}
+              onClearAutomaticAnomaly={onClearAutomaticAnomaly}
+              scoreAdjustingSiteModelId={scoreAdjustingSiteModelId}
+              scoreAdjustingDirection={scoreAdjustingDirection}
+              onAdjustScore={onAdjustScore}
+              routingLock={routingLock}
+              routingLockPending={routingLockPending}
+              onRoutingLockChange={onRoutingLockChange}
+              onRoutingLockChannel={onRoutingLockChannel}
+              onRoutingLockDelete={onRoutingLockDelete}
+              onTestSiteModel={(group) => {
+                const site = sites.find((item) => item.id === group.siteId)
+                const model = site ? modelsMap[site.id]?.find((item) => item.id === group.siteModelId) : undefined
+                if (site && model) setTestTarget({ site, model })
+              }}
+              togglingSiteModelId={togglingSiteModelId}
+              onToggleSiteModel={onToggleSiteModel}
+              compact={compact}
             />
           </div>
         </TabsContent>
@@ -136,6 +216,14 @@ export function RouteModelDetails({
           />
         </TabsContent>
       </Tabs>
+      <SiteModelTestSheet
+        site={testTarget?.site ?? null}
+        models={testTarget ? [testTarget.model] : []}
+        modelId={testTarget?.model.id}
+        onOpenChange={(open) => {
+          if (!open) setTestTarget(null)
+        }}
+      />
     </div>
   )
 }
@@ -176,63 +264,21 @@ function CurrentRouteSection({ query, currentChannel, t }: { query: SelectionQue
   )
 }
 
-function UpstreamCoverageSection({
-  rows,
-  loading,
-  error,
-  pendingChannelState,
-  onToggleChannel,
-  t,
-}: {
-  rows: RouteChannelRow[]
-  loading: boolean
-  error?: string
-  pendingChannelState?: PendingChannelState
-  onToggleChannel: (row: RouteChannelRow, enabled: boolean) => void
-  t: TFunction
-}) {
-  return (
-    <div className="space-y-3">
-      <SectionTitle>{t('details.coverage.title')}</SectionTitle>
-      <p className="text-xs text-muted-soft">{t('details.coverage.hint')}</p>
-      {loading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-14 w-full" />
-          <Skeleton className="h-14 w-full" />
-        </div>
-      ) : error ? (
-        <SoftEmpty text={t('details.coverage.loadFailed')} />
-      ) : rows.length ? (
-        <div className="divide-y divide-[hsl(var(--glass-divider))]">
-          {rows.map((row) => {
-            return (
-              <RouteChannelLine
-                key={row.id}
-                row={row}
-                pending={pendingChannelState?.id === row.id ? pendingChannelState : undefined}
-                onToggle={(enabled) => onToggleChannel(row, enabled)}
-                t={t}
-              />
-            )
-          })}
-        </div>
-      ) : (
-        <SoftEmpty text={t('details.coverage.noConfig')} />
-      )}
-    </div>
-  )
-}
 
 function RouteChannelLine({
   row,
   pending,
   current,
+  locked = false,
+  onLock,
   onToggle,
   t,
 }: {
   row: RouteChannelRow
   pending?: PendingChannelState
   current?: boolean
+  locked?: boolean
+  onLock?: () => void
   onToggle?: (enabled: boolean) => void
   t?: TFunction
 }) {
@@ -245,6 +291,13 @@ function RouteChannelLine({
       badges={
         <>
           <Badge variant={current ? 'accent' : status.badgeVariant}>{current ? (t ? t('details.currentRoute.current') : '当前使用') : status.label}</Badge>
+          {locked ? (
+            <Badge variant="accent">
+              <LockKeyhole className="mr-1 h-3 w-3" />
+              {t ? t('details.lock.pinned') : '已置顶'}
+            </Badge>
+          ) : null}
+          {row.candidate ? <ScoreBadge candidate={row.candidate} t={t} /> : null}
           {row.apiKeyName ? (
             <Badge variant="neutral" title={row.groupName ? `${row.apiKeyName} · ${row.groupName}` : row.apiKeyName}>
               {row.apiKeyName}
@@ -262,24 +315,40 @@ function RouteChannelLine({
         formatSupportedEndpointTypes(row.candidate),
       ].filter(Boolean)}
       action={
-        onToggle ? (
-          <span className={cn('inline-flex', disabledReason && 'cursor-not-allowed')} title={disabledReason}>
-            <Switch
-              checked={checked}
-              disabled={Boolean(disabledReason)}
-              className={cn(disabledReason && 'cursor-not-allowed opacity-50')}
-              aria-label={
-                t
-                  ? t('details.coverage.switchLabel', {
-                      site: row.siteName,
-                      apiKey: row.apiKeyName ?? '',
-                      model: row.upstreamName,
-                    })
-                  : `切换 ${row.siteName} ${row.apiKeyName ?? ''} ${row.upstreamName}`
-              }
-              onCheckedChange={onToggle}
-            />
-          </span>
+        onToggle || onLock ? (
+          <div className="flex items-center gap-2">
+            {onLock ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={onLock}
+                aria-label={t ? t('details.lock.pinChannel') : `临时置顶 ${row.siteName} ${row.upstreamName}`}
+                title={t ? t('details.lock.pinChannel') : '临时置顶渠道'}
+              >
+                <LockKeyhole className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {onToggle ? (
+              <span className={cn('inline-flex', disabledReason && 'cursor-not-allowed')} title={disabledReason}>
+                <Switch
+                  checked={checked}
+                  disabled={Boolean(disabledReason)}
+                  className={cn(disabledReason && 'cursor-not-allowed opacity-50')}
+                  aria-label={
+                    t
+                      ? t('details.coverage.switchLabel', {
+                          site: row.siteName,
+                          apiKey: row.apiKeyName ?? '',
+                          model: row.upstreamName,
+                        })
+                      : `切换 ${row.siteName} ${row.apiKeyName ?? ''} ${row.upstreamName}`
+                  }
+                  onCheckedChange={onToggle}
+                />
+              </span>
+            ) : null}
+          </div>
         ) : undefined
       }
     />
@@ -298,8 +367,9 @@ function CandidateRouteLine({ candidate, current, t }: { candidate: RouteCandida
                 : '当前使用'
               : t
                 ? t('details.currentRoute.routable', { rank: candidate.rank })
-                : `可路由 #${candidate.rank}`}
+              : `可路由 #${candidate.rank}`}
           </Badge>
+          <ScoreBadge candidate={candidate} t={t} />
           {candidate.pricing.group_name ? <Badge variant="neutral">{candidate.pricing.group_name}</Badge> : null}
           {candidate.credential.name ? <Badge variant="neutral">{candidate.credential.name}</Badge> : null}
         </>
@@ -315,6 +385,23 @@ function CandidateRouteLine({ candidate, current, t }: { candidate: RouteCandida
         formatSupportedEndpointTypes(candidate),
       ].filter(Boolean)}
     />
+  )
+}
+
+function ScoreBadge({ candidate, t }: { candidate: RouteCandidateItem; t?: TFunction }) {
+  const total = formatRouteScore(candidate.score)
+  const title = t
+    ? t('details.scores.tooltip', {
+        total,
+        site: formatRouteScore(routeSiteScore(candidate)),
+        model: formatRouteScore(routeModelScore(candidate)),
+      })
+    : `总分 ${total} · 站点 ${formatRouteScore(routeSiteScore(candidate))} · 模型 ${formatRouteScore(routeModelScore(candidate))}`
+
+  return (
+    <Badge variant="neutral" title={title}>
+      {t ? t('details.scores.badge', { score: total }) : `评分 ${total}`}
+    </Badge>
   )
 }
 

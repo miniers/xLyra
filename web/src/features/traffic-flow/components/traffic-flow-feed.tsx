@@ -1,9 +1,11 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Activity, ShieldCheck } from 'lucide-react'
+import { Activity, Ban, ShieldCheck } from 'lucide-react'
 import type { TrafficFlowRequest } from '@/features/traffic-flow/api/traffic-flow'
+import { cancelTrafficFlowRequest } from '@/features/traffic-flow/api/traffic-flow'
 import { formatDuration } from '@/features/traffic-flow/lib/traffic-flow-format'
 import { modelVisual } from '@/features/traffic-flow/lib/model-visual'
 import { requestTouchesNode, type TrafficFlowNodeRef } from '@/features/traffic-flow/lib/wing-layout'
+import { toast } from '@/lib/toast'
 
 type TrafficFlowFeedProps = {
   requests: TrafficFlowRequest[]
@@ -89,6 +91,20 @@ function FlowActivity({
 }) {
   const visual = modelVisual(request.model_provider, request.model_key)
   const elapsed = formatDuration(now - Date.parse(request.started_at))
+  const [cancelling, setCancelling] = useState(false)
+  const handleCancel = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (cancelling) return
+    setCancelling(true)
+    try {
+      await cancelTrafficFlowRequest(request.request_id)
+    } catch (err) {
+      toast.error(t('inspector.cancelFailed'), { description: err instanceof Error ? err.message : undefined })
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   const className = [
     'traffic-flow-activity-item',
     selected ? 'is-selected' : '',
@@ -108,7 +124,21 @@ function FlowActivity({
           {request.upstream_site_type ? <em>{request.upstream_site_type}</em> : null}
         </span>
       </span>
-      <span className="traffic-flow-activity-phase">{t(`phase.${request.phase}`)}</span>
+      <div className="flex flex-col items-end gap-1 ml-auto shrink-0">
+        <span className="traffic-flow-activity-phase">{t(`phase.${request.phase}`)}</span>
+        {request.can_cancel ? (
+          <button
+            type="button"
+            className="traffic-flow-activity-cancel"
+            disabled={cancelling}
+            onClick={handleCancel}
+            title={t('actions.cancel')}
+          >
+            <Ban className="size-2.5" />
+            <span>{t('actions.cancel')}</span>
+          </button>
+        ) : null}
+      </div>
     </button>
   )
 }
