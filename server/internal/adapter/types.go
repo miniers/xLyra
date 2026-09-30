@@ -66,6 +66,7 @@ type Model struct {
 	UpstreamName string
 	DisplayName  string
 	Capabilities map[string]any
+	Pricing      *ModelPricing
 }
 
 type APIKey struct {
@@ -263,11 +264,14 @@ func NewRegistry() Registry {
 	registry.Register(NewZhipu())
 	registry.Register(NewGLMCode())
 	registry.Register(NewOpenAICompatible())
+	registry.Register(NewNVIDIA())
 	registry.Register(NewNewAPI())
 	registry.Register(NewXLyra())
 	registry.Register(NewGoogle())
 	registry.Register(NewGrok())
 	registry.Register(NewOpenCodeGo())
+	registry.Register(NewCommandCode())
+	registry.Register(NewClinePass())
 	return registry
 }
 

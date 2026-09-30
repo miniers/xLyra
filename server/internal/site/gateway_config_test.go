@@ -104,6 +104,80 @@ func TestMergeSiteGatewayConfigClearsDisabledResponsesTools(t *testing.T) {
 	}
 }
 
+func TestMergeSiteGatewayConfigClearsExplicitOverrides(t *testing.T) {
+	t.Parallel()
+
+	raw, err := MergeSiteGatewayConfig([]byte(`{"gateway":{"max_same_site_credential_retries":3,"first_byte_timeout_ms":1200}}`), &GatewayConfig{
+		ClearMaxSameSiteCredentialRetries: true,
+		ClearFirstByteTimeoutMS:           true,
+	})
+	if err != nil {
+		t.Fatalf("merge gateway config: %v", err)
+	}
+	cfg := GatewayConfigFromSiteMeta(raw)
+	if cfg == nil {
+		t.Fatal("expected gateway config")
+	}
+	if cfg.MaxSameSiteCredentialRetries != nil || cfg.FirstByteTimeoutMS != nil {
+		t.Fatalf("expected both overrides to be cleared, got %#v", cfg)
+	}
+
+	zero := 0
+	raw, err = MergeSiteGatewayConfig([]byte(`{"gateway":{"max_same_site_credential_retries":3,"first_byte_timeout_ms":1200}}`), &GatewayConfig{
+		MaxSameSiteCredentialRetries: &zero,
+		FirstByteTimeoutMS:           &zero,
+	})
+	if err != nil {
+		t.Fatalf("merge explicit zero gateway config: %v", err)
+	}
+	cfg = GatewayConfigFromSiteMeta(raw)
+	if cfg == nil || cfg.MaxSameSiteCredentialRetries == nil || *cfg.MaxSameSiteCredentialRetries != 0 || cfg.FirstByteTimeoutMS == nil || *cfg.FirstByteTimeoutMS != 0 {
+		t.Fatalf("expected explicit zero overrides to be preserved, got %#v", cfg)
+	}
+}
+
+func TestMergeSiteGatewayConfigClearsMaxConcurrency(t *testing.T) {
+	t.Parallel()
+
+	limit := 3
+	raw, err := MergeSiteGatewayConfig([]byte(`{"gateway":{"max_concurrency":3}}`), &GatewayConfig{
+		ClearMaxConcurrency: true,
+	})
+	if err != nil {
+		t.Fatalf("clear max concurrency: %v", err)
+	}
+	cfg := GatewayConfigFromSiteMeta(raw)
+	if cfg == nil {
+		t.Fatal("expected gateway config")
+	}
+	if cfg.MaxConcurrency != nil {
+		t.Fatalf("max concurrency = %#v, want nil after clear", cfg.MaxConcurrency)
+	}
+
+	raw, err = MergeSiteGatewayConfig(nil, &GatewayConfig{
+		MaxConcurrency: &limit,
+	})
+	if err != nil {
+		t.Fatalf("set max concurrency: %v", err)
+	}
+	cfg = GatewayConfigFromSiteMeta(raw)
+	if cfg == nil || cfg.MaxConcurrency == nil || *cfg.MaxConcurrency != limit {
+		t.Fatalf("max concurrency = %#v, want %d", cfg, limit)
+	}
+
+	raw, err = MergeSiteGatewayConfig(raw, &GatewayConfig{
+		MaxConcurrency:      &limit,
+		ClearMaxConcurrency: true,
+	})
+	if err != nil {
+		t.Fatalf("clear max concurrency with stale value: %v", err)
+	}
+	cfg = GatewayConfigFromSiteMeta(raw)
+	if cfg == nil || cfg.MaxConcurrency != nil {
+		t.Fatalf("max concurrency = %#v, want nil when clear wins", cfg)
+	}
+}
+
 func TestResponsesToolDisabledRequiresCompatibilityAndKnownTool(t *testing.T) {
 	t.Parallel()
 

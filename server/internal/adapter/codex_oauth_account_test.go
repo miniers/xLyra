@@ -117,7 +117,9 @@ func TestCodexListAPIKeysBuildsSyntheticOAuthKey(t *testing.T) {
 		AccountID:   "acct-keys",
 		Email:       " user@example.com ",
 		Metadata: map[string]any{
-			"plan_type": "team",
+			"plan_type":                         "team",
+			"chatgpt_subscription_active_start": "2026-06-01T00:00:00Z",
+			"chatgpt_subscription_active_until": "2026-07-01T00:00:00Z",
 		},
 	})
 	if err != nil {
@@ -133,6 +135,10 @@ func TestCodexListAPIKeysBuildsSyntheticOAuthKey(t *testing.T) {
 	if key.Raw["provider"] != "codex" || key.Raw["account_id"] != "acct-keys" ||
 		key.Raw["email"] != " user@example.com " || key.Raw["plan_type"] != "team" {
 		t.Fatalf("unexpected raw key payload: %#v", key.Raw)
+	}
+	if key.Raw["chatgpt_subscription_active_start"] != "2026-06-01T00:00:00Z" ||
+		key.Raw["chatgpt_subscription_active_until"] != "2026-07-01T00:00:00Z" {
+		t.Fatalf("subscription metadata missing from raw key payload: %#v", key.Raw)
 	}
 }
 

@@ -311,6 +311,9 @@ func messageContainsAuthFailureCode(message string) bool {
 func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, module adapter.Module) (RefreshResult, error) {
 	auth, err := s.SystemAuth(ctx, item.ID)
 	if err != nil {
+		if normalizeSiteType(item.SiteType) == "newapi" {
+			s.markAPIKeyMultiplierProbeIncomplete(ctx, item.ID, "system auth is unavailable")
+		}
 		return s.markRefreshFailed(ctx, item, err.Error())
 	}
 
@@ -326,6 +329,9 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 	now := time.Now()
 	freshKeys, err := keyInventoryFetcher.ListAPIKeys(ctx, s.toAdapterSite(ctx, item), auth)
 	if err != nil {
+		if normalizeSiteType(item.SiteType) == "newapi" {
+			s.markAPIKeyMultiplierProbeIncomplete(ctx, item.ID, "api key inventory is unavailable")
+		}
 		return s.markRefreshFailed(ctx, item, err.Error())
 	}
 
@@ -418,9 +424,13 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 				credentialMeta["enabled"] = false
 				credentialMeta[credentialMetaAutoDisabledByRefresh] = true
 				credential.Meta = store.JSON(jsonBytes(credentialMeta))
-				if _, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta); metaErr != nil {
+				updatedCredential, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta)
+				if metaErr != nil {
 					return s.markRefreshFailed(ctx, item, fmt.Sprintf("mark api key disabled after auth failure: %v", metaErr))
 				}
+				credential = updatedCredential
+				preparedKey.credential = updatedCredential
+				preparedKeys[index].credential = updatedCredential
 			} else {
 				recoverableKeyErrorMessage = lastKeyErrorMessage
 			}
@@ -430,9 +440,13 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 			credentialMeta["enabled"] = true
 			delete(credentialMeta, credentialMetaAutoDisabledByRefresh)
 			credential.Meta = store.JSON(jsonBytes(credentialMeta))
-			if _, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta); metaErr != nil {
+			updatedCredential, metaErr := updateCredentialMeta(ctx, credentialRepo, credential.ID, credentialMeta)
+			if metaErr != nil {
 				return s.markRefreshFailed(ctx, item, fmt.Sprintf("restore api key after auth recovery: %v", metaErr))
 			}
+			credential = updatedCredential
+			preparedKey.credential = updatedCredential
+			preparedKeys[index].credential = updatedCredential
 		}
 		if preparedKey.enabled && refreshKeySummaryValidated(preparedKey, summary) {
 			enabledSummaryCount++
@@ -486,6 +500,13 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 		refreshedKeys = append(refreshedKeys, refreshed)
 	}
 	if resolvedUsableKeyCount > 0 && enabledSummaryCount == 0 {
+		if normalizeSiteType(item.SiteType) == "newapi" {
+			pricingSnapshot := adapter.PricingSnapshot{}
+			if parser, ok := adapter.AsPricingParser(module); ok && userSummary.Pricing != nil {
+				pricingSnapshot = parser.ParsePricing(userSummary.Pricing)
+			}
+			s.probeNewAPIKeyMultipliersFromSnapshot(ctx, preparedKeys, pricingSnapshot)
+		}
 		message := lastKeyErrorMessage
 		if recoverableKeyErrorMessage != "" || permanentKeyErrors < keyErrors {
 			message = recoverableKeyErrorMessage
@@ -536,6 +557,24 @@ func (s *Service) refreshCapabilityState(ctx context.Context, item store.Site, m
 		keyMessages = append(keyMessages, "site did not expose raw api key values; api key summary sync skipped")
 	}
 	pricingSnapshot := adapter.PricingSnapshot{}
+	if userSummary.Pricing != nil {
+		if parser, ok := adapter.AsPricingParser(module); ok {
+			pricingSnapshot = parser.ParsePricing(userSummary.Pricing)
+		}
+	}
+	if len(pricingSnapshot.Items) == 0 {
+		if pricingFetcher, ok := adapter.AsPricingFetcher(module); ok {
+			if snapshot, err := pricingFetcher.FetchPricing(ctx, s.toAdapterSite(ctx, item), auth); err == nil {
+				pricingSnapshot = snapshot
+			} else {
+				syncStatus = "partial"
+				siteMessages = append(siteMessages, err.Error())
+			}
+		}
+	}
+	if normalizeSiteType(item.SiteType) == "newapi" {
+		s.probeNewAPIKeyMultipliersFromSnapshot(ctx, preparedKeys, pricingSnapshot)
+	}
 	if err := s.retireSyncedPricingRows(ctx, item, module); err != nil {
 		syncStatus = "partial"
 		siteMessages = append(siteMessages, err.Error())
@@ -661,12 +700,28 @@ func oauthMetadataFromUserSummary(summary adapter.UserSummary) map[string]any {
 		return nil
 	}
 	result := map[string]any{}
-	for _, key := range []string{"project_id", "subscription_tier", "plan_type"} {
-		if value := user[key]; value != nil && strings.TrimSpace(anyString(value)) != "" {
+	for _, key := range []string{
+		"project_id",
+		"subscription_tier",
+		"plan_type",
+		"chatgpt_subscription_active_start",
+		"chatgpt_subscription_active_until",
+	} {
+		if value := user[key]; oauthMetadataValuePresent(key, value) {
 			result[key] = value
 		}
 	}
 	return result
+}
+
+func oauthMetadataValuePresent(key string, value any) bool {
+	if value == nil {
+		return false
+	}
+	if key == "chatgpt_subscription_active_start" || key == "chatgpt_subscription_active_until" {
+		return true
+	}
+	return strings.TrimSpace(anyString(value)) != ""
 }
 
 func modelSnapshots(models []store.SiteModel) []map[string]any {
@@ -1122,6 +1177,14 @@ func (s *Service) RefreshSingleAPIKey(ctx context.Context, siteID uuid.UUID, cre
 	if len(credential.Meta) > 0 {
 		_ = json.Unmarshal(credential.Meta, &meta)
 	}
+	if normalizeSiteType(site.SiteType) == "newapi" {
+		probe := s.probeNewAPIKeyMultiplier(ctx, site, module, credential, meta)
+		if updated, probeErr := s.updateAPIKeyMultiplierProbe(ctx, credential, meta, probe); probeErr == nil {
+			credential = updated
+			meta = map[string]any{}
+			_ = json.Unmarshal(updated.Meta, &meta)
+		}
+	}
 	apiKey := strings.TrimSpace(secretFromCredentialMeta(secret, meta))
 	if strings.EqualFold(strings.TrimSpace(site.SiteType), "grok") {
 		apiKey, err = s.oauth.EnsureGrokAccessToken(ctx, credential.ID)
@@ -1236,6 +1299,9 @@ func (s *Service) RefreshSingleAPIKey(ctx context.Context, siteID uuid.UUID, cre
 	}
 
 	siteModels, _ := s.syncSiteModelsFromAPIKeyState(ctx, siteID, site.SiteType, site.BaseURL)
+	if QuotaProbeTypeFromConfig(GatewayConfigFromSiteMeta(site.Meta)) == QuotaProbeTypeSub2API {
+		s.runQuotaProbes(ctx, site)
+	}
 
 	return RefreshSingleAPIKeyResult{
 		State:      state,
@@ -1272,6 +1338,7 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 
 	activeModelNames := map[string]struct{}{}
 	rawCapabilitiesByModel := map[string]store.JSON{}
+	displayNamesByModel := map[string]string{}
 	for _, akm := range allAPIKeyModels {
 		if !akm.Available || !akm.Enabled {
 			continue
@@ -1283,6 +1350,9 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 		activeModelNames[akm.UpstreamModelName] = struct{}{}
 		if _, exists := rawCapabilitiesByModel[akm.UpstreamModelName]; !exists {
 			rawCapabilitiesByModel[akm.UpstreamModelName] = akm.Raw
+		}
+		if _, exists := displayNamesByModel[akm.UpstreamModelName]; !exists && strings.TrimSpace(akm.DisplayName) != "" {
+			displayNamesByModel[akm.UpstreamModelName] = akm.DisplayName
 		}
 	}
 
@@ -1310,6 +1380,14 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 			if marshalErr != nil {
 				return nil, fmt.Errorf("marshal site model capabilities: %w", marshalErr)
 			}
+		} else if strings.EqualFold(strings.TrimSpace(siteType), "nvidia") {
+			if len(rawCapabilitiesByModel[name]) > 0 {
+				capabilities = rawCapabilitiesByModel[name]
+			}
+		}
+		displayName := name
+		if strings.EqualFold(strings.TrimSpace(siteType), "nvidia") {
+			displayName = defaultString(displayNamesByModel[name], name)
 		}
 		var siteModel store.SiteModel
 		persist := func(db store.Tx) error {
@@ -1317,7 +1395,7 @@ func (s *Service) syncSiteModelsFromAPIKeyState(ctx context.Context, siteID uuid
 			siteModel, err = store.NewSiteModelRepository(db).Upsert(ctx, store.UpsertSiteModelParams{
 				SiteID:       siteID,
 				UpstreamName: name,
-				DisplayName:  name,
+				DisplayName:  displayName,
 				Capabilities: capabilities,
 				Status:       "active",
 			})
@@ -1477,6 +1555,11 @@ func apiKeyCredentialMeta(apiKey adapter.APIKey) map[string]any {
 		"model_limits_enabled",
 		"model_limits",
 		"expired_time",
+		"oauth_subscription_active_start",
+		"subscription_expires_at",
+		"chatgpt_subscription_active_start",
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
 		"group",
 	} {
 		if value, ok := apiKey.Raw[key]; ok {
@@ -1651,6 +1734,9 @@ func mergeAPIKeyRefreshMeta(existing map[string]any, upstream map[string]any) ma
 		"manually_completed",
 		"manual_secret_invalidated",
 		"manual_secret_invalidated_at",
+		upstreamCostMultiplierSourceMetaKey,
+		upstreamCostMultiplierProbeMetaKey,
+		upstreamCostMultiplierHistoryMetaKey,
 	} {
 		if value, ok := existing[key]; ok {
 			merged[key] = value

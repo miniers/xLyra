@@ -19,13 +19,15 @@ import (
 
 func TestNormalizeQuotaProbeType(t *testing.T) {
 	for input, expected := range map[string]string{
-		"":        "",
-		"none":    "",
-		"sub2api": QuotaProbeTypeSub2API,
-		"newapi":  QuotaProbeTypeNewAPI,
-		"xlyra":   QuotaProbeTypeXLyra,
-		"kimi":    QuotaProbeTypeKimi,
-		"glm":     QuotaProbeTypeGLM,
+		"":             "",
+		"none":         "",
+		"sub2api":      QuotaProbeTypeSub2API,
+		"newapi":       QuotaProbeTypeNewAPI,
+		"xlyra":        QuotaProbeTypeXLyra,
+		"kimi":         QuotaProbeTypeKimi,
+		"glm":          QuotaProbeTypeGLM,
+		"command_code": QuotaProbeTypeCommandCode,
+		"cline_pass":   QuotaProbeTypeClinePass,
 	} {
 		value, err := NormalizeQuotaProbeType(input)
 		if err != nil || value != expected {
@@ -876,8 +878,14 @@ func TestDefaultQuotaProbeTypeForSite(t *testing.T) {
 	if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: "glm_code"}); got != QuotaProbeTypeGLM {
 		t.Fatalf("glm_code default probe = %q, want %q", got, QuotaProbeTypeGLM)
 	}
+	if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: "command_code"}); got != QuotaProbeTypeCommandCode {
+		t.Fatalf("command_code default probe = %q, want %q", got, QuotaProbeTypeCommandCode)
+	}
 	if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: "moonshot"}); got != QuotaProbeTypeMoonshot {
 		t.Fatalf("moonshot default probe = %q, want %q", got, QuotaProbeTypeMoonshot)
+	}
+	if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: "cline_pass"}); got != QuotaProbeTypeClinePass {
+		t.Fatalf("cline_pass default probe = %q, want %q", got, QuotaProbeTypeClinePass)
 	}
 
 	official := []struct {
@@ -889,8 +897,11 @@ func TestDefaultQuotaProbeTypeForSite(t *testing.T) {
 		{"kimi_code", "https://api.kimi.com/coding/v1", QuotaProbeTypeKimi},
 		{"glm_code", "https://open.bigmodel.cn/api/coding/paas/v4", QuotaProbeTypeGLM},
 		{"glm_code", "https://api.z.ai/api/coding/paas/v4", QuotaProbeTypeGLM},
+		{"command_code", "https://api.commandcode.ai", QuotaProbeTypeCommandCode},
 		{"moonshot", "https://api.moonshot.cn", QuotaProbeTypeMoonshot},
 		{"moonshot", "https://api.moonshot.cn/v1", QuotaProbeTypeMoonshot},
+		{"cline_pass", "https://api.cline.bot", QuotaProbeTypeClinePass},
+		{"cline_pass", "https://api.cline.bot/api/v1", QuotaProbeTypeClinePass},
 	}
 	for _, tc := range official {
 		if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: tc.siteType, BaseURL: tc.baseURL}); got != tc.want {
@@ -907,8 +918,11 @@ func TestDefaultQuotaProbeTypeForSite(t *testing.T) {
 		{"glm_code", "https://relay.example.com/api/coding/paas/v4"},
 		{"glm_code", "https://bigmodel.cn.evil.example.com/api/coding/paas/v4"},
 		{"glm_code", "not a url"},
+		{"command_code", "https://relay.example.com"},
 		{"moonshot", "https://relay.example.com/v1"},
 		{"moonshot", "https://moonshot.cn.evil.example.com"},
+		{"cline_pass", "https://relay.example.com"},
+		{"cline_pass", "https://cline.bot.evil.example.com"},
 	}
 	for _, tc := range thirdParty {
 		if got := defaultQuotaProbeTypeForSite(store.Site{SiteType: tc.siteType, BaseURL: tc.baseURL}); got != "" {
@@ -1370,6 +1384,204 @@ func TestSyncCodingPlanQuotaCooldownSkipsFailedProbe(t *testing.T) {
 	}
 }
 
+func TestProbeCommandCodeQuotaSuccess(t *testing.T) {
+	t.Parallel()
+
+	resetTimeMs := time.Now().Add(2 * time.Hour).UnixMilli()
+	subEndMs := time.Now().Add(15 * 24 * time.Hour).UnixMilli()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer cc-test-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("User-Agent") != "cli" || r.Header.Get("x-command-code-version") != "1.53.1" {
+			t.Errorf("missing or incorrect CLI headers: UA=%s, version=%s", r.Header.Get("User-Agent"), r.Header.Get("x-command-code-version"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/alpha/whoami":
+			_, _ = w.Write([]byte(`{
+				"user": {"id": "u_42", "name": "Alice", "userName": "alice"},
+				"org": {"id": "org_99"}
+			}`))
+		case "/alpha/billing/credits":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"credits": {
+					"monthlyCredits": 18.5,
+					"purchasedCredits": 5.0,
+					"freeCredits": 2.0,
+					"planId": "individual-goat",
+					"belowThreshold": false
+				},
+				"windowLimits": {
+					"limited": false,
+					"exceeded": null,
+					"fiveHour": {
+						"used": 1.23,
+						"cap": 5.0,
+						"exceeded": false,
+						"resetAt": %d
+					},
+					"weekly": {
+						"used": 12.5,
+						"cap": 40.0,
+						"exceeded": false,
+						"resetAt": %d
+					}
+				}
+			}`, resetTimeMs, resetTimeMs)))
+		case "/alpha/billing/subscriptions":
+			if r.URL.Query().Get("orgId") != "org_99" {
+				t.Errorf("expected orgId=org_99 in subscriptions query, got %q", r.URL.Query().Get("orgId"))
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"success": true,
+				"data": {
+					"planId": "individual-goat",
+					"status": "active",
+					"currentPeriodEnd": %d
+				}
+			}`, subEndMs)))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeCommandCode, server.URL, "cc-test-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok, got error: %s", result.Error)
+	}
+	if result.Plan != "GOAT" {
+		t.Fatalf("plan = %q, want GOAT", result.Plan)
+	}
+	if result.ExpiresAt == nil {
+		t.Fatal("expected non-nil ExpiresAt")
+	}
+
+	if len(result.Entries) != 3 {
+		t.Fatalf("len(entries) = %d, want 3", len(result.Entries))
+	}
+
+	var fiveHour, weekly, balance *QuotaProbeEntry
+	for i := range result.Entries {
+		e := &result.Entries[i]
+		switch e.Label {
+		case "five_hour":
+			fiveHour = e
+		case "weekly":
+			weekly = e
+		case "balance":
+			balance = e
+		}
+	}
+
+	if fiveHour == nil || fiveHour.Remaining == nil || *fiveHour.Remaining != 3.77 {
+		t.Fatalf("fiveHour = %+v, want remaining=3.77", fiveHour)
+	}
+	if weekly == nil || weekly.Remaining == nil || *weekly.Remaining != 27.5 {
+		t.Fatalf("weekly = %+v, want remaining=27.5", weekly)
+	}
+	if balance == nil || balance.Remaining == nil || *balance.Remaining != 25.5 {
+		t.Fatalf("balance = %+v, want remaining=25.5", balance)
+	}
+	if balance.Limit == nil || *balance.Limit != 70 {
+		t.Fatalf("balance limit = %+v, want 70", balance.Limit)
+	}
+	if result.Kind != "token_plan" || fiveHour.Unit != "credits" || weekly.Unit != "credits" {
+		t.Fatalf("quota units/kind: %+v", result)
+	}
+	if fiveHour.Limit == nil || *fiveHour.Limit != 5 || weekly.Limit == nil || *weekly.Limit != 40 {
+		t.Fatalf("window limits missing: %+v / %+v", fiveHour, weekly)
+	}
+	if fiveHour.ResetAt == nil || weekly.ResetAt == nil {
+		t.Fatal("window reset times missing")
+	}
+}
+
+func TestParseCommandCodeTimestampPreservesRFC3339Strings(t *testing.T) {
+	got := parseCommandCodeTimestamp("2026-09-25T00:33:00Z")
+	if got == nil || *got != "2026-09-25T00:33:00Z" {
+		t.Fatalf("timestamp = %v, want RFC3339 value", got)
+	}
+}
+
+func TestProbeCommandCodeQuotaExhaustedWindow(t *testing.T) {
+	t.Parallel()
+
+	futureReset := time.Now().Add(45 * time.Minute)
+	resetTimeMs := futureReset.UnixMilli()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/alpha/whoami":
+			_, _ = w.Write([]byte(`{"user": {"id": "u_1"}}`))
+		case "/alpha/billing/credits":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"credits": {
+					"monthlyCredits": 10.0,
+					"purchasedCredits": 0,
+					"freeCredits": 0,
+					"planId": "individual-pro"
+				},
+				"windowLimits": {
+					"limited": true,
+					"exceeded": "fiveHour",
+					"fiveHour": {
+						"used": 5.0,
+						"cap": 5.0,
+						"exceeded": true,
+						"resetAt": %d
+					},
+					"weekly": {
+						"used": 10.0,
+						"cap": 30.0,
+						"exceeded": false,
+						"resetAt": %d
+					}
+				}
+			}`, resetTimeMs, resetTimeMs)))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeCommandCode, server.URL, "cc-test-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok, got %v", result)
+	}
+
+	deadline, exhaustedWindows := codingPlanQuotaCooldownDeadline(result, time.Now())
+	if len(exhaustedWindows) != 1 || exhaustedWindows[0] != "five_hour" {
+		t.Fatalf("exhausted windows = %v, want [five_hour]", exhaustedWindows)
+	}
+	if deadline.Sub(futureReset).Abs() > 2*time.Second {
+		t.Fatalf("deadline = %v, want ~%v", deadline, futureReset)
+	}
+}
+
+func TestProbeCommandCodeQuotaAuthFailure(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": "invalid_api_key"}`))
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeCommandCode, server.URL, "bad-key")
+	if result.Status != "error" {
+		t.Fatalf("status = %q, want error", result.Status)
+	}
+	if !strings.Contains(result.Error, "401") {
+		t.Fatalf("error = %q, want 401 mention", result.Error)
+	}
+}
+
 // 2026-09 实测 api.deepseek.com/user/balance 响应：金额字段为字符串，CNY 单币种。
 const deepSeekBalanceFixture = `{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"47.44","granted_balance":"0.00","topped_up_balance":"47.44"}]}`
 
@@ -1635,3 +1847,126 @@ func TestQuotaProbeMoonshotBalanceURL(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeClinePassQuotaSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-cline-key" {
+			http.Error(w, `{"error":{"message":"Unauthorized"}}`, http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path != "/api/v1/users/me/plan/usage-limits" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"limits": []map[string]any{
+					{
+						"type":        "five_hour",
+						"percentUsed": 35.5,
+						"resetsAt":    "2026-09-30T15:00:00Z",
+					},
+					{
+						"type":        "weekly",
+						"percentUsed": 20.0,
+						"resetsAt":    "2026-10-05T00:00:00Z",
+					},
+					{
+						"type":        "monthly",
+						"percentUsed": 10.0,
+						"resetsAt":    "2026-11-01T00:00:00Z",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeClinePass, server.URL, "test-cline-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok status, got %+v", result)
+	}
+	if result.Plan != "ClinePass" {
+		t.Fatalf("result.Plan = %q, want ClinePass", result.Plan)
+	}
+	if result.Kind != "token_plan" {
+		t.Fatalf("result.Kind = %q, want token_plan", result.Kind)
+	}
+	if len(result.Entries) != 3 {
+		t.Fatalf("len(result.Entries) = %d, want 3", len(result.Entries))
+	}
+
+	fiveHour := result.Entries[0]
+	if fiveHour.Label != "five_hour" || *fiveHour.Used != 35.5 || *fiveHour.Remaining != 64.5 || fiveHour.Unit != "%" {
+		t.Fatalf("unexpected five_hour entry: %+v", fiveHour)
+	}
+	if fiveHour.ResetAt == nil || *fiveHour.ResetAt != "2026-09-30T15:00:00Z" {
+		t.Fatalf("unexpected five_hour ResetAt: %v", fiveHour.ResetAt)
+	}
+
+	summary, ok := quotaProbeSummaryEntry(QuotaProbeTypeClinePass, result)
+	if !ok {
+		t.Fatal("expected quotaProbeSummaryEntry to succeed")
+	}
+	if summary.Label != "five_hour" || *summary.Remaining != 64.5 {
+		t.Fatalf("unexpected summary entry: %+v", summary)
+	}
+}
+
+func TestProbeClinePassQuotaCooldownOnExhausted(t *testing.T) {
+	futureReset := "2026-10-01T00:00:00Z"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"limits": []map[string]any{
+					{
+						"type":        "five_hour",
+						"percentUsed": 100.0,
+						"resetsAt":    futureReset,
+					},
+					{
+						"type":        "weekly",
+						"percentUsed": 50.0,
+						"resetsAt":    "2026-10-05T00:00:00Z",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeClinePass, server.URL, "test-cline-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok status, got %+v", result)
+	}
+
+	now, _ := time.Parse(time.RFC3339, "2026-09-30T12:00:00Z")
+	deadline, windows := codingPlanQuotaCooldownDeadline(result, now)
+	if deadline.IsZero() {
+		t.Fatal("expected non-zero deadline for exhausted 5-hour window")
+	}
+	if len(windows) != 1 || windows[0] != "five_hour" {
+		t.Fatalf("windows = %v, want ['five_hour']", windows)
+	}
+}
+
+func TestQuotaProbeClinePassLimitsURL(t *testing.T) {
+	cases := []struct {
+		baseURL string
+		want    string
+	}{
+		{"", "https://api.cline.bot/api/v1/users/me/plan/usage-limits"},
+		{"https://api.cline.bot", "https://api.cline.bot/api/v1/users/me/plan/usage-limits"},
+		{"https://api.cline.bot/", "https://api.cline.bot/api/v1/users/me/plan/usage-limits"},
+		{"https://api.cline.bot/api/v1", "https://api.cline.bot/api/v1/users/me/plan/usage-limits"},
+		{"https://api.cline.bot/v1", "https://api.cline.bot/api/v1/users/me/plan/usage-limits"},
+	}
+	for _, tc := range cases {
+		if got := quotaProbeClinePassLimitsURL(tc.baseURL); got != tc.want {
+			t.Fatalf("quotaProbeClinePassLimitsURL(%q) = %q, want %q", tc.baseURL, got, tc.want)
+		}
+	}
+}
+

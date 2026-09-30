@@ -46,18 +46,18 @@ type Service struct {
 }
 
 type CreateSiteParams struct {
-	Name            string
-	Slug            string
-	SiteType        string
-	BaseURL         string
-	Enabled         bool
-	RoutingPriority *float64
-	GatewayConfig   *GatewayConfig
-	ProxyID         *string
-	RequestHeaders  map[string]string
-	Credential      *CredentialInput
-	Credentials     []CredentialInput
-	QueueSync       bool
+	Name                     string
+	Slug                     string
+	SiteType                 string
+	BaseURL                  string
+	Enabled                  bool
+	RoutingPriority          *float64
+	GatewayConfig            *GatewayConfig
+	ProxyID                  *string
+	RequestHeaders           map[string]string
+	Credential               *CredentialInput
+	Credentials              []CredentialInput
+	QueueSync                bool
 }
 
 type UpdateSiteParams struct {
@@ -77,12 +77,13 @@ type UpdateSiteParams struct {
 }
 
 type CredentialInput struct {
-	Type                   string
-	Secret                 string
-	Meta                   map[string]any
-	DisplayName            *string
-	RoutingPriority        *float64
-	UpstreamCostMultiplier *float64
+	Type                         string
+	Secret                       string
+	Meta                         map[string]any
+	DisplayName                  *string
+	RoutingPriority              *float64
+	UpstreamCostMultiplier       *float64
+	UpstreamCostMultiplierSource *string
 }
 
 type SyncResult struct {
@@ -852,7 +853,17 @@ func (s *Service) AttachOAuthConnection(ctx context.Context, siteID uuid.UUID, p
 	if len(item.Meta) > 0 {
 		_ = json.Unmarshal(item.Meta, &meta)
 	}
-	for _, key := range []string{"oauth_provider", "oauth_connection_id", "oauth_account_id", "oauth_email", "oauth_plan_type", "oauth_subscription_tier", "oauth_project_id"} {
+	for _, key := range []string{
+		"oauth_provider",
+		"oauth_connection_id",
+		"oauth_account_id",
+		"oauth_email",
+		"oauth_plan_type",
+		"oauth_subscription_tier",
+		"oauth_project_id",
+		"oauth_subscription_active_start",
+		"oauth_subscription_active_until",
+	} {
 		delete(meta, key)
 	}
 	meta["oauth_provider"] = strings.TrimSpace(provider)
@@ -872,20 +883,28 @@ func (s *Service) SetCredential(ctx context.Context, siteID uuid.UUID, input Cre
 }
 
 type CreateAPIKeyInput struct {
-	APIKey                 string
-	DisplayName            string
-	RoutingPriority        *float64
-	UpstreamCostMultiplier *float64
-	CacheDomain            string
-	QueueSync              bool
+	APIKey                       string
+	DisplayName                  string
+	RoutingPriority              *float64
+	UpstreamCostMultiplier       *float64
+	UpstreamCostMultiplierSource *string
+	CacheDomain                  string
+	QueueSync                    bool
+	RPMLimit                     *int64
+	RPDLimit                     *int64
+	ResetTimezone                *string
 }
 
 type UpdateAPIKeyInput struct {
-	Enabled                *bool
-	DisplayName            *string
-	RoutingPriority        *float64
-	UpstreamCostMultiplier *float64
-	CacheDomain            *string
+	Enabled                      *bool
+	DisplayName                  *string
+	RoutingPriority              *float64
+	UpstreamCostMultiplier       *float64
+	UpstreamCostMultiplierSource *string
+	CacheDomain                  *string
+	RPMLimit                     *int64
+	RPDLimit                     *int64
+	ResetTimezone                *string
 }
 
 func (s *Service) CreateAPIKey(ctx context.Context, siteID uuid.UUID, input CreateAPIKeyInput) (APIKeyCredential, error) {
@@ -908,6 +927,17 @@ func (s *Service) CreateAPIKey(ctx context.Context, siteID uuid.UUID, input Crea
 	if err != nil {
 		return APIKeyCredential{}, err
 	}
+	costMultiplierSourceValue := ""
+	if input.UpstreamCostMultiplierSource != nil {
+		costMultiplierSourceValue = *input.UpstreamCostMultiplierSource
+	}
+	costMultiplierSource, err := normalizeUpstreamCostMultiplierSource(costMultiplierSourceValue)
+	if err != nil {
+		return APIKeyCredential{}, err
+	}
+	if costMultiplierSource == upstreamCostMultiplierSourceAuto && input.UpstreamCostMultiplier != nil {
+		return APIKeyCredential{}, fmt.Errorf("upstream_cost_multiplier cannot be set when source is auto")
+	}
 	cacheDomain, err := normalizeCacheDomain(input.CacheDomain)
 	if err != nil {
 		return APIKeyCredential{}, err
@@ -920,7 +950,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, siteID uuid.UUID, input Crea
 	if !SupportsMultipleAPIKeys(site.SiteType) {
 		return APIKeyCredential{}, fmt.Errorf("site type %q does not support multiple api keys", site.SiteType)
 	}
-	if input.UpstreamCostMultiplier != nil && !SupportsAPIKeyCostMultiplier(site.SiteType) {
+	if (input.UpstreamCostMultiplier != nil || input.UpstreamCostMultiplierSource != nil) && !SupportsAPIKeyCostMultiplier(site.SiteType) {
 		return APIKeyCredential{}, fmt.Errorf("site type %q does not support api key cost multiplier", site.SiteType)
 	}
 
@@ -942,13 +972,16 @@ func (s *Service) CreateAPIKey(ctx context.Context, siteID uuid.UUID, input Crea
 				return err
 			}
 		}
+		meta := map[string]any{
+			"enabled":                           true,
+			"cache_domain":                      cacheDomain,
+			upstreamCostMultiplierSourceMetaKey: costMultiplierSource,
+		}
+		store.SetSiteCredentialRateLimitMeta(meta, input.RPMLimit, input.RPDLimit, input.ResetTimezone)
 		credential, err := s.saveCredentialInput(ctx, credentialRepo, siteID, CredentialInput{
 			Type:   scopedAPIKeyCredentialType(),
 			Secret: apiKey,
-			Meta: map[string]any{
-				"enabled":      true,
-				"cache_domain": cacheDomain,
-			},
+			Meta:   meta,
 		})
 		if err != nil {
 			return err
@@ -1070,6 +1103,18 @@ func (s *Service) saveCredentialInput(ctx context.Context, repo store.SiteCreden
 	meta := []byte(`{}`)
 	if len(input.Meta) > 0 {
 		encoded, err := json.Marshal(input.Meta)
+		if err != nil {
+			return store.SiteCredential{}, fmt.Errorf("marshal credential meta: %w", err)
+		}
+		meta = encoded
+	}
+	if input.UpstreamCostMultiplierSource != nil {
+		metadata := map[string]any{}
+		if err := json.Unmarshal(meta, &metadata); err != nil {
+			return store.SiteCredential{}, fmt.Errorf("decode credential meta: %w", err)
+		}
+		metadata[upstreamCostMultiplierSourceMetaKey] = *input.UpstreamCostMultiplierSource
+		encoded, err := json.Marshal(metadata)
 		if err != nil {
 			return store.SiteCredential{}, fmt.Errorf("marshal credential meta: %w", err)
 		}
@@ -1756,10 +1801,10 @@ func (s *Service) UpdateAPIKey(ctx context.Context, siteID uuid.UUID, credential
 	if err != nil {
 		return APIKeyCredential{}, err
 	}
-	if !SupportsMultipleAPIKeys(site.SiteType) && (input.DisplayName != nil || input.RoutingPriority != nil || input.UpstreamCostMultiplier != nil || input.CacheDomain != nil) {
+	if !SupportsMultipleAPIKeys(site.SiteType) && (input.DisplayName != nil || input.RoutingPriority != nil || input.CacheDomain != nil) {
 		return APIKeyCredential{}, fmt.Errorf("site type %s does not support api key routing configuration", site.SiteType)
 	}
-	if input.UpstreamCostMultiplier != nil && !SupportsAPIKeyCostMultiplier(site.SiteType) {
+	if (input.UpstreamCostMultiplier != nil || input.UpstreamCostMultiplierSource != nil) && !SupportsAPIKeyCostMultiplier(site.SiteType) {
 		return APIKeyCredential{}, fmt.Errorf("site type %s does not support api key cost multiplier", site.SiteType)
 	}
 	credential, meta, err := s.apiKeyCredentialMeta(ctx, siteID, credentialID)
@@ -1787,6 +1832,27 @@ func (s *Service) UpdateAPIKey(ctx context.Context, siteID uuid.UUID, credential
 			return APIKeyCredential{}, err
 		}
 		params.UpstreamCostMultiplier = &value
+		appendAPIKeyCostMultiplierChange(meta, store.SiteCredentialUpstreamCostMultiplier(credential), value, upstreamCostMultiplierSourceManual, time.Now())
+	}
+	currentSource := upstreamCostMultiplierSource(meta)
+	requestedSource := currentSource
+	sourceSpecified := input.UpstreamCostMultiplierSource != nil
+	if sourceSpecified {
+		requestedSource, err = normalizeUpstreamCostMultiplierSource(*input.UpstreamCostMultiplierSource)
+		if err != nil {
+			return APIKeyCredential{}, err
+		}
+	}
+	if input.UpstreamCostMultiplier != nil {
+		if sourceSpecified && requestedSource == upstreamCostMultiplierSourceAuto {
+			return APIKeyCredential{}, fmt.Errorf("upstream_cost_multiplier cannot be set when source is auto")
+		}
+		requestedSource = upstreamCostMultiplierSourceManual
+		sourceSpecified = true
+	}
+	queueAutoRefresh := sourceSpecified && requestedSource == upstreamCostMultiplierSourceAuto && currentSource != upstreamCostMultiplierSourceAuto
+	if sourceSpecified {
+		meta[upstreamCostMultiplierSourceMetaKey] = requestedSource
 	}
 	if input.CacheDomain != nil {
 		value, err := normalizeCacheDomain(*input.CacheDomain)
@@ -1804,9 +1870,6 @@ func (s *Service) UpdateAPIKey(ctx context.Context, siteID uuid.UUID, credential
 				return err
 			}
 		}
-		if input.Enabled == nil && input.CacheDomain == nil {
-			return nil
-		}
 		if input.Enabled != nil {
 			meta["enabled"] = *input.Enabled
 		}
@@ -1817,14 +1880,34 @@ func (s *Service) UpdateAPIKey(ctx context.Context, siteID uuid.UUID, credential
 				meta["cache_domain"] = *input.CacheDomain
 			}
 		}
-		credential, err = repo.UpdateMeta(ctx, credential.ID, store.JSON(jsonBytes(meta)))
-		if err != nil {
-			return err
+		rateLimitSpecified := input.RPMLimit != nil || input.RPDLimit != nil || input.ResetTimezone != nil
+		if rateLimitSpecified {
+			store.SetSiteCredentialRateLimitMeta(meta, input.RPMLimit, input.RPDLimit, input.ResetTimezone)
+		}
+		if input.Enabled != nil || input.CacheDomain != nil || sourceSpecified || rateLimitSpecified {
+			credential, err = repo.UpdateMeta(ctx, credential.ID, store.JSON(jsonBytes(meta)))
+			if err != nil {
+				return err
+			}
 		}
 		if input.Enabled != nil {
 			_, stateErr := store.NewSiteAPIKeyStateRepository(tx).UpdateEnabled(ctx, credential.ID, *input.Enabled)
 			if stateErr != nil && !errors.Is(stateErr, gorm.ErrRecordNotFound) {
 				return stateErr
+			}
+		}
+		if queueAutoRefresh {
+			enabled := credentialEnabledFromMeta(credential.Meta)
+			if _, err := store.NewSiteAPIKeyStateRepository(tx).MarkSyncPending(ctx, siteID, credential.ID, enabled); err != nil {
+				return err
+			}
+			queuedCredentialID := credential.ID
+			if _, err := store.NewSiteSyncJobRepository(tx).Enqueue(ctx, store.EnqueueSiteSyncJobParams{
+				Kind:             store.SiteSyncJobKindAPIKeyRefresh,
+				SiteID:           siteID,
+				SiteCredentialID: &queuedCredentialID,
+			}); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -2272,6 +2355,9 @@ func (r errorRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func (s *Service) httpClientForSite(_ context.Context, item store.Site, stream bool) (*http.Client, error) {
+	if s == nil || s.httpClients == nil {
+		return nil, fmt.Errorf("http client manager is not initialized")
+	}
 	proxyID := proxyIDFromMeta(item.Meta)
 	profile := httpclientProfileFromGatewayConfig(GatewayConfigFromSiteMeta(item.Meta), proxyID)
 	if stream {
@@ -2365,7 +2451,7 @@ func SupportsMultipleAPIKeys(siteType string) bool {
 
 func SupportsAPIKeyCostMultiplier(siteType string) bool {
 	normalized := normalizeSiteType(siteType)
-	return strings.EqualFold(normalized, "openai") || strings.EqualFold(normalized, "anthropic") || strings.EqualFold(normalized, "google_gemini")
+	return strings.EqualFold(normalized, "openai") || strings.EqualFold(normalized, "anthropic") || strings.EqualFold(normalized, "newapi") || strings.EqualFold(normalized, "google_gemini")
 }
 
 func normalizeCredentialType(credentialType string) string {
@@ -2472,7 +2558,7 @@ func prepareCreateCredentialInputs(siteType string, inputs []CredentialInput) ([
 		if apiKeyCount > 1 && credentialType == defaultCredentialType {
 			result[index].Type = scopedAPIKeyCredentialType()
 		}
-		if !isAPIKey && (result[index].DisplayName != nil || result[index].RoutingPriority != nil || result[index].UpstreamCostMultiplier != nil) {
+		if !isAPIKey && (result[index].DisplayName != nil || result[index].RoutingPriority != nil || result[index].UpstreamCostMultiplier != nil || result[index].UpstreamCostMultiplierSource != nil) {
 			return nil, fmt.Errorf("credential type %q does not support api key routing configuration", credentialType)
 		}
 		if result[index].DisplayName != nil {
@@ -2498,6 +2584,19 @@ func prepareCreateCredentialInputs(siteType string, inputs []CredentialInput) ([
 				return nil, err
 			}
 			result[index].UpstreamCostMultiplier = &value
+		}
+		if result[index].UpstreamCostMultiplierSource != nil {
+			if !SupportsAPIKeyCostMultiplier(siteType) {
+				return nil, fmt.Errorf("site type %q does not support api key cost multiplier", siteType)
+			}
+			source, err := normalizeUpstreamCostMultiplierSource(*result[index].UpstreamCostMultiplierSource)
+			if err != nil {
+				return nil, err
+			}
+			if source == upstreamCostMultiplierSourceAuto && result[index].UpstreamCostMultiplier != nil {
+				return nil, fmt.Errorf("upstream_cost_multiplier cannot be set when source is auto")
+			}
+			result[index].UpstreamCostMultiplierSource = &source
 		}
 	}
 	return result, nil
@@ -2544,6 +2643,9 @@ func coalesceModelCapabilities(existing adapter.Model, next adapter.Model, keyNa
 
 	if existing.Capabilities == nil {
 		existing.Capabilities = map[string]any{}
+	}
+	if existing.Pricing == nil && next.Pricing != nil {
+		existing.Pricing = next.Pricing
 	}
 	return existing
 }
@@ -2605,6 +2707,8 @@ func capabilityProviderForSite(siteType string) string {
 		return "openai"
 	case "kimi_code":
 		return "openai"
+	case "command_code":
+		return "command_code"
 	case "zhipu", "glm_code":
 		return "zhipuai"
 	case "codex":

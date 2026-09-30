@@ -28,6 +28,7 @@ func (a NewAPI) Capabilities() []Capability {
 		CapabilitySummarizeAPIKey,
 		CapabilityFetchUserSummary,
 		CapabilityFetchBalance,
+		CapabilityFetchPricing,
 		CapabilityCheckin,
 		CapabilityFetchMetadata,
 	}
@@ -103,6 +104,15 @@ func (a NewAPI) FetchBalance(ctx context.Context, site SiteConfig, auth SystemAu
 	}
 
 	return BalanceSnapshot{Raw: summary.User}, nil
+}
+
+func (a NewAPI) FetchPricing(ctx context.Context, site SiteConfig, auth SystemAuth) (PricingSnapshot, error) {
+	payload, err := a.serviceForSite(site).Pricing(ctx, site.BaseURL, auth.AccessToken, auth.UserID)
+	if err != nil {
+		return PricingSnapshot{}, err
+	}
+
+	return a.ParsePricing(payload), nil
 }
 
 func (a NewAPI) ExecuteCheckin(ctx context.Context, site SiteConfig, auth SystemAuth) (CheckinResult, error) {

@@ -149,10 +149,13 @@ func TestSiteTypeAndCredentialTypeHelpersNormalizeDefaults(t *testing.T) {
 	if !SupportsAPIKeyCostMultiplier(" Google_Gemini ") {
 		t.Fatal("google_gemini should support api key cost multiplier")
 	}
-	for _, siteType := range []string{"deepseek", "newapi", "grok"} {
+	for _, siteType := range []string{"deepseek", "grok"} {
 		if SupportsAPIKeyCostMultiplier(siteType) {
 			t.Fatalf("site type %q should not support api key cost multiplier", siteType)
 		}
+	}
+	if !SupportsAPIKeyCostMultiplier("newapi") {
+		t.Fatal("newapi should support api key cost multiplier")
 	}
 }
 
@@ -568,6 +571,12 @@ func TestCoalesceModelCapabilitiesMarksFirstUpstreamSourceOnlyForNewModels(t *te
 	if _, ok := merged.Capabilities["first_api_key"]; ok {
 		t.Fatalf("existing model should not gain first_api_key, got %#v", merged.Capabilities)
 	}
+
+	pricing := &adapter.ModelPricing{ModelName: "gpt-existing"}
+	merged = coalesceModelCapabilities(existing, adapter.Model{UpstreamName: "gpt-next", Pricing: pricing}, "key-c")
+	if merged.Pricing != pricing {
+		t.Fatalf("existing model should retain pricing metadata from the next credential, got %#v", merged.Pricing)
+	}
 }
 
 func TestSmallJSONAndSetHelpers(t *testing.T) {
@@ -629,6 +638,7 @@ func TestCapabilityProviderForSiteMapsSupportedAdapters(t *testing.T) {
 		{siteType: "xiaomi_mimo", want: "xiaomi_mimo"},
 		{siteType: "moonshot", want: "openai"},
 		{siteType: "kimi_code", want: "openai"},
+		{siteType: "command_code", want: "command_code"},
 		{siteType: "zhipu", want: "zhipuai"},
 		{siteType: "glm_code", want: "zhipuai"},
 		{siteType: "codex", want: "openai"},

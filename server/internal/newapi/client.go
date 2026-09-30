@@ -155,6 +155,14 @@ func (c Client) UserAPIKeys(ctx context.Context, baseURL string, accessToken str
 	return uniqueUserAPIKeys(keys), nil
 }
 
+func (c Client) Pricing(ctx context.Context, baseURL string, accessToken string, userID int) (any, error) {
+	var payload map[string]any
+	if err := c.getJSON(ctx, baseURL, "/api/pricing", userHeaders(accessToken, userID), &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 func (c Client) PrimaryAPIKey(ctx context.Context, baseURL string, accessToken string, userID int) (string, error) {
 	keys, err := c.UserAPIKeys(ctx, baseURL, accessToken, userID)
 	if err != nil {

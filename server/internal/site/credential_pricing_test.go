@@ -39,14 +39,24 @@ func TestBuildCredentialModelPricingsUsesKeyRatioAndAvailableModelBindings(t *te
 				},
 			)
 
-			if len(items) != 2 {
-				t.Fatalf("credential pricing count = %d, want 2", len(items))
+			if len(items) != 3 {
+				t.Fatalf("credential pricing count = %d, want 3", len(items))
 			}
-			if items[0].SiteCredentialID != primaryID || items[0].GroupRatio != 1.2 || !items[0].CredentialUsable {
-				t.Fatalf("primary pricing = %#v", items[0])
+			byCredential := make(map[uuid.UUID]CredentialModelPricing, len(items))
+			for _, item := range items {
+				byCredential[item.SiteCredentialID] = item
 			}
-			if items[1].SiteCredentialID != backupID || items[1].GroupRatio != 0.8 || items[1].CredentialEnabled || items[1].CredentialUsable {
-				t.Fatalf("backup pricing = %#v", items[1])
+			primary, ok := byCredential[primaryID]
+			if !ok || primary.GroupRatio != 1.2 || !primary.CredentialUsable {
+				t.Fatalf("primary pricing = %#v", primary)
+			}
+			backup, ok := byCredential[backupID]
+			if !ok || backup.GroupRatio != 0.8 || backup.CredentialEnabled || backup.CredentialUsable {
+				t.Fatalf("backup pricing = %#v", backup)
+			}
+			managed, ok := byCredential[ignoredID]
+			if !ok || managed.GroupRatio != 3 || !managed.CredentialUsable {
+				t.Fatalf("newapi pricing = %#v", managed)
 			}
 		})
 	}

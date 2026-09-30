@@ -46,6 +46,22 @@ func TestResolveOpenCodeGoModelEndpointTypes(t *testing.T) {
 	}
 }
 
+func TestResolveCommandCodeModelEndpointTypes(t *testing.T) {
+	t.Parallel()
+
+	endpoints, ok, err := ResolveModelEndpointTypes("command_code", "claude-sonnet-4-6")
+	if err != nil {
+		t.Fatalf("ResolveModelEndpointTypes error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected match for claude-sonnet-4-6")
+	}
+	want := []string{"openai", "anthropic-messages", "openai-response"}
+	if !reflect.DeepEqual(endpoints, want) {
+		t.Fatalf("got endpoints %v, want %v", endpoints, want)
+	}
+}
+
 func TestProtocolSpecDataIsDefensivelyCopied(t *testing.T) {
 	t.Parallel()
 
@@ -82,3 +98,46 @@ func TestCurrentOpenCodeGoCatalogModelsHaveSpecMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveClinePassModelEndpointTypes(t *testing.T) {
+	t.Parallel()
+
+	models := []string{
+		"qwen3.8-max",
+		"qwen3.7-max",
+		"deepseek-v4-pro",
+		"glm-5.3",
+		"kimi-k3",
+		"mimo-v2.5-pro",
+		"minimax-m3",
+		"muse-spark-1.3-contributor",
+		"cline-pass/qwen3.8-max",
+		"cline-pass/deepseek-v4-pro",
+	}
+	for _, model := range models {
+		endpointTypes, ok, err := ResolveModelEndpointTypes("cline_pass", model)
+		if err != nil {
+			t.Fatalf("resolve %q: %v", model, err)
+		}
+		if !ok {
+			t.Fatalf("expected prefix match for %q", model)
+		}
+		want := []string{"openai", "anthropic-messages"}
+		if !reflect.DeepEqual(endpointTypes, want) {
+			t.Fatalf("model %q endpoint types = %#v, want %#v", model, endpointTypes, want)
+		}
+	}
+
+	fallback, ok, err := ResolveModelEndpointTypes("cline_pass", "custom-model")
+	if err != nil {
+		t.Fatalf("fallback resolve: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no match for custom-model")
+	}
+	wantFallback := []string{"openai", "anthropic-messages"}
+	if !reflect.DeepEqual(fallback, wantFallback) {
+		t.Fatalf("fallback endpoint types = %#v, want %#v", fallback, wantFallback)
+	}
+}
+
