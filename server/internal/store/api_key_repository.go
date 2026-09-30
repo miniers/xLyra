@@ -31,6 +31,7 @@ type APIKey struct {
 	ModelPolicy            string
 	SitePolicy             string
 	ModelMappings          JSON    `gorm:"type:jsonb;default:'[]'::jsonb"`
+	GatewayConfig          JSON    `gorm:"type:jsonb;default:'{}'::jsonb"`
 	ImageToolBridge        JSON    `gorm:"type:jsonb;default:'{}'::jsonb"`
 	BillingMultiplier      float64 `gorm:"type:numeric(8,4);default:1;not null"`
 	QuotaLimit             sql.NullFloat64
@@ -51,6 +52,58 @@ type APIKey struct {
 	ExpiresAt              *time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+}
+
+type APIKeyGatewayConfig struct {
+	FirstByteTimeoutMS *int                                `json:"first_byte_timeout_ms,omitempty"`
+	Models             map[string]APIKeyModelGatewayConfig `json:"models,omitempty"`
+}
+
+type APIKeyModelGatewayConfig struct {
+	FirstByteTimeoutMS *int `json:"first_byte_timeout_ms,omitempty"`
+}
+
+func (k APIKey) Gateway() APIKeyGatewayConfig {
+	cfg := APIKeyGatewayConfig{Models: map[string]APIKeyModelGatewayConfig{}}
+	if len(k.GatewayConfig) == 0 || string(k.GatewayConfig) == "null" {
+		return cfg
+	}
+	if err := json.Unmarshal(k.GatewayConfig, &cfg); err != nil {
+		return APIKeyGatewayConfig{Models: map[string]APIKeyModelGatewayConfig{}}
+	}
+	if cfg.Models == nil {
+		cfg.Models = map[string]APIKeyModelGatewayConfig{}
+	}
+	return cfg
+}
+
+func NormalizeAPIKeyGatewayConfig(input *APIKeyGatewayConfig) (*APIKeyGatewayConfig, error) {
+	if input == nil {
+		return nil, nil
+	}
+	normalized := APIKeyGatewayConfig{Models: map[string]APIKeyModelGatewayConfig{}}
+	if input.FirstByteTimeoutMS != nil {
+		if *input.FirstByteTimeoutMS <= 0 || *input.FirstByteTimeoutMS > 600000 {
+			return nil, fmt.Errorf("gateway_config.first_byte_timeout_ms must be between 1 and 600000")
+		}
+		value := *input.FirstByteTimeoutMS
+		normalized.FirstByteTimeoutMS = &value
+	}
+	for rawModel, modelConfig := range input.Models {
+		model := strings.TrimSpace(rawModel)
+		if model == "" {
+			return nil, fmt.Errorf("gateway_config.models contains an empty model key")
+		}
+		if modelConfig.FirstByteTimeoutMS == nil {
+			continue
+		}
+		if *modelConfig.FirstByteTimeoutMS <= 0 || *modelConfig.FirstByteTimeoutMS > 600000 {
+			return nil, fmt.Errorf("gateway_config.models.%s.first_byte_timeout_ms must be between 1 and 600000", model)
+		}
+		value := *modelConfig.FirstByteTimeoutMS
+		normalized.Models[model] = APIKeyModelGatewayConfig{FirstByteTimeoutMS: &value}
+	}
+	return &normalized, nil
 }
 
 type APIKeyListOption struct {
@@ -113,6 +166,7 @@ type CreateAPIKeyParams struct {
 	ModelPolicy          string
 	SitePolicy           string
 	ModelMappings        any
+	GatewayConfig        any
 	ImageToolBridge      any
 	BillingMultiplier    float64
 	QuotaLimit           any
@@ -132,6 +186,7 @@ type UpdateAPIKeyParams struct {
 	ModelPolicy          string
 	SitePolicy           string
 	ModelMappings        any
+	GatewayConfig        any
 	ImageToolBridge      any
 	BillingMultiplier    *float64
 	QuotaLimit           any
@@ -195,6 +250,7 @@ func (r APIKeyRepository) Create(ctx context.Context, params CreateAPIKeyParams)
 		ModelPolicy:          params.ModelPolicy,
 		SitePolicy:           params.SitePolicy,
 		ModelMappings:        jsonDefault(jsonFromAny(params.ModelMappings, "[]"), "[]"),
+		GatewayConfig:        jsonDefault(jsonFromAny(params.GatewayConfig, "{}"), "{}"),
 		ImageToolBridge:      jsonDefault(jsonFromAny(params.ImageToolBridge, "{}"), "{}"),
 		BillingMultiplier:    params.BillingMultiplier,
 		QuotaLimit:           nullFloatFromAny(params.QuotaLimit),
@@ -366,6 +422,7 @@ func (r APIKeyRepository) Update(ctx context.Context, params UpdateAPIKeyParams)
 		"model_policy":           params.ModelPolicy,
 		"site_policy":            params.SitePolicy,
 		"model_mappings":         jsonDefault(jsonFromAny(params.ModelMappings, string(apiKey.ModelMappings)), "[]"),
+		"gateway_config":         jsonDefault(jsonFromAny(params.GatewayConfig, string(apiKey.GatewayConfig)), "{}"),
 		"image_tool_bridge":      jsonDefault(jsonFromAny(params.ImageToolBridge, string(apiKey.ImageToolBridge)), "{}"),
 		"quota_limit":            nullFloatFromAny(params.QuotaLimit),
 		"quota_unlimited":        params.QuotaUnlimited,

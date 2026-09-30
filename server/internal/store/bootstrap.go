@@ -278,6 +278,67 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("ensure canonical_models.audio_completion_ratio column: %w", err)
 		}
 	}
+	if !migrator.HasColumn(&CanonicalModel{}, "RoutingPreference") {
+		if err := migrator.AddColumn(&CanonicalModel{}, "RoutingPreference"); err != nil {
+			return fmt.Errorf("ensure canonical_models.routing_preference column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&CanonicalModel{}, "RoutingExpiryRescueEnabled") {
+		if err := migrator.AddColumn(&CanonicalModel{}, "RoutingExpiryRescueEnabled"); err != nil {
+			return fmt.Errorf("ensure canonical_models.routing_expiry_rescue_enabled column: %w", err)
+		}
+	}
+	if !migrator.HasTable(&RouteLock{}) {
+		if err := migrator.CreateTable(&RouteLock{}); err != nil {
+			return fmt.Errorf("ensure route_locks table: %w", err)
+		}
+	}
+	for _, index := range []string{
+		"route_locks_canonical_model_idx",
+		"route_locks_site_model_idx",
+		"route_locks_expires_at_idx",
+	} {
+		if err := ensureSchemaIndex(migrator, &RouteLock{}, index); err != nil {
+			return err
+		}
+	}
+	if !migrator.HasTable(&RouteAnomalyState{}) {
+		if err := migrator.CreateTable(&RouteAnomalyState{}); err != nil {
+			return fmt.Errorf("ensure route_anomaly_states table: %w", err)
+		}
+	}
+	for _, index := range []string{
+		"route_anomaly_states_model_idx",
+		"route_anomaly_states_bad_since_idx",
+		"route_anomaly_states_active_idx",
+	} {
+		if err := ensureSchemaIndex(migrator, &RouteAnomalyState{}, index); err != nil {
+			return err
+		}
+	}
+	if !migrator.HasTable(&RouteScoreAdjustment{}) {
+		if err := migrator.CreateTable(&RouteScoreAdjustment{}); err != nil {
+			return fmt.Errorf("ensure route_score_adjustments table: %w", err)
+		}
+	}
+	for _, index := range []string{
+		"route_score_adjustments_model_idx",
+		"route_score_adjustments_active_idx",
+	} {
+		if err := ensureSchemaIndex(migrator, &RouteScoreAdjustment{}, index); err != nil {
+			return err
+		}
+	}
+	if !migrator.HasColumn(&HealthSnapshot{}, "FirstByteLatencyMS") {
+		if err := migrator.AddColumn(&HealthSnapshot{}, "FirstByteLatencyMS"); err != nil {
+			return fmt.Errorf("ensure health_snapshots.first_byte_latency_ms column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&APIKey{}, "GatewayConfig") {
+		if err := migrator.AddColumn(&APIKey{}, "GatewayConfig"); err != nil {
+			return fmt.Errorf("ensure api_keys.gateway_config column: %w", err)
+		}
+	}
 	if !migrator.HasColumn(&APIKey{}, "ImageToolBridge") {
 		if err := migrator.AddColumn(&APIKey{}, "ImageToolBridge"); err != nil {
 			return fmt.Errorf("ensure api_keys.image_tool_bridge column: %w", err)
@@ -335,6 +396,9 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 	if err := ensureSchemaIndex(migrator, &RequestLog{}, "request_logs_parent_request_id_idx"); err != nil {
+		return err
+	}
+	if err := ensureSchemaIndex(migrator, &RequestLog{}, "request_logs_site_model_created_idx"); err != nil {
 		return err
 	}
 	if migrator.HasIndex(&RequestLog{}, "request_logs_parent_request_id_metadata_idx") {
@@ -741,6 +805,9 @@ func bootstrapModels() []any {
 		&SitePricingGroup{},
 		&SiteModelPricing{},
 		&RouteCooldown{},
+		&RouteLock{},
+		&RouteAnomalyState{},
+		&RouteScoreAdjustment{},
 		&RequestLog{},
 		&UsageRecord{},
 		&RequestUsageDailySummary{},

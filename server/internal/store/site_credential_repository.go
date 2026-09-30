@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,12 @@ type UpdateSiteCredentialRoutingConfigParams struct {
 	UpstreamCostMultiplier *float64
 }
 
+type UpdateSiteCredentialProbeParams struct {
+	ExpectedUpdatedAt      time.Time
+	Meta                   JSON
+	UpstreamCostMultiplier *float64
+}
+
 type UpsertSiteCredentialParams struct {
 	SiteID          uuid.UUID
 	CredentialType  string
@@ -44,6 +51,145 @@ type SiteCredentialRepository struct {
 	db *gorm.DB
 }
 
+type CredentialRateLimitConfig struct {
+	RPMLimit      *int64 `json:"rpm_limit,omitempty"`
+	RPDLimit      *int64 `json:"rpd_limit,omitempty"`
+	ResetTimezone string `json:"reset_timezone,omitempty"`
+}
+
+func SiteCredentialRateLimit(credential SiteCredential) *CredentialRateLimitConfig {
+	return SiteCredentialRateLimitFromMeta(credential.Meta)
+}
+
+func SiteCredentialRateLimitFromMeta(raw JSON) *CredentialRateLimitConfig {
+	if len(raw) == 0 {
+		return nil
+	}
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return nil
+	}
+	rateLimitRaw, ok := metadata["rate_limit"]
+	if !ok || len(rateLimitRaw) == 0 {
+		var fallback struct {
+			RPMLimit      *int64 `json:"rpm_limit,omitempty"`
+			RPDLimit      *int64 `json:"rpd_limit,omitempty"`
+			ResetTimezone string `json:"reset_timezone,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &fallback); err == nil && (fallback.RPMLimit != nil || fallback.RPDLimit != nil) {
+			return &CredentialRateLimitConfig{
+				RPMLimit:      fallback.RPMLimit,
+				RPDLimit:      fallback.RPDLimit,
+				ResetTimezone: fallback.ResetTimezone,
+			}
+		}
+		return nil
+	}
+	var cfg CredentialRateLimitConfig
+	if err := json.Unmarshal(rateLimitRaw, &cfg); err != nil {
+		return nil
+	}
+	if cfg.RPMLimit == nil && cfg.RPDLimit == nil {
+		return nil
+	}
+	return &cfg
+}
+
+func SetSiteCredentialRateLimitMeta(meta map[string]any, rpmLimit *int64, rpdLimit *int64, resetTimezone *string) {
+	if meta == nil {
+		return
+	}
+	var currentRpm *int64
+	var currentRpd *int64
+	currentTimezone := "UTC"
+
+	if existing, ok := meta["rate_limit"].(map[string]any); ok {
+		if v, ok := parseAnyInt64(existing["rpm_limit"]); ok && v > 0 {
+			currentRpm = &v
+		}
+		if v, ok := parseAnyInt64(existing["rpd_limit"]); ok && v > 0 {
+			currentRpd = &v
+		}
+		if tz, ok := existing["reset_timezone"].(string); ok && strings.TrimSpace(tz) != "" {
+			currentTimezone = strings.TrimSpace(tz)
+		}
+	} else {
+		if v, ok := parseAnyInt64(meta["rpm_limit"]); ok && v > 0 {
+			currentRpm = &v
+		}
+		if v, ok := parseAnyInt64(meta["rpd_limit"]); ok && v > 0 {
+			currentRpd = &v
+		}
+		if tz, ok := meta["reset_timezone"].(string); ok && strings.TrimSpace(tz) != "" {
+			currentTimezone = strings.TrimSpace(tz)
+		}
+	}
+	delete(meta, "rpm_limit")
+	delete(meta, "rpd_limit")
+	delete(meta, "reset_timezone")
+
+	if rpmLimit != nil {
+		if *rpmLimit > 0 {
+			currentRpm = rpmLimit
+		} else {
+			currentRpm = nil
+		}
+	}
+	if rpdLimit != nil {
+		if *rpdLimit > 0 {
+			currentRpd = rpdLimit
+		} else {
+			currentRpd = nil
+		}
+	}
+	if resetTimezone != nil {
+		trimmed := strings.TrimSpace(*resetTimezone)
+		if trimmed != "" {
+			currentTimezone = trimmed
+		}
+	}
+
+	if currentRpm == nil && currentRpd == nil {
+		delete(meta, "rate_limit")
+		return
+	}
+
+	data := map[string]any{}
+	if currentRpm != nil {
+		data["rpm_limit"] = *currentRpm
+	}
+	if currentRpd != nil {
+		data["rpd_limit"] = *currentRpd
+	}
+	if currentTimezone != "" {
+		data["reset_timezone"] = currentTimezone
+	}
+	meta["rate_limit"] = data
+}
+
+func parseAnyInt64(value any) (int64, bool) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	case int32:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case float32:
+		return int64(v), true
+	case json.Number:
+		parsed, err := v.Int64()
+		return parsed, err == nil
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
 func SiteCredentialCacheDomain(credential SiteCredential) string {
 	var metadata map[string]any
 	if len(credential.Meta) == 0 || json.Unmarshal(credential.Meta, &metadata) != nil {
@@ -51,6 +197,102 @@ func SiteCredentialCacheDomain(credential SiteCredential) string {
 	}
 	value, _ := metadata["cache_domain"].(string)
 	return strings.TrimSpace(value)
+}
+
+func siteCredentialSubscriptionExpiresAt(credential SiteCredential) (time.Time, bool) {
+	if len(credential.Meta) == 0 {
+		return time.Time{}, false
+	}
+
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(credential.Meta, &metadata); err != nil {
+		return time.Time{}, false
+	}
+	if quotaProbe, ok := metadata["quota_probe"]; ok {
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(quotaProbe, &payload); err == nil {
+			if parsed, ok := subscriptionExpiryFromMetadata(payload, "expires_at"); ok {
+				return parsed, true
+			}
+		}
+	}
+
+	return subscriptionExpiryFromMetadata(metadata,
+		"subscription_expires_at",
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
+	)
+}
+
+func oauthConnectionSubscriptionExpiresAt(metadata JSON) (time.Time, bool) {
+	if len(metadata) == 0 {
+		return time.Time{}, false
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &values); err != nil {
+		return time.Time{}, false
+	}
+	return subscriptionExpiryFromMetadata(values,
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
+	)
+}
+
+func siteMetaSubscriptionExpiresAt(metadata JSON) (time.Time, bool) {
+	if len(metadata) == 0 {
+		return time.Time{}, false
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &values); err != nil {
+		return time.Time{}, false
+	}
+	return subscriptionExpiryFromMetadata(values,
+		"oauth_subscription_active_until",
+		"chatgpt_subscription_active_until",
+	)
+}
+
+func subscriptionExpiryFromMetadata(metadata map[string]json.RawMessage, keys ...string) (time.Time, bool) {
+	for _, key := range keys {
+		raw, ok := metadata[key]
+		if !ok {
+			continue
+		}
+		if parsed, ok := parseSubscriptionExpiry(raw); ok {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func parseSubscriptionExpiry(raw json.RawMessage) (time.Time, bool) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return time.Time{}, false
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return parsed, true
+		}
+		if numeric, err := strconv.ParseFloat(text, 64); err == nil && numeric > 0 {
+			return unixSubscriptionExpiry(numeric), true
+		}
+		return time.Time{}, false
+	}
+
+	var numeric float64
+	if err := json.Unmarshal(raw, &numeric); err != nil || numeric <= 0 {
+		return time.Time{}, false
+	}
+	return unixSubscriptionExpiry(numeric), true
+}
+
+func unixSubscriptionExpiry(value float64) time.Time {
+	if value > 1e12 {
+		return time.UnixMilli(int64(value))
+	}
+	return time.Unix(int64(value), 0)
 }
 
 func NewSiteCredentialRepository(db *gorm.DB) SiteCredentialRepository {
@@ -201,6 +443,27 @@ func (r SiteCredentialRepository) UpdateRoutingConfig(ctx context.Context, id uu
 		if result.RowsAffected == 0 {
 			return SiteCredential{}, fmt.Errorf("update site credential routing config: %w", gorm.ErrRecordNotFound)
 		}
+	}
+	return r.GetByID(ctx, id)
+}
+
+func (r SiteCredentialRepository) UpdateProbeState(ctx context.Context, id uuid.UUID, params UpdateSiteCredentialProbeParams) (SiteCredential, error) {
+	updates := map[string]any{
+		"meta": jsonDefault(params.Meta, "{}"),
+	}
+	if params.UpstreamCostMultiplier != nil {
+		updates["upstream_cost_multiplier"] = *params.UpstreamCostMultiplier
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&SiteCredential{}).
+		Where("id = ? AND updated_at = ?", id, params.ExpectedUpdatedAt).
+		Updates(updates)
+	if result.Error != nil {
+		return SiteCredential{}, fmt.Errorf("update site credential probe state: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return SiteCredential{}, fmt.Errorf("update site credential probe state: %w", gorm.ErrRecordNotFound)
 	}
 	return r.GetByID(ctx, id)
 }

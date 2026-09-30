@@ -23,7 +23,7 @@ type RequestLog struct {
 	APIKeyID           uuid.NullUUID  `gorm:"index:request_logs_cache_observation_lookup_idx,priority:1"`
 	SiteID             uuid.NullUUID
 	CanonicalModelID   uuid.NullUUID `gorm:"index:request_logs_cache_observation_lookup_idx,priority:2"`
-	SiteModelID        uuid.NullUUID
+	SiteModelID        uuid.NullUUID `gorm:"index:request_logs_site_model_created_idx,priority:1"`
 	Endpoint           string
 	StatusCode         int
 	Success            bool
@@ -35,7 +35,7 @@ type RequestLog struct {
 	Metadata           JSON          `gorm:"type:jsonb"`
 	Internal           bool          `gorm:"default:false;not null"`
 	ParentRequestLogID uuid.NullUUID `gorm:"type:uuid;index:request_logs_parent_request_log_id_idx"`
-	CreatedAt          time.Time     `gorm:"index:request_logs_cache_observation_lookup_idx,priority:3"`
+	CreatedAt          time.Time     `gorm:"index:request_logs_cache_observation_lookup_idx,priority:3;index:request_logs_site_model_created_idx,priority:2"`
 }
 
 type CreateRequestLogParams struct {
@@ -110,6 +110,7 @@ type RequestLogDetail struct {
 type RequestLogCacheObservation struct {
 	RequestLogID     uuid.UUID
 	Success          bool
+	SiteModelID      uuid.NullUUID
 	Metadata         JSON
 	PrefixHash       string
 	SessionHash      string
@@ -563,11 +564,16 @@ func (r RequestLogRepository) requestLogQuery(ctx context.Context, exprs []claus
 	return db
 }
 
+const requestLogStartTimeOrderSQL = `COALESCE(
+  CASE
+    WHEN metadata ->> 'started_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$'
+    THEN metadata ->> 'started_at'
+  END,
+  to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || '000Z'
+) DESC, created_at DESC, id DESC`
+
 func requestLogDefaultOrderClause() clause.OrderBy {
-	return clause.OrderBy{Columns: []clause.OrderByColumn{
-		{Column: clause.Column{Name: "created_at"}, Desc: true},
-		{Column: clause.Column{Name: "id"}, Desc: true},
-	}}
+	return clause.OrderBy{Expression: clause.Expr{SQL: requestLogStartTimeOrderSQL}}
 }
 
 func requestLogAttemptOrderClause() clause.OrderBy {

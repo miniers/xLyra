@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sort"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var ErrAPIKeyOrderConflict = errors.New("api key order changed; reload before saving")
 var ErrInvalidAPIKeyOrder = errors.New("api key order must contain every visible key exactly once")
 
 func apiKeyOrderOption(key APIKey) APIKeyListOption {
@@ -40,6 +43,21 @@ func SortAPIKeyOptions(keys []APIKeyListOption) {
 	sort.SliceStable(keys, func(i, j int) bool {
 		return apiKeyOrderLess(keys[i], keys[j])
 	})
+}
+
+func APIKeyOrderRevision(keys []APIKey) string {
+	visible := make([]APIKey, 0, len(keys))
+	for _, key := range keys {
+		if key.KeyKind != APIKeyKindAgentInternal {
+			visible = append(visible, key)
+		}
+	}
+	sort.Slice(visible, func(i, j int) bool { return visible[i].ID.String() < visible[j].ID.String() })
+	hash := sha256.New()
+	for _, key := range visible {
+		fmt.Fprintf(hash, "%s:%d\n", key.ID, key.SortOrder)
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil))
 }
 
 func (r APIKeyRepository) withOrderLock(ctx context.Context, fn func(*gorm.DB) error) error {
@@ -88,7 +106,7 @@ func (r APIKeyRepository) InitializeOrder(ctx context.Context) error {
 	})
 }
 
-func (r APIKeyRepository) Reorder(ctx context.Context, ids []uuid.UUID) error {
+func (r APIKeyRepository) Reorder(ctx context.Context, ids []uuid.UUID, revision string) error {
 	seen := make(map[uuid.UUID]bool, len(ids))
 	for _, id := range ids {
 		if id == uuid.Nil || seen[id] {
@@ -100,6 +118,9 @@ func (r APIKeyRepository) Reorder(ctx context.Context, ids []uuid.UUID) error {
 		keys, err := NewAPIKeyRepository(tx).List(ctx)
 		if err != nil {
 			return err
+		}
+		if revision != APIKeyOrderRevision(keys) {
+			return ErrAPIKeyOrderConflict
 		}
 		visibleCount := 0
 		for _, key := range keys {

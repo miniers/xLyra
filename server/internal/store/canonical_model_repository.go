@@ -18,15 +18,43 @@ import (
 const CanonicalPricingSourceManual = "manual"
 const CanonicalPricingSourceCatalog = "catalog"
 
+const (
+	RoutingPreferenceDefault = "default"
+	RoutingPreferenceValue   = "value"
+	RoutingPreferenceSpeed   = "speed"
+)
+
+func NormalizeRoutingPreference(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case RoutingPreferenceValue:
+		return RoutingPreferenceValue
+	case RoutingPreferenceSpeed:
+		return RoutingPreferenceSpeed
+	default:
+		return RoutingPreferenceDefault
+	}
+}
+
+func ValidRoutingPreference(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case RoutingPreferenceDefault, RoutingPreferenceValue, RoutingPreferenceSpeed:
+		return true
+	default:
+		return false
+	}
+}
+
 type CanonicalModel struct {
-	ID                     uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	ModelKey               string
-	DisplayName            string
-	Provider               string
-	Category               string
-	Capabilities           JSON `gorm:"type:jsonb"`
-	Status                 string
-	InputPrice             sql.NullFloat64
+	ID                         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ModelKey                   string
+	DisplayName                string
+	Provider                   string
+	Category                   string
+	Capabilities               JSON `gorm:"type:jsonb"`
+	Status                     string
+	RoutingPreference          string `gorm:"column:routing_preference;not null;default:'default'"`
+	RoutingExpiryRescueEnabled bool   `gorm:"column:routing_expiry_rescue_enabled;not null;default:false"`
+	InputPrice                 sql.NullFloat64
 	OutputPrice            sql.NullFloat64
 	CacheReadRatio         sql.NullFloat64
 	CacheWriteRatio        sql.NullFloat64
@@ -429,6 +457,42 @@ func (r CanonicalModelRepository) UpdateProvider(ctx context.Context, id uuid.UU
 	item.Provider = provider
 	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
 		return CanonicalModel{}, fmt.Errorf("update canonical model provider: %w", err)
+	}
+	return item, nil
+}
+
+func (r CanonicalModelRepository) UpdateRoutingPreference(ctx context.Context, id uuid.UUID, preference string) (CanonicalModel, error) {
+	preference = strings.ToLower(strings.TrimSpace(preference))
+	if !ValidRoutingPreference(preference) {
+		return CanonicalModel{}, fmt.Errorf("invalid routing preference %q", preference)
+	}
+	if id == uuid.Nil {
+		return CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+
+	item, err := r.GetByID(ctx, id)
+	if err != nil {
+		return CanonicalModel{}, err
+	}
+	item.RoutingPreference = preference
+	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
+		return CanonicalModel{}, fmt.Errorf("update canonical model routing preference: %w", err)
+	}
+	return item, nil
+}
+
+func (r CanonicalModelRepository) UpdateRoutingExpiryRescue(ctx context.Context, id uuid.UUID, enabled bool) (CanonicalModel, error) {
+	if id == uuid.Nil {
+		return CanonicalModel{}, fmt.Errorf("canonical model id is required")
+	}
+
+	item, err := r.GetByID(ctx, id)
+	if err != nil {
+		return CanonicalModel{}, err
+	}
+	item.RoutingExpiryRescueEnabled = enabled
+	if err := r.db.WithContext(ctx).Save(&item).Error; err != nil {
+		return CanonicalModel{}, fmt.Errorf("update canonical model routing expiry rescue: %w", err)
 	}
 	return item, nil
 }
