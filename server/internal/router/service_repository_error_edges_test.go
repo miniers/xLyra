@@ -88,6 +88,11 @@ func TestCooldownMutationsPrepareInputsBeforeRepositoryErrors(t *testing.T) {
 	if !errors.Is(err, updateErr) || !strings.Contains(err.Error(), "clear route cooldowns") {
 		t.Fatalf("ClearCooldown error = %v, want wrapped clear update error", err)
 	}
+
+	err = service.ClearRouteAnomaly(ctx, uuid.New(), uuid.New())
+	if !errors.Is(err, updateErr) || !strings.Contains(err.Error(), "clear active route anomaly") {
+		t.Fatalf("ClearRouteAnomaly error = %v, want wrapped clear update error", err)
+	}
 }
 
 func routerServiceWithQueryInterceptor(t *testing.T, callback func(*gorm.DB)) *Service {

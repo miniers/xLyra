@@ -111,6 +111,55 @@ func TestCandidatesFilterSortAndLimit(t *testing.T) {
 	}
 }
 
+func TestCandidatesUsesOAuthConnectionSubscriptionExpiry(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	siteID := uuid.New()
+	siteModelID := uuid.New()
+	credentialID := uuid.New()
+	expiresAt := time.Now().Add(48 * time.Hour).UTC()
+	service := routerServiceWithRepositoryRows(t, routerRepositoryRows{
+		canonicalModels:     []store.CanonicalModel{{ID: canonicalID, ModelKey: "openai/gpt-5-mini", Status: "active"}},
+		canonicalModelsByID: []store.CanonicalModel{{ID: canonicalID, ModelKey: "openai/gpt-5-mini", Status: "active"}},
+		siteModels: []store.SiteModel{{
+			ID:              siteModelID,
+			SiteID:          siteID,
+			CanonicalID:     uuid.NullUUID{UUID: canonicalID, Valid: true},
+			UpstreamName:    "gpt-5-mini",
+			DisplayName:     "GPT-5 mini",
+			Status:          "active",
+			MatchSource:     "canonical",
+			MatchConfidence: 100,
+			Capabilities:    store.JSON(`{"supported_endpoint_types":["openai"]}`),
+		}},
+		sites: []store.Site{{
+			ID: siteID, Name: "Codex OAuth", Slug: "codex-oauth", SiteType: "codex", BaseURL: "https://codex.example", Status: "active", Enabled: true,
+		}},
+		credentials: []store.SiteCredential{{ID: credentialID, SiteID: siteID, CredentialType: "api_key"}},
+		oauthConnections: []store.OAuthConnection{{
+			ID:       uuid.New(),
+			SiteID:   &siteID,
+			Metadata: store.JSON(`{"chatgpt_subscription_active_until":"` + expiresAt.Format(time.RFC3339Nano) + `"}`),
+		}},
+	})
+
+	result, err := service.Candidates(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", EndpointType: "openai", Debug: true})
+	if err != nil {
+		t.Fatalf("Candidates error = %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("candidate count = %d, want 1", len(result.Items))
+	}
+	item := result.Items[0]
+	if item.Availability.SubscriptionRemainingSeconds == nil || *item.Availability.SubscriptionRemainingSeconds <= 0 {
+		t.Fatalf("subscription remaining seconds = %#v, want positive OAuth expiry input", item.Availability.SubscriptionRemainingSeconds)
+	}
+	if item.ScoreBreakdown["api_key_subscription_expiry_urgency"] <= 0 {
+		t.Fatalf("subscription urgency score = %#v, want positive OAuth expiry score", item.ScoreBreakdown)
+	}
+}
+
 func TestCandidatesRankHigherPriorityAboveHealthierLowerPriority(t *testing.T) {
 	t.Parallel()
 
@@ -348,6 +397,178 @@ func TestPlanUsesDefaultAndExplicitFailoverLimits(t *testing.T) {
 	}
 }
 
+func TestCandidatesStrictRouteLockKeepsOnlyTarget(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "failover-2"})
+	targetID := rows.siteModels[2].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyStrict,
+		Reason:           "limited quota",
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	plan, err := service.Plan(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", FailoverLimit: 3})
+	if err != nil {
+		t.Fatalf("Plan error = %v", err)
+	}
+	if plan.Selected.Model.SiteModelID != targetID || !plan.Selected.Locked {
+		t.Fatalf("selected = %#v, want locked target %s", plan.Selected, targetID)
+	}
+	if len(plan.Failover) != 0 {
+		t.Fatalf("failover = %#v, want no cross-channel failover in strict mode", plan.Failover)
+	}
+	if plan.RoutingLock == nil || plan.RoutingLock.Policy != store.RouteLockPolicyStrict {
+		t.Fatalf("routing lock = %#v, want strict lock", plan.RoutingLock)
+	}
+}
+
+func TestCandidatesFallbackRouteLockPromotesHealthyTarget(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "failover-2"})
+	targetID := rows.siteModels[2].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyFallback,
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	plan, err := service.Plan(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", FailoverLimit: 2, Debug: true})
+	if err != nil {
+		t.Fatalf("Plan error = %v", err)
+	}
+	if plan.Selected.Model.SiteModelID != targetID || !plan.Selected.Locked {
+		t.Fatalf("selected = %#v, want fallback lock target %s", plan.Selected, targetID)
+	}
+	if len(plan.Failover) != 2 || plan.Failover[0].Locked || plan.Failover[1].Locked {
+		t.Fatalf("failover = %#v, want unlocked fallback candidates", plan.Failover)
+	}
+	for _, preference := range []string{store.RoutingPreferenceDefault, store.RoutingPreferenceValue, store.RoutingPreferenceSpeed} {
+		profile, ok := plan.Selected.ScoreProfiles[preference]
+		if !ok || profile.Rank != 1 {
+			t.Fatalf("locked target %s profile[%s] = %#v, want rank 1", targetID, preference, profile)
+		}
+	}
+}
+
+func TestStrictRouteLockPreservesTargetScoreAndBreakdown(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	baseRows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "locked"})
+	targetID := baseRows.siteModels[2].ID
+	lockedRows := baseRows
+	lockedRows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyStrict,
+	}}
+
+	withoutLock, err := routerServiceWithRepositoryRows(t, baseRows).Candidates(context.Background(), CandidateQuery{
+		ModelKey: "openai/gpt-5-mini",
+		Debug:    true,
+	})
+	if err != nil {
+		t.Fatalf("Candidates without lock error = %v", err)
+	}
+	withLock, err := routerServiceWithRepositoryRows(t, lockedRows).Candidates(context.Background(), CandidateQuery{
+		ModelKey: "openai/gpt-5-mini",
+		Debug:    true,
+	})
+	if err != nil {
+		t.Fatalf("Candidates with lock error = %v", err)
+	}
+
+	var expected Candidate
+	for _, candidate := range withoutLock.Items {
+		if candidate.Model.SiteModelID == targetID {
+			expected = candidate
+			break
+		}
+	}
+	if expected.Model.SiteModelID != targetID {
+		t.Fatalf("target candidate missing without lock: %#v", withoutLock.Items)
+	}
+	if len(withLock.Items) != 1 || withLock.Items[0].Model.SiteModelID != targetID {
+		t.Fatalf("strict candidates = %#v, want only target", withLock.Items)
+	}
+	actual := withLock.Items[0]
+	if actual.Score != expected.Score || !reflect.DeepEqual(actual.ScoreBreakdown, expected.ScoreBreakdown) {
+		t.Fatalf("strict target score changed: got score=%v breakdown=%#v, want score=%v breakdown=%#v", actual.Score, actual.ScoreBreakdown, expected.Score, expected.ScoreBreakdown)
+	}
+}
+
+func TestCandidatesFallbackRouteLockLeavesCoolingTargetForNormalCandidates(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1", "locked"})
+	targetID := rows.siteModels[2].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyFallback,
+	}}
+	rows.cooldowns = []store.RouteCooldown{{
+		ID:          uuid.New(),
+		SiteID:      rows.siteModels[2].SiteID,
+		SiteModelID: uuid.NullUUID{UUID: targetID, Valid: true},
+		Source:      "gateway",
+		Reason:      "upstream_timeout",
+		ActiveUntil: time.Now().Add(time.Hour),
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	plan, err := service.Plan(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini", FailoverLimit: 3})
+	if err != nil {
+		t.Fatalf("Plan error = %v", err)
+	}
+	if plan.Selected.Site.Name != "selected" || plan.Selected.Locked {
+		t.Fatalf("selected = %#v, want healthy normal candidate while locked target is cooling", plan.Selected)
+	}
+	if len(plan.Failover) != 2 || plan.Failover[1].Model.SiteModelID != targetID || !plan.Failover[1].Cooling {
+		t.Fatalf("failover = %#v, want cooling locked target retained after healthy candidates", plan.Failover)
+	}
+}
+
+func TestCandidatesStrictRouteLockReturnsUnavailableForCoolingTarget(t *testing.T) {
+	t.Parallel()
+
+	canonicalID := uuid.New()
+	rows := routerPlanRepositoryRows(canonicalID, "openai/gpt-5-mini", []string{"selected", "failover-1"})
+	targetID := rows.siteModels[1].ID
+	rows.routeLocks = []store.RouteLock{{
+		ID:               uuid.New(),
+		CanonicalModelID: canonicalID,
+		SiteModelID:      targetID,
+		Policy:           store.RouteLockPolicyStrict,
+	}}
+	rows.cooldowns = []store.RouteCooldown{{
+		ID:          uuid.New(),
+		SiteID:      rows.siteModels[1].SiteID,
+		SiteModelID: uuid.NullUUID{UUID: targetID, Valid: true},
+		Source:      "gateway",
+		Reason:      "upstream_timeout",
+		ActiveUntil: time.Now().Add(time.Hour),
+	}}
+	service := routerServiceWithRepositoryRows(t, rows)
+
+	_, err := service.Candidates(context.Background(), CandidateQuery{ModelKey: "openai/gpt-5-mini"})
+	if !errors.Is(err, ErrRouteLockUnavailable) {
+		t.Fatalf("Candidates error = %v, want ErrRouteLockUnavailable", err)
+	}
+}
+
 func TestCandidatesReturnsCooldownRepositoryError(t *testing.T) {
 	t.Parallel()
 
@@ -383,7 +604,9 @@ type routerRepositoryRows struct {
 	credentials         []store.SiteCredential
 	keyStates           []store.SiteAPIKeyState
 	pricings            []store.SiteModelPricing
+	oauthConnections    []store.OAuthConnection
 	cooldowns           []store.RouteCooldown
+	routeLocks          []store.RouteLock
 }
 
 func routerPlanRepositoryRows(canonicalID uuid.UUID, modelKey string, siteNames []string) routerRepositoryRows {
@@ -444,6 +667,10 @@ func routerServiceWithRepositoryRows(t *testing.T, rows routerRepositoryRows) *S
 }
 
 func routerAssignRepositoryRows(tx *gorm.DB, rows routerRepositoryRows) {
+	if strings.Contains(strings.ToLower(tx.Statement.Table), "usage_records") || strings.Contains(strings.ToLower(tx.Statement.SQL.String()), "usage_records") {
+		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
+		return
+	}
 	if tx.Statement.Schema == nil {
 		return
 	}
@@ -470,8 +697,18 @@ func routerAssignRepositoryRows(tx *gorm.DB, rows routerRepositoryRows) {
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.keyStates)
 	case "SiteModelPricing":
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.pricings)
+	case "OAuthConnection":
+		routerAssignRowsToDestination(tx.Statement.Dest, rows.oauthConnections)
+	case "UsageRecord":
+		// Route candidate cache metrics use an aggregate Scan over UsageRecord.
+		// Keep the offline repository fixture deterministic without a live database.
+		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
+	case "RouteModelCacheStats":
+		routerAssignRowsToDestination(tx.Statement.Dest, []store.RouteModelCacheStats{})
 	case "RouteCooldown":
 		routerAssignRowsToDestination(tx.Statement.Dest, rows.cooldowns)
+	case "RouteLock":
+		routerAssignRowsToDestination(tx.Statement.Dest, rows.routeLocks)
 	}
 }
 
