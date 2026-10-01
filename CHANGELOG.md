@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.14.1](https://github.com/Yachiyo-5i/xLyra/compare/v1.14.0...v1.14.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* 🐛 修复 TypeSafe 模型协议与品牌图标无法识别的问题 ([35c6d53](https://github.com/Yachiyo-5i/xLyra/commit/35c6d539d392946ed09bd49f41a4720ed9eeb2a9))
+
+## [1.14.0](https://github.com/Yachiyo-5i/xLyra/compare/v1.13.2...v1.14.0) (2026-09-30)
+
+
+### Features
+
+* 🎸 接入 TypeSafe Jev 决策模型并完善品牌展示 ([f00769e](https://github.com/Yachiyo-5i/xLyra/commit/f00769eaefe2526446f44dd2c18c5667eace3711))
+
+
+### Bug Fixes
+
+* 🐛 让模型缓存价格严格跟随上游目录同步 ([34dd364](https://github.com/Yachiyo-5i/xLyra/commit/34dd36498748773672f113eb948099baefd5f710))
+
 ## [1.13.2](https://github.com/Yachiyo-5i/xLyra/compare/v1.13.1...v1.13.2) (2026-09-29)
 
 

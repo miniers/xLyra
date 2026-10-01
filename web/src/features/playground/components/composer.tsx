@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowUp, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { filesFromClipboard } from '@/features/playground/lib/clipboard-files'
@@ -34,6 +35,7 @@ export function Composer({
   stopButtonClassName,
   stopIconClassName,
 }: ComposerProps) {
+  const { t } = useTranslation('playground')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useLayoutEffect(() => {
@@ -81,7 +83,7 @@ export function Composer({
               type="button"
               onClick={onStop}
               className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-90 md:h-9 md:w-9', stopButtonClassName)}
-              aria-label="stop"
+              aria-label={t('chat.stop')}
             >
               <Square className={cn('h-3.5 w-3.5 fill-current', stopIconClassName)} />
             </button>
@@ -96,7 +98,7 @@ export function Composer({
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
                   : 'cursor-not-allowed bg-[hsl(var(--surface-subtle))] text-muted-soft',
               )}
-              aria-label="send"
+              aria-label={t('chat.send')}
             >
               <ArrowUp className="h-4 w-4" />
             </button>

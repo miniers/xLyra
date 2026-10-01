@@ -27,7 +27,7 @@
       "saveFailed": "保存に失敗しました",
       "deleteFailed": "削除に失敗しました",
       "refreshFailed": "更新に失敗しました",
-      "refreshIncomplete": "Refresh incomplete",
+      "refreshIncomplete": "更新が完了しませんでした",
       "refreshPartialFailed": "一部のサイト更新に失敗しました",
       "refreshPartialDesc": "{{count}} サイトの更新に失敗しました",
       "refreshPartialDescFallback": "一部のサイト更新に失敗しました",
@@ -52,7 +52,7 @@
     "health": {
       "unchecked": "未確認",
       "healthy": "正常",
-      "abnormal": "Abnormal",
+      "abnormal": "異常",
       "pending": "同期待ち",
       "syncing": "同期中"
     },
@@ -108,7 +108,7 @@
       "grokAccounts": "アカウントのインポート",
       "groups": "グループ",
       "routing": "ルーティング",
-      "advanced": "Advanced"
+      "advanced": "詳細設定"
     },
     "fields": {
       "name": "サイト名",
@@ -192,6 +192,7 @@
       "xiaomi_mimo": "Xiaomi MiMo API キーで接続",
       "moonshot": "Moonshot プラットフォームの API キーで接続",
       "kimi_code": "Kimi コーディングモデル API キーで接続",
+      "typesafe": "TypeSafe Jev 意思決定モデルの API キーで接続",
       "zhipu": "Zhipu GLM 汎用 API キーで接続",
       "glm_code": "GLM Coding Plan API キーで接続",
       "newapi": "自ホストまたはサードパーティパネルにはシステムトークンを使用",
@@ -221,7 +222,7 @@
       "save": "変更を保存",
       "create": "作成",
       "cancel": "キャンセル",
-      "advanced": "Advanced Settings",
+      "advanced": "詳細設定",
       "addHeader": "ヘッダーを追加",
       "removeHeader": "ヘッダーを削除"
     },
@@ -383,6 +384,13 @@
       "success": "成功",
       "failed": "失敗",
       "untested": "未テスト"
+    },
+    "protocol": {
+      "auto": "自動選択",
+      "chatCompletions": "/chat/completions",
+      "responses": "/responses",
+      "messages": "/messages",
+      "systemOne": "/systemone"
     },
     "credential": {
       "auto": "Key を自動選択"

@@ -1,3 +1,4 @@
+import { localeFromLanguage } from '@/lib/locale'
 import type { RouteCandidateItem, RouteCooldown } from '@/features/routes/api/routes'
 import type { Site, SiteModel } from '@/features/sites/api/sites'
 
@@ -167,11 +168,11 @@ function formatPerRequestRoutePrice(value?: number | null, currency?: string | n
   return t ? t('format.perRequestUnit', { price }) : `${price}/req`
 }
 
-export function formatDateTime(value?: string | null) {
+export function formatDateTime(value?: string | null, language?: string) {
   if (!value) return '-'
 
   try {
-    return new Intl.DateTimeFormat('zh-CN', {
+    return new Intl.DateTimeFormat(localeFromLanguage(language), {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',

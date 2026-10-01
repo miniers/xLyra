@@ -559,7 +559,7 @@ export function AgentWorkspace() {
 
   const retryMutation = useMutation({
     mutationFn: (input: { messageId: string; content: string; files: ChatAttachment[] }) => {
-      if (!selectedId) throw new Error('会话不存在')
+      if (!selectedId) throw new Error(t('agent:chat.sessionMissing'))
       return retryAgentSession(selectedId, {
         message_id: input.messageId,
         content: input.content,

@@ -82,6 +82,7 @@
       "stackedBar": "Stacked bar",
       "line": "Line"
     },
+    "other": "Other",
     "empty": "No trend data in this range"
   },
   "dimensions": {

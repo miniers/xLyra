@@ -320,6 +320,7 @@ export function formatSiteTypeLabel(siteType: string) {
   if (t === 'zhipu') return 'GLM'
   if (t === 'glm_code') return 'GLM Code'
   if (t === 'cline_pass') return 'ClinePass'
+  if (t === 'typesafe') return 'TypeSafe'
   return siteType
 }
 

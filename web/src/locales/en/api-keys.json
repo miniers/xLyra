@@ -132,7 +132,7 @@
     },
     "deleteDialog": {
       "title": "Delete key",
-      "confirm": "Delete「{{name}}」? This action cannot be undone.",
+      "confirm": "Delete \"{{name}}\"? This action cannot be undone.",
       "confirmDefault": "Delete this key?",
       "cancel": "Cancel",
       "delete": "Delete"

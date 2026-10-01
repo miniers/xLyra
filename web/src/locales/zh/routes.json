@@ -140,6 +140,9 @@
     "preference": {
       "title": "路由偏好",
       "description": "调整延迟、成功率与价格之间的权重平衡。",
+      "default": "默认",
+      "value": "性价比优先",
+      "speed": "速度优先",
       "expiryRescue": "订阅临期抢救",
       "expiryRescueDescription": "优先调度即将过期的订阅渠道，避免额度浪费。"
     },
@@ -216,6 +219,9 @@
     "healthLatency": "延迟 {{latency}}",
     "pricingPerRequest": "按次 {{price}}",
     "pricingTokens": "输入 {{input}} / 输出 {{output}}",
-    "perRequestUnit": "{{price}}/次"
+    "perRequestUnit": "{{price}}/次",
+    "durationDays": "天",
+    "durationHours": "时",
+    "durationMinutes": "分"
   }
 }

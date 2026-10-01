@@ -433,6 +433,7 @@ function RouteInfoLine({ badges, primary, meta, action }: { badges?: ReactNode; 
 }
 
 function RouteTracesSection({ query, t }: { query: TracesQuery; t: TFunction }) {
+  const { i18n } = useTranslation('routes')
   const items = (query.data?.items ?? EMPTY_TRACES).slice(0, 5)
 
   return (
@@ -459,7 +460,7 @@ function RouteTracesSection({ query, t }: { query: TracesQuery; t: TFunction }) 
                 }
                 primary={attempt?.site.name ?? '-'}
                 meta={[
-                  formatDateTime(trace.started_at),
+                  formatDateTime(trace.started_at, i18n.language),
                   formatLatency(trace.total_latency_ms),
                   attempt?.credential.name ? `${t('format.upstreamCredential')} ${attempt.credential.name}` : '',
                   trace.failover_count > 0

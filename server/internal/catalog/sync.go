@@ -18,11 +18,43 @@ import (
 const catalogSyncURL = "https://raw.githubusercontent.com/Yachiyo-5i/models-price/refs/heads/main/catalog.json"
 
 type catalogPayload struct {
-	SchemaVersion  int                     `json:"schema_version"`
-	CatalogVersion string                  `json:"catalog_version"`
-	UpdatedAt      string                  `json:"updated_at"`
-	Brands         map[string]catalogBrand `json:"brands"`
+	SchemaVersion  int           `json:"schema_version"`
+	CatalogVersion string        `json:"catalog_version"`
+	UpdatedAt      string        `json:"updated_at"`
+	Brands         catalogBrands `json:"brands"`
 }
+type catalogBrands map[string]catalogBrand
+
+func (b *catalogBrands) UnmarshalJSON(data []byte) error {
+	var object map[string]catalogBrand
+	if err := json.Unmarshal(data, &object); err == nil {
+		*b = object
+		return nil
+	}
+
+	var list []struct {
+		Brand  string                  `json:"brand"`
+		Models map[string]catalogModel `json:"models"`
+	}
+	if err := json.Unmarshal(data, &list); err != nil {
+		return err
+	}
+
+	brands := make(catalogBrands, len(list))
+	for _, item := range list {
+		brand := strings.TrimSpace(item.Brand)
+		if brand == "" {
+			return fmt.Errorf("catalog brand has empty name")
+		}
+		if _, exists := brands[brand]; exists {
+			return fmt.Errorf("catalog contains duplicate brand %q", brand)
+		}
+		brands[brand] = catalogBrand{Models: item.Models}
+	}
+	*b = brands
+	return nil
+}
+
 type catalogBrand struct {
 	Models map[string]catalogModel `json:"models"`
 }
@@ -171,24 +203,7 @@ func (s *SyncService) syncCatalogModel(ctx context.Context, repo store.Canonical
 	}
 	modalities, _ := json.Marshal(m.Modalities)
 	endpoints, _ := json.Marshal(m.SupportedEndpointTypes)
-	cacheReadRatio := m.CacheReadRatio
-	cacheWriteRatio := m.CacheWriteRatio
-	cacheWrite1hRatio := m.CacheWrite1hRatio
-	if m.InputPrice != nil && *m.InputPrice > 0 {
-		if v, ok := m.Cost["cache_read"].(float64); ok && cacheReadRatio == nil {
-			x := v / *m.InputPrice
-			cacheReadRatio = &x
-		}
-		if v, ok := m.Cost["cache_write"].(float64); ok && cacheWriteRatio == nil {
-			x := v / *m.InputPrice
-			cacheWriteRatio = &x
-		}
-		if v, ok := m.Cost["cache_write_1h"].(float64); ok && cacheWrite1hRatio == nil {
-			x := v / *m.InputPrice
-			cacheWrite1hRatio = &x
-		}
-	}
-	model, err := repo.SyncUpsert(ctx, store.UpsertCanonicalModelParams{ModelKey: key, DisplayName: m.DisplayName, Provider: defaultString(m.Provider, brand), Category: defaultString(m.Category, InferCategory(key)), Capabilities: encoded, Status: defaultString(m.Status, "active"), SupportedEndpointTypes: store.JSON(endpoints), Modalities: store.JSON(modalities), InputPrice: nullFloat(m.InputPrice), OutputPrice: nullFloat(m.OutputPrice), CacheReadRatio: nullFloat(cacheReadRatio), CacheWriteRatio: nullFloat(cacheWriteRatio), CacheWrite1hRatio: nullFloat(cacheWrite1hRatio), ContextWindow: nullInt(m.ContextWindow), MaxOutputTokens: nullInt(m.MaxOutputTokens), PricingVariants: mustJSON(pricingVariants), PricingSource: store.CanonicalPricingSourceCatalog, LastPricingSyncedAt: sql.NullTime{Time: time.Now(), Valid: true}})
+	model, err := repo.SyncUpsert(ctx, store.UpsertCanonicalModelParams{ModelKey: key, DisplayName: m.DisplayName, Provider: defaultString(m.Provider, brand), Category: defaultString(m.Category, InferCategory(key)), Capabilities: encoded, Status: defaultString(m.Status, "active"), SupportedEndpointTypes: store.JSON(endpoints), Modalities: store.JSON(modalities), InputPrice: nullFloat(m.InputPrice), OutputPrice: nullFloat(m.OutputPrice), CacheReadRatio: nullFloat(m.CacheReadRatio), CacheWriteRatio: nullFloat(m.CacheWriteRatio), CacheWrite1hRatio: nullFloat(m.CacheWrite1hRatio), ContextWindow: nullInt(m.ContextWindow), MaxOutputTokens: nullInt(m.MaxOutputTokens), PricingVariants: mustJSON(pricingVariants), PricingSource: store.CanonicalPricingSourceCatalog, LastPricingSyncedAt: sql.NullTime{Time: time.Now(), Valid: true}})
 	if err != nil {
 		return err
 	}

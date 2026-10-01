@@ -40,7 +40,7 @@
     "brand": "ブランド",
     "site": "サイト",
     "noModels": "モデルがありません",
-    "noModelsDesc": "No models match the current search criteria.",
+    "noModelsDesc": "検索条件に一致するモデルがありません。",
     "toast": {
       "modelToggleFailed": "モデル切り替えの更新に失敗しました",
       "cooldownCleared": "クールダウンを解除しました",
@@ -140,6 +140,9 @@
     "preference": {
       "title": "ルーティング優先設定",
       "description": "レイテンシ、成功率、料金の重み付けバランスを調整します。",
+      "default": "デフォルト",
+      "value": "コスト優先",
+      "speed": "速度優先",
       "expiryRescue": "サブスク期限切れ前の優先消費",
       "expiryRescueDescription": "クォータの浪費を防ぐため、期限が近いサブスクリプションを優先します。"
     },
@@ -192,7 +195,7 @@
     "scopeModel": "モデル",
     "scopeCredential": "認証情報",
     "unknownSite": "不明なサイト",
-    "modelPrefix": "Model {{name}}",
+    "modelPrefix": "モデル {{name}}",
     "specifiedModel": "指定モデル",
     "upstreamCredential": "上流認証情報",
     "entireSite": "サイト全体",
@@ -216,6 +219,9 @@
     "healthLatency": "レイテンシ: {{latency}}",
     "pricingPerRequest": "リクエスト単価 {{price}}",
     "pricingTokens": "入力 {{input}} / 出力 {{output}}",
-    "perRequestUnit": "{{price}}/回"
+    "perRequestUnit": "{{price}}/回",
+    "durationDays": "日",
+    "durationHours": "時間",
+    "durationMinutes": "分"
   }
 }

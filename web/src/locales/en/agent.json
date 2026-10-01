@@ -17,6 +17,7 @@
     "inputPlaceholder": "Type freely....",
     "hint": "Enter to send · Shift+Enter for a new line",
     "sendFailed": "Failed to send",
+    "sessionMissing": "Session not found",
     "editReplayTitle": "Regenerate this reply?",
     "editReplayDescription": "The last reply will be replaced and regenerated from your edited message.",
     "editReplayCancel": "Cancel",

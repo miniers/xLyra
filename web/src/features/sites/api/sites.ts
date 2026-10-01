@@ -253,7 +253,7 @@ export type SiteModelTestResult = {
 }
 
 export type SiteModelTestProtocol =
-  'auto' | 'chat_completions' | 'responses' | 'messages'
+  'auto' | 'chat_completions' | 'responses' | 'messages' | 'systemone'
 
 export type SiteModelTestInput = {
   prompt?: string

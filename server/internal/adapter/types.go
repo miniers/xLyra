@@ -272,6 +272,7 @@ func NewRegistry() Registry {
 	registry.Register(NewOpenCodeGo())
 	registry.Register(NewCommandCode())
 	registry.Register(NewClinePass())
+	registry.Register(NewTypeSafe())
 	return registry
 }
 

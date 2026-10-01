@@ -17,6 +17,7 @@
     "inputPlaceholder": "ご自由に入力....",
     "hint": "Enter で送信 · Shift+Enter で改行",
     "sendFailed": "送信に失敗しました",
+    "sessionMissing": "セッションが見つかりません",
     "editReplayTitle": "返信を再生成しますか？",
     "editReplayDescription": "最後の返信を置き換え、編集したメッセージから再生成します。",
     "editReplayCancel": "キャンセル",

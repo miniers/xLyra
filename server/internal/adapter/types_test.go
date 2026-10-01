@@ -117,6 +117,11 @@ func TestRegistryRegistersDefaultModulesBySiteType(t *testing.T) {
 			wantType:         "adapter.ClinePass",
 			wantCapabilities: []Capability{CapabilityValidateCredential, CapabilityListModels, CapabilityHealthProbe},
 		},
+		"typesafe": {
+			wantType:         "adapter.TypeSafe",
+			wantCapabilities: []Capability{CapabilityValidateCredential, CapabilityListModels},
+		},
+		},
 	}
 
 	for siteType, tt := range cases {
@@ -146,8 +151,8 @@ func TestRegistryRegistersDefaultModulesBySiteType(t *testing.T) {
 	}
 
 	modules := registry.Modules()
-	if len(modules) != 15 {
-		t.Fatalf("default module count = %d, want 15", len(modules))
+	if len(modules) != 16 {
+		t.Fatalf("default module count = %d, want 16", len(modules))
 	}
 	modules[0] = nil
 	fresh := registry.Modules()

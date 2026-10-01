@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ type MobileDockMenuProps = {
 }
 
 export function MobileDockMenu({ open, items, anchorRef, onOpenChange }: MobileDockMenuProps) {
+  const { t } = useTranslation('common')
   const location = useLocation()
   const [anchorRight, setAnchorRight] = useState<number | null>(null)
 
@@ -63,7 +65,7 @@ export function MobileDockMenu({ open, items, anchorRef, onOpenChange }: MobileD
     <>
       <button
         type="button"
-        aria-label="Close menu"
+        aria-label={t('actions.close')}
         className="fixed inset-0 z-40 cursor-default bg-transparent"
         onClick={() => onOpenChange(false)}
       />

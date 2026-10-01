@@ -140,6 +140,9 @@
     "preference": {
       "title": "Routing preference",
       "description": "Adjust balance between latency, success rate and price.",
+      "default": "Default",
+      "value": "Cost-saving",
+      "speed": "Speed-first",
       "expiryRescue": "Subscription expiry rescue",
       "expiryRescueDescription": "Prioritize channels nearing subscription expiry to avoid quota waste."
     },
@@ -216,6 +219,9 @@
     "healthLatency": "Latency: {{latency}}",
     "pricingPerRequest": "Per-request {{price}}",
     "pricingTokens": "Input {{input}} / Output {{output}}",
-    "perRequestUnit": "{{price}}/req"
+    "perRequestUnit": "{{price}}/req",
+    "durationDays": "d",
+    "durationHours": "h",
+    "durationMinutes": "m"
   }
 }

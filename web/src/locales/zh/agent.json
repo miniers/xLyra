@@ -17,6 +17,7 @@
     "inputPlaceholder": "随心输入....",
     "hint": "Enter 发送 · Shift+Enter 换行",
     "sendFailed": "发送失败",
+    "sessionMissing": "会话不存在",
     "editReplayTitle": "确认重新生成？",
     "editReplayDescription": "这会覆盖最后一次回复，并根据编辑后的内容重新生成，原回复将被替换。",
     "editReplayCancel": "取消",

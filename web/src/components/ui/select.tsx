@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { Check, ChevronDown, ChevronUp, CirclePlus, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -55,6 +56,7 @@ const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   SelectContentProps
 >(({ className, children, searchable = true, widthMode = 'trigger', position = 'popper', style, ...props }, ref) => {
+  const { t } = useTranslation('common')
   const [search, setSearch] = React.useState('')
   const inputRef = React.useRef<HTMLInputElement>(null)
   const contentWidthStyle = widthMode === 'content'
@@ -97,7 +99,7 @@ const SelectContent = React.forwardRef<
                 <input
                   ref={inputRef}
                   type="text"
-                  placeholder="Search..."
+                  placeholder={t('actions.search')}
                   className="w-full bg-transparent text-base text-foreground outline-none placeholder:text-[hsl(var(--input-placeholder))] md:text-sm"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}

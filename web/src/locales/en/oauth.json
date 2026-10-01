@@ -48,7 +48,7 @@
     },
     "deleteDialog": {
       "title": "Delete connection",
-      "confirm": "Delete「{{provider}}」connection? The bound site and associated data will be permanently removed.",
+      "confirm": "Delete \"{{provider}}\" connection? The bound site and associated data will be permanently removed.",
       "confirmDefault": "Delete this connection? This cannot be undone.",
       "cancel": "Cancel",
       "delete": "Confirm delete"

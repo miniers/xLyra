@@ -82,6 +82,7 @@
       "stackedBar": "積み上げ棒",
       "line": "折れ線"
     },
+    "other": "その他",
     "empty": "この期間のトレンドデータがありません"
   },
   "dimensions": {

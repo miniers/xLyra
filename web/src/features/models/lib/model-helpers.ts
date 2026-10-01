@@ -21,6 +21,8 @@ export function formatEndpointTypeLabel(value: string): string {
       return 'messages'
     case 'google-gemini':
       return 'gemini'
+    case 'typesafe-systemone':
+      return 'systemone'
     default:
       return value
   }
@@ -55,6 +57,8 @@ function endpointTypeFamily(value: string): string {
       return 'embedding'
     case 'openai-audio-speech':
       return 'audio-speech'
+    case 'typesafe-systemone':
+      return 'systemone'
     default:
       return ''
   }
@@ -75,6 +79,8 @@ function normalizeEndpointType(value: string): string {
       return 'anthropic-messages'
     case 'gemini':
       return 'google-gemini'
+    case 'systemone':
+      return 'typesafe-systemone'
     default:
       return value.trim().toLowerCase()
   }

@@ -82,6 +82,7 @@
       "stackedBar": "堆叠柱状",
       "line": "折线"
     },
+    "other": "其他",
     "empty": "当前范围内没有趋势数据"
   },
   "dimensions": {

@@ -235,7 +235,7 @@ function seriesPoint(date: string, metrics: Metrics): AnalyticsSeriesPoint {
   }
 }
 
-function buildSeries(facts: AnalyticsUsageFact[], dimension: AnalyticsTrendDimension) {
+function buildSeries(facts: AnalyticsUsageFact[], dimension: AnalyticsTrendDimension, otherLabel: string) {
   const members = new Map<string, Aggregate & { points: Map<string, Metrics> }>()
   for (const fact of facts) {
     const ref = dimensionRef(fact, dimension)
@@ -279,7 +279,7 @@ function buildSeries(facts: AnalyticsUsageFact[], dimension: AnalyticsTrendDimen
     }
     series.push({
       key: 'other',
-      label: '其他',
+      label: otherLabel,
       points: [...points.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, metrics]) => seriesPoint(date, metrics)),
@@ -292,6 +292,7 @@ export function buildAnalyticsUsage(
   dataset: AnalyticsDataset,
   filters: AnalyticsFiltersState,
   trendDimension: AnalyticsTrendDimension,
+  otherLabel: string,
 ): AnalyticsUsage {
   const currentByDimension = dataset.current.filter((fact) => matchesDimensions(fact, filters))
   const previousByDimension = dataset.previous.filter((fact) => matchesDimensions(fact, filters))
@@ -353,7 +354,7 @@ export function buildAnalyticsUsage(
       api_key: buildBreakdown(current, 'api_key'),
       matrix: buildMatrix(current),
     },
-    series: buildSeries(current, trendDimension),
+    series: buildSeries(current, trendDimension, otherLabel),
     api_key_contributions: [],
   }
 }

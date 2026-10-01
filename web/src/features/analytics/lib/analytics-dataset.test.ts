@@ -63,7 +63,7 @@ function filters(apiKeyIds: string[]): AnalyticsFiltersState {
 
 describe('analytics dataset', () => {
   it('filters current and previous usage by user locally', () => {
-    const usage = buildAnalyticsUsage(dataset, filters(['user-a']), 'model')
+    const usage = buildAnalyticsUsage(dataset, filters(['user-a']), 'model', '其他')
 
     expect(usage.totals.requests).toBe(2)
     expect(usage.totals.cost).toBeCloseTo(0.2)
