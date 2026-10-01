@@ -385,13 +385,6 @@
       "failed": "失敗",
       "untested": "未テスト"
     },
-    "protocol": {
-      "auto": "自動選択",
-      "chatCompletions": "/chat/completions",
-      "responses": "/responses",
-      "messages": "/messages",
-      "systemOne": "/systemone"
-    },
     "credential": {
       "auto": "Key を自動選択"
     },
@@ -409,7 +402,8 @@
       "auto": "自動検出",
       "chatCompletions": "Chat Completions",
       "messages": "Messages",
-      "responses": "Responses"
+      "responses": "Responses",
+      "systemOne": "/systemone"
     },
     "stream": {
       "stream": "ストリーム",

@@ -121,7 +121,6 @@ func TestRegistryRegistersDefaultModulesBySiteType(t *testing.T) {
 			wantType:         "adapter.TypeSafe",
 			wantCapabilities: []Capability{CapabilityValidateCredential, CapabilityListModels},
 		},
-		},
 	}
 
 	for siteType, tt := range cases {
