@@ -44,8 +44,11 @@ type Matrix struct {
 
 var modelKeySeparatorPattern = regexp.MustCompile(`[^a-z0-9.]+`)
 var canonicalFamilyTokens = map[string]struct{}{
+	"baichuan":      {},
 	"bge":           {},
+	"chatglm":       {},
 	"claude":        {},
+	"codestral":     {},
 	"cohere":        {},
 	"dall":          {},
 	"deepseek":      {},
@@ -57,14 +60,20 @@ var canonicalFamilyTokens = map[string]struct{}{
 	"gpt":           {},
 	"grok":          {},
 	"hermes":        {},
+	"internlm":      {},
 	"jina":          {},
 	"kimi":          {},
+	"llama":         {},
 	"lyria":         {},
 	"mimo":          {},
 	"minimax":       {},
+	"mistral":       {},
+	"mixtral":       {},
 	"moonshot":      {},
 	"moonshotai":    {},
+	"muse":          {},
 	"nanobananapro": {},
+	"nemotron":      {},
 	"o1":            {},
 	"o3":            {},
 	"o4":            {},
@@ -74,11 +83,14 @@ var canonicalFamilyTokens = map[string]struct{}{
 	"qwen3":         {},
 	"rerank":        {},
 	"sora":          {},
+	"step":          {},
+	"stepaudio":     {},
 	"text":          {},
 	"trinity":       {},
 	"tts":           {},
 	"veo":           {},
 	"whisper":       {},
+	"yi":            {},
 }
 var canonicalSuffixNoiseTokens = map[string]struct{}{
 	"business":  {},
@@ -99,11 +111,13 @@ var providerModelFamilyRules = []providerModelFamilyRule{
 	{provider: "deepseek", families: []string{"deepseek"}},
 	{provider: "xai", families: []string{"grok"}},
 	{provider: "qwen", families: []string{"qwen", "qwen2", "qwen3"}},
-	{provider: "zhipuai", families: []string{"glm"}},
+	{provider: "zhipuai", families: []string{"glm", "chatglm"}},
 	{provider: "moonshotai-cn", families: []string{"kimi", "moonshot", "moonshotai", "k3"}},
 	{provider: "xiaomi", families: []string{"mimo"}},
 	{provider: "minimax", families: []string{"minimax"}},
 	{provider: "nvidia", families: []string{"nvidia", "nemotron"}},
+	{provider: "meta", families: []string{"llama", "muse"}},
+	{provider: "mistral", families: []string{"mistral", "mixtral", "codestral"}},
 	{provider: "bytedance", families: []string{"bytedance", "doubao", "seedance", "seedream"}},
 	{provider: "vidu", families: []string{"vidu", "viduq"}},
 	{provider: "stepfun", families: []string{"step", "stepaudio"}},
@@ -128,6 +142,8 @@ var existingBrandProviders = map[string]struct{}{
 	"minimax":       {},
 	"xiaomi":        {},
 	"nvidia":        {},
+	"meta":          {},
+	"mistral":       {},
 	"bytedance":     {},
 	"vidu":          {},
 	"stepfun":       {},
@@ -143,20 +159,65 @@ func NewService(db *store.Store, confFiles ...*config.ConfigFile) *Service {
 	return &Service{db: db, capabilities: NewCapabilityService(db)}
 }
 
+var knownPublisherPrefixes = []string{
+	"models/",
+	"model/",
+	"openai/",
+	"anthropic/",
+	"google/",
+	"gemini/",
+	"deepseek/",
+	"deepseek-ai/",
+	"deepseek_ai/",
+	"xai/",
+	"moonshotai/",
+	"nvidia/",
+	"cline-pass/",
+	"cline_pass/",
+	"cline/",
+	"command-code/",
+	"command_code/",
+	"commandcode/",
+	"meta/",
+	"mistralai/",
+	"mistral/",
+	"qwen/",
+	"stepfun/",
+	"zai-org/",
+	"z-ai/",
+	"minimaxai/",
+	"minimax/",
+	"xiaomi/",
+	"meituan/",
+	"tencent/",
+	"baichuan-inc/",
+	"baichuan/",
+	"01-ai/",
+	"thudm/",
+	"snowflake/",
+	"thinkingmachines/",
+}
+
+func trimKnownModelPrefixes(value string) string {
+	for {
+		trimmed := false
+		for _, prefix := range knownPublisherPrefixes {
+			if strings.HasPrefix(value, prefix) {
+				value = strings.TrimPrefix(value, prefix)
+				trimmed = true
+				break
+			}
+		}
+		if !trimmed {
+			break
+		}
+	}
+	return value
+}
+
 func NormalizeModelKey(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
-	value = strings.TrimPrefix(value, "models/")
-	value = strings.TrimPrefix(value, "model/")
-	value = strings.TrimPrefix(value, "openai/")
-	value = strings.TrimPrefix(value, "anthropic/")
-	value = strings.TrimPrefix(value, "google/")
-	value = strings.TrimPrefix(value, "gemini/")
-	value = strings.TrimPrefix(value, "deepseek/")
-	value = strings.TrimPrefix(value, "xai/")
-	value = strings.TrimPrefix(value, "moonshotai/")
-	value = strings.TrimPrefix(value, "nvidia/")
-	value = strings.TrimPrefix(value, "cline-pass/")
-	value = strings.TrimPrefix(value, "cline_pass/")
+	value = trimKnownModelPrefixes(value)
 	value = strings.ReplaceAll(value, "+", " plus ")
 	value = modelKeySeparatorPattern.ReplaceAllString(value, "-")
 	value = strings.Trim(value, "-.")
@@ -166,23 +227,27 @@ func NormalizeModelKey(value string) string {
 
 func NormalizeModelKeyPrefix(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
-	value = strings.TrimPrefix(value, "models/")
-	value = strings.TrimPrefix(value, "model/")
-	value = strings.TrimPrefix(value, "openai/")
-	value = strings.TrimPrefix(value, "anthropic/")
-	value = strings.TrimPrefix(value, "google/")
-	value = strings.TrimPrefix(value, "gemini/")
-	value = strings.TrimPrefix(value, "deepseek/")
-	value = strings.TrimPrefix(value, "xai/")
-	value = strings.TrimPrefix(value, "moonshotai/")
-	value = strings.TrimPrefix(value, "nvidia/")
-	value = strings.TrimPrefix(value, "cline-pass/")
-	value = strings.TrimPrefix(value, "cline_pass/")
+	value = trimKnownModelPrefixes(value)
 	value = strings.ReplaceAll(value, "+", " plus ")
 	value = modelKeySeparatorPattern.ReplaceAllString(value, "-")
 	value = strings.TrimLeft(value, "-.")
 
 	return value
+}
+
+func isCanonicalFamilyToken(token string) bool {
+	if _, ok := canonicalFamilyTokens[token]; ok {
+		return true
+	}
+	for family := range canonicalFamilyTokens {
+		if strings.HasPrefix(token, family) {
+			rest := token[len(family):]
+			if rest != "" && (rest[0] == '.' || (rest[0] >= '0' && rest[0] <= '9')) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func CanonicalModelKeyFromUpstream(value string) string {
@@ -195,7 +260,7 @@ func CanonicalModelKeyFromUpstream(value string) string {
 	start := 0
 	found := false
 	for index, token := range tokens {
-		if _, ok := canonicalFamilyTokens[token]; ok {
+		if isCanonicalFamilyToken(token) {
 			start = index
 			found = true
 			break

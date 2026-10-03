@@ -19,6 +19,16 @@ func TestModelKeysNormalizeDecoratedInputsAndCanonicalizeUpstreamNames(t *testin
 		{input: "model/google/Gemini___2.5   Flash", want: "gemini-2.5-flash"},
 		{input: "xai/...Grok---4.Image++", want: "grok-4.image-plus-plus"},
 		{input: "cline-pass/qwen3.8-max", want: "qwen3.8-max"},
+		{input: "meta/muse-spark-1.3-contributor", want: "muse-spark-1.3-contributor"},
+		{input: "nvidia/nemotron-4-340b-instruct", want: "nemotron-4-340b-instruct"},
+		{input: "meta/llama-3.3-70b-instruct", want: "llama-3.3-70b-instruct"},
+		{input: "deepseek-ai/deepseek-r1", want: "deepseek-r1"},
+		{input: "mistralai/mixtral-8x7b-instruct-v0.1", want: "mixtral-8x7b-instruct-v0.1"},
+		{input: "qwen/qwen2.5-72b-instruct", want: "qwen2.5-72b-instruct"},
+		{input: "stepfun/Step-3.7-Flash", want: "step-3.7-flash"},
+		{input: "zai-org/GLM-5.3", want: "glm-5.3"},
+		{input: "command-code/claude-sonnet-5", want: "claude-sonnet-5"},
+		{input: "models/meta/muse-spark-1.3", want: "muse-spark-1.3"},
 	}
 	for _, tt := range normalizeCases {
 		tt := tt
@@ -40,6 +50,14 @@ func TestModelKeysNormalizeDecoratedInputsAndCanonicalizeUpstreamNames(t *testin
 		{input: "vendor-gpt-search-business", want: "gpt"},
 		{input: "search-business", want: "search-business"},
 		{input: "cline-pass/qwen3.8-max", want: "qwen3.8-max"},
+		{input: "meta/muse-spark-1.3-contributor", want: "muse-spark-1.3-contributor"},
+		{input: "meta-muse-spark-1.3-contributor", want: "muse-spark-1.3-contributor"},
+		{input: "muse-spark-1.3-contributor", want: "muse-spark-1.3-contributor"},
+		{input: "nvidia/nemotron-4-340b-instruct", want: "nemotron-4-340b-instruct"},
+		{input: "meta/llama-3.3-70b-instruct", want: "llama-3.3-70b-instruct"},
+		{input: "deepseek-ai/deepseek-r1", want: "deepseek-r1"},
+		{input: "mistralai/mixtral-8x7b-instruct-v0.1", want: "mixtral-8x7b-instruct-v0.1"},
+		{input: "qwen/qwen2.5-72b-instruct", want: "qwen2.5-72b-instruct"},
 	}
 	for _, tt := range canonicalCases {
 		tt := tt
@@ -66,6 +84,10 @@ func TestInferProviderRecognizesCanonicalizedVendorModelKeys(t *testing.T) {
 		{input: "perplexity-sonar-reasoning", want: "perplexity"},
 		{input: "vendor-moonshot-v1-128k", want: "moonshotai-cn"},
 		{input: "models/xai/grok-4", want: "xai"},
+		{input: "meta/muse-spark-1.3-contributor", want: "meta"},
+		{input: "meta/llama-3.3-70b-instruct", want: "meta"},
+		{input: "nvidia/nemotron-4-340b-instruct", want: "nvidia"},
+		{input: "mistralai/mixtral-8x7b-instruct-v0.1", want: "mistral"},
 		{input: "vendor-custom-chat", want: "unknown"},
 	}
 	for _, tt := range cases {
