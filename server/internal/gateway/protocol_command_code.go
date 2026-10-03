@@ -42,11 +42,59 @@ var ccReverseToolAliases = map[string]string{
 	"read_file":    "read_multiple_files",
 }
 
-func reverseMapCCToolName(name string) string {
-	if original, ok := ccReverseToolAliases[name]; ok {
+func reverseMapCCToolName(name string, aliases ...map[string]string) string {
+	reverseAliases := ccReverseToolAliases
+	if len(aliases) > 0 && aliases[0] != nil {
+		reverseAliases = aliases[0]
+	}
+	if original, ok := reverseAliases[name]; ok {
 		return original
 	}
 	return name
+}
+
+func ccReverseToolAliasesForRequest(request gatewayRequest) map[string]string {
+	aliases := make(map[string]string, len(ccReverseToolAliases))
+	for upstream, original := range ccReverseToolAliases {
+		aliases[upstream] = original
+	}
+	if request.Canonical == nil {
+		return aliases
+	}
+	declare := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		aliases[mapCCToolName(name)] = name
+	}
+	for _, tool := range request.Canonical.Tools {
+		declare(tool.Name)
+	}
+	for _, message := range request.Canonical.Messages {
+		declare(message.Name)
+		for _, call := range message.ToolCalls {
+			declare(call.Name)
+		}
+	}
+	return aliases
+}
+
+func ccToolCallAliasesForRequest(request gatewayRequest) map[string]string {
+	aliases := make(map[string]string)
+	if request.Canonical == nil {
+		return aliases
+	}
+	for _, message := range request.Canonical.Messages {
+		for _, call := range message.ToolCalls {
+			id := strings.TrimSpace(call.ID)
+			name := strings.TrimSpace(call.Name)
+			if id != "" && name != "" {
+				aliases[id] = name
+			}
+		}
+	}
+	return aliases
 }
 
 func ccGenerateTraceparent() string {
@@ -383,14 +431,14 @@ func (a *commandCodeProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, ups
 
 	sessID := a.resolveSessionID(a.request, upstreamKey)
 	req.Header.Set("x-session-id", sessID)
-
-	ensureCommandCodeInitialized(req.Context(), &http.Client{Timeout: 10 * time.Second}, req.URL.Scheme+"://"+req.URL.Host, upstreamKey, "")
 }
 
 func (a *commandCodeProtocolAdapter) ProxyStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, startedAt time.Time, candidate routeengine.Candidate) (streamCaptureState, bool, error) {
 	options := canonicalStreamOptions{
-		IncludeUsage: chatStreamUsageEnabled(a.request.Payload),
-		Candidate:    candidate,
+		IncludeUsage:               chatStreamUsageEnabled(a.request.Payload),
+		Candidate:                  candidate,
+		CommandCodeToolAliases:     ccReverseToolAliasesForRequest(a.request),
+		CommandCodeToolCallAliases: ccToolCallAliasesForRequest(a.request),
 	}
 	return proxyCanonicalStream(ctx, w, resp, startedAt, canonicalProtocolCommandCode, a.downstreamProtocol, options)
 }
@@ -405,7 +453,7 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 		}, nil
 	}
 
-	decoder := newCommandCodeStreamDecoder()
+	decoder := newCommandCodeStreamDecoderForRequest(a.request)
 	scanner := bufio.NewScanner(bytes.NewReader(body))
 	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 	var events []canonicalStreamEvent
@@ -623,21 +671,46 @@ func (a *commandCodeProtocolAdapter) TransformBufferedResponse(statusCode int, h
 
 // commandCodeStreamDecoder translates upstream Command Code SSE/NDJSON lines into canonicalStreamEvent
 type commandCodeStreamDecoder struct {
-	responseID    string
-	model         string
-	createdAt     int64
-	createdSent   bool
-	toolCallIndex int
-	sawFinish     bool
-	sawError      bool
-	pendingFinish *canonicalStreamEvent
+	responseID     string
+	model          string
+	createdAt      int64
+	createdSent    bool
+	toolCallIndex  int
+	sawFinish      bool
+	sawError       bool
+	pendingFinish  *canonicalStreamEvent
+	reverseAliases map[string]string
+	callAliases    map[string]string
 }
 
 func newCommandCodeStreamDecoder() *commandCodeStreamDecoder {
 	return &commandCodeStreamDecoder{
-		responseID: "chatcmpl-" + uuid.NewString(),
-		createdAt:  time.Now().Unix(),
+		responseID:     "chatcmpl-" + uuid.NewString(),
+		createdAt:      time.Now().Unix(),
+		reverseAliases: ccReverseToolAliases,
+		callAliases:    map[string]string{},
 	}
+}
+
+func newCommandCodeStreamDecoderForRequest(request gatewayRequest) *commandCodeStreamDecoder {
+	decoder := newCommandCodeStreamDecoder()
+	decoder.reverseAliases = ccReverseToolAliasesForRequest(request)
+	decoder.callAliases = ccToolCallAliasesForRequest(request)
+	return decoder
+}
+
+func (d *commandCodeStreamDecoder) setReverseToolAliases(aliases map[string]string) {
+	if aliases == nil {
+		return
+	}
+	d.reverseAliases = aliases
+}
+
+func (d *commandCodeStreamDecoder) setToolCallAliases(aliases map[string]string) {
+	if aliases == nil {
+		return
+	}
+	d.callAliases = aliases
 }
 
 func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEvent, error) {
@@ -751,7 +824,7 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 			Model:                  d.model,
 			CreatedAt:              d.createdAt,
 			ToolCallID:             toolCallID,
-			ToolCallName:           reverseMapCCToolName(toolName),
+			ToolCallName:           d.reverseToolName(toolCallID, toolName),
 			ToolCallArgumentsDelta: args,
 			ToolCallIndex:          d.toolCallIndex,
 		})
@@ -825,6 +898,13 @@ func (d *commandCodeStreamDecoder) DecodeLine(line []byte) ([]canonicalStreamEve
 	}
 
 	return events, nil
+}
+
+func (d *commandCodeStreamDecoder) reverseToolName(callID string, upstreamName string) string {
+	if original, ok := d.callAliases[strings.TrimSpace(callID)]; ok {
+		return original
+	}
+	return reverseMapCCToolName(upstreamName, d.reverseAliases)
 }
 
 func (d *commandCodeStreamDecoder) Flush() []canonicalStreamEvent {

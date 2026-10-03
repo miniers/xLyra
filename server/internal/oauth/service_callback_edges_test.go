@@ -181,7 +181,7 @@ func TestMarkConnectionUnavailableRecordsErrorAndDisablesBoundSiteOffline(t *tes
 		savedSite = site
 	}))
 
-	if err := service.MarkConnectionUnavailable(context.Background(), connectionID, "refresh failed"); err != nil {
+	if err := service.MarkConnectionUnavailable(context.Background(), connectionID, "invalid_grant"); err != nil {
 		t.Fatalf("MarkConnectionUnavailable returned error: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func TestMarkConnectionUnavailableRecordsErrorAndDisablesBoundSiteOffline(t *tes
 	if err := json.Unmarshal(savedConnection.Metadata, &meta); err != nil {
 		t.Fatalf("decode saved connection meta: %v", err)
 	}
-	if meta["kept"] != "yes" || meta["last_error"] != "refresh failed" || strings.TrimSpace(stringFromAny(meta["last_error_at"])) == "" {
+	if meta["kept"] != "yes" || meta["last_error"] != "invalid_grant" || strings.TrimSpace(stringFromAny(meta["last_error_at"])) == "" {
 		t.Fatalf("saved connection meta = %#v, want merged last_error fields", meta)
 	}
 	if savedSite.ID != siteID || savedSite.Enabled {

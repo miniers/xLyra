@@ -47,7 +47,7 @@ func TestClassifyGoogleUpstreamErrorHandlesRateLimitAndServerErrors(t *testing.T
 	if !ok {
 		t.Fatal("expected Google 429 to be classified")
 	}
-	if rateLimited.ErrorType != "google_rate_limited" || rateLimited.CooldownReason != "google_rate_limited" || rateLimited.CooldownScope != "credential" {
+	if rateLimited.ErrorType != "google_rate_limited" || rateLimited.CooldownReason != "google_rate_limited" || rateLimited.CooldownScope != "model" {
 		t.Fatalf("unexpected rate limit classification: %#v", rateLimited)
 	}
 	if rateLimited.ErrorMessage != "quota exhausted" {
@@ -89,7 +89,7 @@ func TestClassifyGoogleUpstreamErrorHandlesRateLimitAndServerErrors(t *testing.T
 	if !ok {
 		t.Fatal("expected Google 429 without retryDelay to be classified")
 	}
-	if defaultRetry.CooldownDuration != time.Minute || defaultRetry.RetryAfterSeconds != 60 || defaultRetry.CooldownScope != "credential" {
+	if defaultRetry.CooldownDuration != time.Minute || defaultRetry.RetryAfterSeconds != 60 || defaultRetry.CooldownScope != "model" {
 		t.Fatalf("default retry-after = %s/%d, want 60s", defaultRetry.CooldownDuration, defaultRetry.RetryAfterSeconds)
 	}
 

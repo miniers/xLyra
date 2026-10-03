@@ -173,7 +173,9 @@
     "site_unhealthy": "Site health check failed",
     "usage_limit_reached": "Account usage limit reached",
     "upstream_http_error": "Upstream request error",
-    "upstream_timeout": "Upstream request timeout"
+    "upstream_timeout": "Upstream request timeout",
+    "credential_rpm_limit_reached": "Credential RPM limit reached",
+    "credential_rpd_limit_reached": "Credential RPD limit reached"
   },
   "cooldownSources": {
     "site_health": "Health check",
@@ -188,7 +190,8 @@
     "missing_model_pricing": "Model pricing missing",
     "high_failure_rate": "High site failure rate",
     "rate_limit_exceeded": "Rate limit triggered",
-    "high_latency": "High request latency"
+    "high_latency": "High request latency",
+    "automatic_anomaly": "Automatic route anomaly down-rank"
   },
   "attention": {
     "title": {
@@ -202,7 +205,8 @@
       "high_failure_rate": "{{site}} has a high failure rate over the last 7 days",
       "rate_limit_exceeded": "Requests were rate limited over the last 7 days",
       "high_latency_site_model": "{{site}} / {{model}} has high request latency",
-      "high_latency_model": "{{model}} has high request latency"
+      "high_latency_model": "{{model}} has high request latency",
+      "automatic_anomaly": "{{site}} / {{model}} has an automatic route anomaly penalty of {{penalty}} points for {{remaining}}"
     },
     "detail": {
       "no_route_candidates_active": "This model had downstream traffic in the last 24 hours, but currently has no available upstream. New requests will fail.",
@@ -214,7 +218,10 @@
       "missing_model_pricing": "Missing prices can make cost statistics and route policies inaccurate. Add pricing for non-NewAPI sources.",
       "high_failure_rate": "This site's recent success rate is {{rate}}. Inspect failed requests and decide whether to disable, down-rank, or adjust routing.",
       "rate_limit_exceeded": "Downstream callers received 429 responses. Check global or API key RPM/TPM limits.",
-      "high_latency": "P95 latency is {{latency}}. Check upstream response speed or consider lowering route priority."
+      "high_latency": "P95 latency is {{latency}}. Check upstream response speed or consider lowering route priority.",
+      "automatic_anomaly": "Automatic anomaly down-rank is active, deducting {{penalty}} points for {{remaining}}.",
+      "automatic_anomaly_first_byte": "First-byte latency recent {{recent}} / baseline {{baseline}}",
+      "automatic_anomaly_cache": "Cache hit rate recent {{recent}} / baseline {{baseline}}"
     },
     "actions": {
       "no_route_candidates": "Review routes",
@@ -242,5 +249,8 @@
     "detail": "{{site}} / {{model}} P95 latency high"
   },
   "unknownSite": "Unknown site",
-  "failureCount": "{{count}} times"
+  "failureCount": "{{count}} times",
+  "value": {
+    "automatic_anomaly": "-{{penalty}}"
+  }
 }

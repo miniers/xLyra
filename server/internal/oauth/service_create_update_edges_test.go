@@ -140,12 +140,12 @@ func TestDisableSiteOnPermanentErrorOnlySavesEnabledBoundSiteOffline(t *testing.
 		t.Fatalf("save count after already-disabled site = %d, want no save", saveCount)
 	}
 
-	service.disableSiteOnPermanentError(context.Background(), db, store.OAuthConnection{SiteID: &siteID}, "codex token refresh returned 403: forbidden")
+	service.disableSiteOnPermanentError(context.Background(), db, store.OAuthConnection{SiteID: &siteID}, "codex token refresh returned 403: refresh_token_invalidated")
 	if saveCount != 1 || savedSite.ID != siteID || savedSite.Enabled {
 		t.Fatalf("saved site = %#v save count = %d, want enabled site disabled once", savedSite, saveCount)
 	}
 
-	service.disableSiteOnPermanentError(context.Background(), nil, store.OAuthConnection{SiteID: &siteID}, "codex token refresh returned 401: unauthorized")
+	service.disableSiteOnPermanentError(context.Background(), nil, store.OAuthConnection{SiteID: &siteID}, "codex token refresh returned 401: invalid_grant")
 	if saveCount != 2 || savedSite.ID != siteID || savedSite.Enabled {
 		t.Fatalf("saved site = %#v save count = %d, want enabled site disabled via fallback db", savedSite, saveCount)
 	}

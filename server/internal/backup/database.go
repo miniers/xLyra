@@ -285,7 +285,7 @@ func importDatabase(ctx context.Context, db *gorm.DB, masterKey string, dump dat
 				if err := encryptTableSecrets(table.Name, rows, masterKey); err != nil {
 					return err
 				}
-				if table.Name == "api_keys" {
+				if table.Name == "api_keys" || table.Name == "route_locks" {
 					for _, row := range rows {
 						row["created_by_admin_id"] = nil
 					}

@@ -60,7 +60,7 @@ func (h Handler) recordAttempt(
 		UpstreamStatusCode:         result.upstreamStatusCode,
 		UpstreamResponse:           upstreamResponse,
 		Metadata:                   metadata,
-		SkipHealthSnapshot:         result.diagnostic,
+		SkipHealthSnapshot:         skipGatewayHealthSnapshot(result),
 		Internal:                   internal,
 		ParentRequestLogID:         parentLogID,
 	})
@@ -69,6 +69,17 @@ func (h Handler) recordAttempt(
 		return uuid.Nil
 	}
 	return requestLog.ID
+}
+
+func skipGatewayHealthSnapshot(result gatewayAttemptResult) bool {
+	if result.diagnostic {
+		return true
+	}
+	switch result.errorType {
+	case "downstream_client_cancelled", "downstream_stream_write_failed":
+		return true
+	}
+	return result.streamEndReason == "downstream_client_cancelled" || result.streamEndReason == "downstream_stream_write_failed"
 }
 
 func (h Handler) recordRequestFailure(

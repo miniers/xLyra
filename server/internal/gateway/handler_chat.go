@@ -210,6 +210,13 @@ func (h Handler) serveEndpoint(
 	inflight.SetModel(requestID, plan.CanonicalModel.ModelKey, plan.CanonicalModel.Provider)
 
 	reservation, limitErr, limitAcquireErr := h.acquireRateLimit(ctx, apiKey.ID, endpoint, request, startedAt)
+	actualRateLimitTokens := int64(0)
+	if reservation != nil {
+		settlementCtx := ctx
+		defer func() {
+			h.settleRateLimit(settlementCtx, reservation, actualRateLimitTokens)
+		}()
+	}
 	if errors.Is(context.Cause(ctx), context.Canceled) {
 		flowPhase = inflight.PhaseCancelled
 		return
@@ -232,13 +239,8 @@ func (h Handler) serveEndpoint(
 	ctx = h.withCacheObservation(ctx, apiKey.ID, plan.CanonicalModel.ID, request)
 	ctx = h.withCacheShadowAffinity(ctx, apiKey.ID, plan.CanonicalModel.ID, request, plan, resolver)
 	r = r.WithContext(ctx)
-	actualRateLimitTokens := int64(0)
 	if reservation != nil {
 		ctx = withRateLimitMetadata(ctx, reservation.Metadata(0))
-		settlementCtx := ctx
-		defer func() {
-			h.settleRateLimit(settlementCtx, reservation, actualRateLimitTokens)
-		}()
 	}
 	if requestUsesDownstreamSSE(request) {
 		streamCtx, cancelStream := context.WithCancel(ctx)
@@ -298,6 +300,27 @@ func (h Handler) serveEndpoint(
 	var retainedRateLimitFailure *gatewayAttemptResult
 	skippedImageUnsupported := false
 	var skippedGrokIncompatible []string
+	processServedResult := func(candidate routeengine.Candidate, result gatewayAttemptResult) bool {
+		if !result.success && !result.responseStarted {
+			return false
+		}
+		actualRateLimitTokens = rateLimitTokenCount(result)
+		inflight.AddTokens(requestID, inflightTokenAmount(result))
+		if !result.success {
+			return true
+		}
+		h.clearCooldownAfterRecovery(context.WithoutCancel(ctx), candidate)
+		if !request.Stream {
+			copyUpstreamResponse(w, result, candidate.Site.Name, h.exposeRouteSite)
+		}
+		flowPhase = inflight.PhaseCompleted
+		return true
+	}
+	recordAttemptFailure := func(candidate routeengine.Candidate, result gatewayAttemptResult) {
+		lastFailure = &result
+		retainedRateLimitFailure = retainUpstreamRateLimitFailure(retainedRateLimitFailure, result)
+		h.cooldownAfterFailure(ctx, candidate, result)
+	}
 	for {
 		lastFailure = nil
 		skippedImageUnsupported = false
@@ -332,24 +355,26 @@ func (h Handler) serveEndpoint(
 				}
 				if bridgeResolveErr == nil && candidateRequiresImageBridge(candidate, bridgeProtocol) {
 					result := h.forwardBridgedResponses(ctx, w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, request, reservation, resolver, bridge)
-					if errors.Is(context.Cause(ctx), context.Canceled) {
-						flowPhase = inflight.PhaseCancelled
+					if processServedResult(candidate, result) {
+						if !result.success {
+							if result.errorType != "downstream_client_cancelled" {
+								recordAttemptFailure(candidate, result)
+							}
+							if result.errorType == "downstream_client_cancelled" || errors.Is(context.Cause(ctx), context.Canceled) {
+								flowPhase = inflight.PhaseCancelled
+							}
+						}
 						return
 					}
-					if result.success {
-						actualRateLimitTokens = rateLimitTokenCount(result)
-						inflight.AddTokens(requestID, inflightTokenAmount(result))
-						h.clearCooldownAfterRecovery(ctx, candidate)
-						flowPhase = inflight.PhaseCompleted
+					if errors.Is(context.Cause(ctx), context.Canceled) {
+						flowPhase = inflight.PhaseCancelled
 						return
 					}
 					if result.errorType == "downstream_client_cancelled" {
 						flowPhase = inflight.PhaseCancelled
 						return
 					}
-					lastFailure = &result
-					retainedRateLimitFailure = retainUpstreamRateLimitFailure(retainedRateLimitFailure, result)
-					h.cooldownAfterFailure(ctx, candidate, result)
+					recordAttemptFailure(candidate, result)
 					if result.responseStarted {
 						return
 					}
@@ -396,20 +421,17 @@ func (h Handler) serveEndpoint(
 			}
 
 			result := h.forwardGatewayRequest(withCredentialProtocolResolver(ctx, resolver), w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, attemptRequest, reservation, protocol)
-			if errors.Is(context.Cause(ctx), context.Canceled) {
-				flowPhase = inflight.PhaseCancelled
+			if processServedResult(candidate, result) {
+				if !result.success {
+					recordAttemptFailure(candidate, result)
+					if result.errorType == "downstream_client_cancelled" || errors.Is(context.Cause(ctx), context.Canceled) {
+						flowPhase = inflight.PhaseCancelled
+					}
+				}
 				return
 			}
-			if result.success {
-				// Settle only the attempt actually served to the client; tokens from
-				// failed attempts retried via failover must not be added on top.
-				actualRateLimitTokens = rateLimitTokenCount(result)
-				inflight.AddTokens(requestID, inflightTokenAmount(result))
-				h.clearCooldownAfterRecovery(ctx, candidate)
-				if !request.Stream {
-					copyUpstreamResponse(w, result, candidate.Site.Name, h.exposeRouteSite)
-				}
-				flowPhase = inflight.PhaseCompleted
+			if errors.Is(context.Cause(ctx), context.Canceled) {
+				flowPhase = inflight.PhaseCancelled
 				return
 			}
 			if result.errorType == "downstream_client_cancelled" {
@@ -419,15 +441,19 @@ func (h Handler) serveEndpoint(
 			if bridge != nil && bridgeRescueEligible(result) {
 				h.logger.InfoContext(ctx, "image bridge rescue after upstream image rejection", "scope", "gateway", "request_id", requestID, "site", candidate.Site.Slug, "upstream_status", result.upstreamStatusCode)
 				result = h.forwardBridgedResponses(ctx, w, requestID, index+1, apiKey.ID, plan.CanonicalModel.ID, candidate, request, reservation, resolver, bridge)
-				if errors.Is(context.Cause(ctx), context.Canceled) {
-					flowPhase = inflight.PhaseCancelled
+				if processServedResult(candidate, result) {
+					if !result.success {
+						if result.errorType != "downstream_client_cancelled" {
+							recordAttemptFailure(candidate, result)
+						}
+						if result.errorType == "downstream_client_cancelled" || errors.Is(context.Cause(ctx), context.Canceled) {
+							flowPhase = inflight.PhaseCancelled
+						}
+					}
 					return
 				}
-				if result.success {
-					actualRateLimitTokens = rateLimitTokenCount(result)
-					inflight.AddTokens(requestID, inflightTokenAmount(result))
-					h.clearCooldownAfterRecovery(ctx, candidate)
-					flowPhase = inflight.PhaseCompleted
+				if errors.Is(context.Cause(ctx), context.Canceled) {
+					flowPhase = inflight.PhaseCancelled
 					return
 				}
 				if result.errorType == "downstream_client_cancelled" {
@@ -436,9 +462,7 @@ func (h Handler) serveEndpoint(
 				}
 			}
 
-			lastFailure = &result
-			retainedRateLimitFailure = retainUpstreamRateLimitFailure(retainedRateLimitFailure, result)
-			h.cooldownAfterFailure(ctx, candidate, result)
+			recordAttemptFailure(candidate, result)
 			if result.responseStarted {
 				return
 			}
@@ -560,6 +584,8 @@ func lockedRouteUnavailable(result *gatewayAttemptResult, skippedImage, skippedP
 	case "codex_oauth_refresh_failed", "antigravity_oauth_refresh_failed", "claude_code_oauth_refresh_failed", "grok_oauth_refresh_failed",
 		"upstream_client_unavailable", "upstream_request_build_failed", "protocol_resolution_failed":
 		return true
+	case "google_upstream_error":
+		return result.upstreamStatusCode == 0 || result.upstreamStatusCode >= http.StatusInternalServerError
 	case "upstream_transport_error", "upstream_timeout", "upstream_first_byte_timeout", "upstream_response_read_failed", "upstream_response_transform_failed",
 		"upstream_stream_preoutput_too_large", "upstream_stream_error", "upstream_stream_failed", "upstream_stream_incomplete", "upstream_stream_eof",
 		"upstream_stream_read_failed", "upstream_stream_empty", "upstream_stream_parse_failed":

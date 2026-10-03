@@ -209,7 +209,7 @@ func cooldownInputForFailure(candidate routeengine.Candidate, result gatewayAtte
 		base.Reason = store.CooldownReasonUpstreamCredentialsExhausted
 		base.Duration = transientCooldownBaseDuration
 		return base, true
-	case (isCodexSite(candidate.Site.SiteType) || isAntigravitySite(candidate.Site.SiteType)) && result.cooldownScope == "model":
+	case (isCodexSite(candidate.Site.SiteType) || isAntigravitySite(candidate.Site.SiteType) || isGoogleSite(candidate.Site.SiteType)) && result.cooldownScope == "model":
 		base.SiteModelID = &siteModelID
 		base.Scope = "model"
 		if base.Reason == "" {

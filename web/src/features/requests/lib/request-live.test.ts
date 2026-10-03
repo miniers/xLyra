@@ -124,7 +124,7 @@ describe('request activity reducer', () => {
     expect(removed.startedAtByRequestID).toEqual({})
   })
 
-  it('does not let an older snapshot replace newer state', () => {
+  it('lets a snapshot reset state after a sequence restart', () => {
     const state = reduceRequestActivitySnapshot(initialRequestActivityState(), {
       sequence: 3,
       requests: [activity({ phase: 'routed' })],
@@ -138,7 +138,11 @@ describe('request activity reducer', () => {
     expect(reduceRequestActivitySnapshot(newer, {
       sequence: 3,
       requests: [],
-    })).toBe(newer)
+    })).toEqual({
+      sequence: 3,
+      requests: {},
+      startedAtByRequestID: {},
+    })
   })
 })
 

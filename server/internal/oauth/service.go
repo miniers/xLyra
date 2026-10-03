@@ -704,8 +704,11 @@ func (s *Service) refreshConnectionOnce(ctx context.Context, connectionID uuid.U
 				result, err = s.codexConnectionDetails(current)
 				return err
 			}
-			if waitedForLease && current.Status == "reconnect_required" {
-				return refreshConnectionFailureError(current)
+			if waitedForLease && strings.EqualFold(strings.TrimSpace(current.Status), "reconnect_required") {
+				if codexConnectionRequiresReauthorization(current) {
+					return refreshConnectionFailureError(current)
+				}
+				current.Status = "connected"
 			}
 			if codexConnectionRequiresReauthorization(current) {
 				return ErrCodexReauthorizationRequired
@@ -761,6 +764,9 @@ func (s *Service) refreshConnectionOnce(ctx context.Context, connectionID uuid.U
 		if errors.As(err, &fail) {
 			fail.connection.RefreshLeaseID = ""
 			fail.connection.RefreshLeaseUntil = sql.NullTime{}
+			if !isPermanentAuthError(fail.err.Error()) && strings.EqualFold(strings.TrimSpace(fail.connection.Status), "reconnect_required") {
+				fail.connection.Status = "connected"
+			}
 			if _, saveErr := repo.Save(ctx, fail.connection); saveErr != nil {
 				return CodexConnection{}, saveErr
 			}
@@ -833,13 +839,14 @@ func (s *Service) refreshConnectionLocked(ctx context.Context, repo store.OAuthC
 	refreshed, err := s.refreshCodexTokens(ctx, refreshToken, httpClient)
 	if err != nil {
 		errMsg := err.Error()
-		connection.Status = "reconnect_required"
+		if isPermanentAuthError(errMsg) {
+			connection.Status = "reconnect_required"
+		}
 		connection.Metadata = store.JSON(updateMetadataErrorWithCode(connection.Metadata, errMsg, codexTokenErrorCode(err)))
 		return CodexConnection{}, &refreshFail{connection: connection, err: err}
 	}
 	if strings.TrimSpace(refreshed.AccessToken) == "" {
 		errMsg := "codex token refresh returned empty access_token"
-		connection.Status = "reconnect_required"
 		connection.Metadata = store.JSON(updateMetadataErrorWithCode(connection.Metadata, errMsg, ""))
 		return CodexConnection{}, &refreshFail{connection: connection, err: errors.New(errMsg)}
 	}
@@ -936,7 +943,9 @@ func (s *Service) refreshClaudeCodeConnection(ctx context.Context, repo store.OA
 	refreshed, err := s.refreshClaudeCodeTokens(ctx, refreshToken, connection.Scopes, httpClient)
 	if err != nil {
 		errMsg := err.Error()
-		connection.Status = "reconnect_required"
+		if isPermanentAuthError(errMsg) {
+			connection.Status = "reconnect_required"
+		}
 		connection.Metadata = store.JSON(updateMetadataError(connection.Metadata, errMsg))
 		return CodexConnection{}, &refreshFail{connection: connection, err: err}
 	}
@@ -1205,12 +1214,17 @@ func (s *Service) MarkConnectionUnavailable(ctx context.Context, connectionID uu
 	if err != nil {
 		return err
 	}
-	connection.Status = "reconnect_required"
+	permanent := isPermanentAuthError(errMsg)
+	if permanent {
+		connection.Status = "reconnect_required"
+	} else if strings.EqualFold(strings.TrimSpace(connection.Status), "reconnect_required") && !codexConnectionRequiresReauthorization(connection) {
+		connection.Status = "connected"
+	}
 	connection.Metadata = store.JSON(updateMetadataError(connection.Metadata, errMsg))
 	if _, err = repo.Save(ctx, connection); err != nil {
 		return err
 	}
-	if connection.SiteID != nil && *connection.SiteID != uuid.Nil {
+	if permanent && connection.SiteID != nil && *connection.SiteID != uuid.Nil {
 		_, _ = store.NewSiteRepository(s.db.DB()).SetEnabled(ctx, *connection.SiteID, false)
 	}
 	return nil
@@ -1461,6 +1475,7 @@ func updateMetadataError(existing store.JSON, errMsg string) []byte {
 	meta := oauthConnectionMetadata(existing)
 	meta["last_error"] = errMsg
 	meta["last_error_at"] = time.Now().UTC().Format(time.RFC3339)
+	delete(meta, "last_error_code")
 	encoded, _ := json.Marshal(meta)
 	return encoded
 }
@@ -1491,10 +1506,10 @@ func oauthConnectionMetadata(existing store.JSON) map[string]any {
 
 func isPermanentAuthError(errMsg string) bool {
 	lower := strings.ToLower(errMsg)
-	if strings.Contains(lower, "refresh_token_invalidated") || strings.Contains(lower, "refresh_token_reused") || strings.Contains(lower, "invalid_grant") {
+	if strings.Contains(lower, "token_invalidated") || strings.Contains(lower, "refresh_token_reus") || strings.Contains(lower, "invalid_grant") {
 		return true
 	}
-	return messageContainsHTTPAuthCode(lower)
+	return false
 }
 
 func messageContainsHTTPAuthCode(message string) bool {

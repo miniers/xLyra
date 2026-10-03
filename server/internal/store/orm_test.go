@@ -1129,8 +1129,10 @@ func TestRequestLogExpressionHelpers(t *testing.T) {
 	}
 
 	order := requestLogDefaultOrderClause()
-	expression, ok := order.Expression.(clause.Expr)
-	if !ok || !strings.Contains(expression.SQL, "metadata ->> 'started_at'") || !strings.Contains(expression.SQL, "created_at DESC") {
+	if len(order.Columns) != 3 ||
+		order.Columns[0].Column.Name != "started_at" ||
+		order.Columns[1].Column.Name != "created_at" ||
+		order.Columns[2].Column.Name != "id" {
 		t.Fatalf("unexpected default order: %#v", order)
 	}
 }

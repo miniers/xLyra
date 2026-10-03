@@ -112,7 +112,18 @@ func (a CommandCode) ValidateCredentials(ctx context.Context, site SiteConfig, a
 }
 
 func (a CommandCode) ProbeHealth(ctx context.Context, site SiteConfig, credential string) ([]Model, error) {
-	return a.ListModels(ctx, site, credential)
+	items, err := a.fetchModelCatalog(ctx, site, credential)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("Command Code health probe returned no models")
+	}
+	models := commandCodeModelsFromItems(items)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("Command Code health probe returned no usable models")
+	}
+	return models, nil
 }
 
 func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential string) ([]Model, error) {
@@ -121,6 +132,10 @@ func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential
 		return commandCodeFallbackModelList(), nil
 	}
 
+	return commandCodeModelsFromItems(items), nil
+}
+
+func commandCodeModelsFromItems(items []commandCodeModelItem) []Model {
 	models := make([]Model, 0, len(items))
 	for _, item := range items {
 		modelID := strings.TrimSpace(item.ID)
@@ -145,7 +160,7 @@ func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential
 			Pricing:      pricing,
 		})
 	}
-	return models, nil
+	return models
 }
 
 func (a CommandCode) fetchModelCatalog(ctx context.Context, site SiteConfig, apiKey string) ([]commandCodeModelItem, error) {

@@ -151,8 +151,7 @@ export function RequestsMobileList({
                   <Badge variant="neutral" className="px-2.5 py-1 text-xs tracking-normal">
                     {tps != null
                       ? t('mobile.tokensWithTps', {
-                          input: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.prompt_tokens)}`,
-                          output: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.completion_tokens)}`,
+                          total: `${item.tokens_estimated === true ? '~' : ''}${formatInteger(item.usage.total_tokens)}`,
                           tps: formatTPS(tps),
                         })
                       : t('mobile.tokens', {

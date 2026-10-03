@@ -26,10 +26,10 @@ func (h Handler) gatewayFirstByteTimeout(request gatewayRequest, siteConfig *sit
 	}
 
 	apiKeyConfig := request.APIKeyGatewayConfig
-	if modelConfig, ok := apiKeyModelGatewayConfig(apiKeyConfig.Models, request.EffectiveModelKey); ok && modelConfig.FirstByteTimeoutMS != nil {
+	if modelConfig, ok := apiKeyModelGatewayConfig(apiKeyConfig.Models, request.EffectiveModelKey); ok && modelConfig.FirstByteTimeoutMS != nil && *modelConfig.FirstByteTimeoutMS > 0 {
 		return millisecondsDuration(*modelConfig.FirstByteTimeoutMS)
 	}
-	if apiKeyConfig.FirstByteTimeoutMS != nil {
+	if apiKeyConfig.FirstByteTimeoutMS != nil && *apiKeyConfig.FirstByteTimeoutMS > 0 {
 		return millisecondsDuration(*apiKeyConfig.FirstByteTimeoutMS)
 	}
 	if siteConfig != nil && siteConfig.FirstByteTimeoutMS != nil {

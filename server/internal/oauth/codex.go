@@ -76,10 +76,10 @@ func (e *codexTokenError) Is(target error) bool {
 
 func isPermanentCodexTokenError(code string, statusCode int) bool {
 	switch strings.ToLower(strings.TrimSpace(code)) {
-	case "refresh_token_invalidated", "refresh_token_reused", "invalid_grant":
+	case "token_invalidated", "refresh_token_invalidated", "refresh_token_reuse", "refresh_token_reuse_detected", "refresh_token_reused", "invalid_grant":
 		return true
 	default:
-		return statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden
+		return false
 	}
 }
 
@@ -105,6 +105,16 @@ func codexTokenErrorFromResponse(operation string, statusCode int, body []byte) 
 			statusCode: statusCode,
 			code:       parsed.Error.Code,
 			message:    parsed.Error.Message,
+		}
+	}
+	var generic struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &generic) == nil && strings.TrimSpace(generic.Error) != "" {
+		return &codexTokenError{
+			operation:  operation,
+			statusCode: statusCode,
+			code:       generic.Error,
 		}
 	}
 	code := raw

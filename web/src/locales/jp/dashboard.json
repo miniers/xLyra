@@ -173,7 +173,9 @@
     "site_unhealthy": "サイトヘルスチェックに失敗しました",
     "usage_limit_reached": "アカウント使用上限に達しました",
     "upstream_http_error": "上流リクエストエラー",
-    "upstream_timeout": "上流リクエストタイムアウト"
+    "upstream_timeout": "上流リクエストタイムアウト",
+    "credential_rpm_limit_reached": "認証情報の RPM 上限に達しました",
+    "credential_rpd_limit_reached": "認証情報の RPD 上限に達しました"
   },
   "cooldownSources": {
     "site_health": "ヘルスチェック",
@@ -188,7 +190,8 @@
     "missing_model_pricing": "モデル価格が不足しています",
     "high_failure_rate": "サイト失敗率が高いです",
     "rate_limit_exceeded": "レート制限が発生しました",
-    "high_latency": "リクエストレイテンシが高いです"
+    "high_latency": "リクエストレイテンシが高いです",
+    "automatic_anomaly": "自動ルート異常による降格"
   },
   "attention": {
     "title": {
@@ -202,7 +205,8 @@
       "high_failure_rate": "{{site}} は直近 7 日間の失敗率が高いです",
       "rate_limit_exceeded": "直近 7 日間にレート制限されたリクエストがあります",
       "high_latency_site_model": "{{site}} / {{model}} のリクエストレイテンシが高いです",
-      "high_latency_model": "{{model}} のリクエストレイテンシが高いです"
+      "high_latency_model": "{{model}} のリクエストレイテンシが高いです",
+      "automatic_anomaly": "{{site}} / {{model}} は自動ルート異常により {{penalty}} ポイント降格中です（{{remaining}}）"
     },
     "detail": {
       "no_route_candidates_active": "このモデルは直近 24 時間に下流トラフィックがありましたが、現在利用可能な上流がありません。新しいリクエストは失敗します。",
@@ -214,7 +218,10 @@
       "missing_model_pricing": "価格不足によりコスト統計やルートポリシーが不正確になる可能性があります。非 NewAPI ソースの価格を追加してください。",
       "high_failure_rate": "このサイトの最近の成功率は {{rate}} です。失敗リクエストを確認し、無効化、優先度低下、ルーティング調整を検討してください。",
       "rate_limit_exceeded": "下流呼び出し元が 429 応答を受け取りました。グローバルまたは API キーの RPM/TPM 上限を確認してください。",
-      "high_latency": "P95 レイテンシは {{latency}} です。上流応答速度を確認するか、ルート優先度の引き下げを検討してください。"
+      "high_latency": "P95 レイテンシは {{latency}} です。上流応答速度を確認するか、ルート優先度の引き下げを検討してください。",
+      "automatic_anomaly": "自動異常降格が有効で、{{penalty}} ポイントを {{remaining}} 控除します。",
+      "automatic_anomaly_first_byte": "初回バイト遅延：最近 {{recent}} / 基準 {{baseline}}",
+      "automatic_anomaly_cache": "キャッシュヒット率：最近 {{recent}} / 基準 {{baseline}}"
     },
     "actions": {
       "no_route_candidates": "ルートを確認",
@@ -242,5 +249,8 @@
     "detail": "{{site}} / {{model}} の P95 レイテンシが高いです"
   },
   "unknownSite": "不明なサイト",
-  "failureCount": "{{count}} 回"
+  "failureCount": "{{count}} 回",
+  "value": {
+    "automatic_anomaly": "-{{penalty}}"
+  }
 }

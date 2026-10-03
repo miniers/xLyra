@@ -712,7 +712,7 @@ func TestIsPermanentAuthError(t *testing.T) {
 	permanent := []string{
 		"codex token refresh returned 401: token_invalidated",
 		"codex token refresh returned 401: refresh_token_invalidated",
-		"upstream returned 403 forbidden",
+		"codex token refresh returned 403: invalid_grant",
 		"refresh_token_reused",
 		"invalid_grant",
 	}

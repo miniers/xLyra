@@ -25,6 +25,7 @@ const (
 	ccInitRefreshDuration = 8 * time.Hour
 	ccInitJitterDuration  = 2 * time.Hour
 	ccSessionDuration     = 12 * time.Hour
+	ccKeyStateMaxEntries  = 4096
 )
 
 type ccCPUEntry struct {
@@ -200,42 +201,87 @@ func ccSessionForKey(apiKey string, now time.Time) string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", h[:8], h[8:12], h[12:16], h[16:20], h[20:32])
 }
 
-// Global in-memory cache for initialization status per apiKey
+// Global in-memory cache for initialization status per site credential.
 var (
 	ccKeyStateMu    sync.Mutex
-	ccKeyStateStore = map[string]time.Time{}
+	ccKeyStateStore = map[string]ccKeyState{}
 )
+
+type ccKeyState struct {
+	nextInitAt time.Time
+	touchedAt  time.Time
+}
 
 func ensureCommandCodeInitialized(ctx context.Context, client *http.Client, baseURL, apiKey, salt string) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return
 	}
-	storeKey := fmt.Sprintf("%s:%s", salt, apiKey)
+	identity := strings.TrimSpace(salt)
+	if identity == "" {
+		identity = ccFingerprintHash(apiKey)
+	}
+	storeKey := fmt.Sprintf("%s:%s", identity, strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 
 	ccKeyStateMu.Lock()
-	nextInitAt, exists := ccKeyStateStore[storeKey]
 	now := time.Now()
-	if exists && now.Before(nextInitAt) {
+	state, exists := ccKeyStateStore[storeKey]
+	if exists && now.Before(state.nextInitAt) {
+		state.touchedAt = now
+		ccKeyStateStore[storeKey] = state
 		ccKeyStateMu.Unlock()
 		return
+	}
+	if _, exists := ccKeyStateStore[storeKey]; !exists && len(ccKeyStateStore) >= ccKeyStateMaxEntries {
+		var oldestKey string
+		var oldestTouched time.Time
+		for key, item := range ccKeyStateStore {
+			if oldestTouched.IsZero() || item.touchedAt.Before(oldestTouched) {
+				oldestKey = key
+				oldestTouched = item.touchedAt
+			}
+		}
+		if oldestKey != "" {
+			delete(ccKeyStateStore, oldestKey)
+		}
 	}
 	// Schedule next initialization with 8h + 2h jitter
 	j := ccFpDigest(apiKey, "init-jitter", salt)
 	jitterMs := int64((uint32(j[0])<<24 | uint32(j[1])<<16 | uint32(j[2])<<8 | uint32(j[3])) % uint32(ccInitJitterDuration.Milliseconds()))
-	ccKeyStateStore[storeKey] = now.Add(ccInitRefreshDuration + time.Duration(jitterMs)*time.Millisecond)
+	nextInitAt := now.Add(ccInitRefreshDuration + time.Duration(jitterMs)*time.Millisecond)
+	ccKeyStateStore[storeKey] = ccKeyState{
+		nextInitAt: nextInitAt,
+		touchedAt:  now,
+	}
 	ccKeyStateMu.Unlock()
 
 	// Fire-and-forget in goroutine with detached context
 	go func() {
+		initialized := false
+		defer func() {
+			ccKeyStateMu.Lock()
+			state, stillCurrent := ccKeyStateStore[storeKey]
+			if !stillCurrent || !state.nextInitAt.Equal(nextInitAt) {
+				ccKeyStateMu.Unlock()
+				return
+			}
+			if !initialized {
+				delete(ccKeyStateStore, storeKey)
+			}
+			ccKeyStateMu.Unlock()
+		}()
 		reqCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		if client == nil {
+			client = http.DefaultClient
+		}
 
 		fp := ccGenerateFingerprint(apiKey, salt)
 		fpBody, _ := json.Marshal(fp)
 
 		// 1. Post /alpha/fingerprint/record
 		recordReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/alpha/fingerprint/record", bytes.NewReader(fpBody))
+		recordOK := false
 		if err == nil {
 			recordReq.Header.Set("Authorization", "Bearer "+apiKey)
 			recordReq.Header.Set("Content-Type", "application/json")
@@ -243,6 +289,7 @@ func ensureCommandCodeInitialized(ctx context.Context, client *http.Client, base
 			recordReq.Header.Set("x-command-code-version", ccProtocolVersion)
 			recordReq.Header.Set("x-cli-environment", "production")
 			if resp, err := client.Do(recordReq); err == nil {
+				recordOK = resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
 				_ = resp.Body.Close()
 			}
 		}
@@ -270,6 +317,7 @@ func ensureCommandCodeInitialized(ctx context.Context, client *http.Client, base
 			lifeReq.Header.Set("x-command-code-version", ccProtocolVersion)
 			lifeReq.Header.Set("x-cli-environment", "production")
 			if resp, err := client.Do(lifeReq); err == nil {
+				initialized = recordOK && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
 				_ = resp.Body.Close()
 			}
 		}

@@ -298,12 +298,12 @@ export function formatRemainingSeconds(seconds: number) {
 
 function formatCooldownReason(reason: string, source: string, t?: TFunction) {
   const reasonMap: Record<string, string> = {
-    site_unhealthy: t ? t('cooldownReasons.site_unhealthy') : '站点健康检查异常',
-    usage_limit_reached: t ? t('cooldownReasons.usage_limit_reached') : '账号额度达到限制',
-    upstream_http_error: t ? t('cooldownReasons.upstream_http_error') : '上游请求异常',
-    upstream_timeout: t ? t('cooldownReasons.upstream_timeout') : '上游请求超时',
-    credential_rpm_limit_reached: t ? t('cooldownReasons.credential_rpm_limit_reached') : '每分钟速率达到限制',
-    credential_rpd_limit_reached: t ? t('cooldownReasons.credential_rpd_limit_reached') : '每日速率达到限制',
+    site_unhealthy: t ? t('cooldownReasons.site_unhealthy', { defaultValue: 'Site health check failed' }) : 'Site health check failed',
+    usage_limit_reached: t ? t('cooldownReasons.usage_limit_reached', { defaultValue: 'Account usage limit reached' }) : 'Account usage limit reached',
+    upstream_http_error: t ? t('cooldownReasons.upstream_http_error', { defaultValue: 'Upstream request error' }) : 'Upstream request error',
+    upstream_timeout: t ? t('cooldownReasons.upstream_timeout', { defaultValue: 'Upstream request timeout' }) : 'Upstream request timeout',
+    credential_rpm_limit_reached: t ? t('cooldownReasons.credential_rpm_limit_reached', { defaultValue: 'Credential RPM limit reached' }) : 'Credential RPM limit reached',
+    credential_rpd_limit_reached: t ? t('cooldownReasons.credential_rpd_limit_reached', { defaultValue: 'Credential RPD limit reached' }) : 'Credential RPD limit reached',
   }
   const sourceMap: Record<string, string> = {
     site_health: t ? t('cooldownSources.site_health') : '健康检查',
@@ -343,15 +343,15 @@ function attentionIcon(type: string): ReactNode {
 
 function formatAttentionType(type: string, t?: TFunction) {
   const map: Record<string, string> = {
-    no_route_candidates: t ? t('attentionTypes.no_route_candidates') : '没有可用上游候选',
-    low_route_candidates: t ? t('attentionTypes.low_route_candidates') : '可用上游候选偏少',
-    active_cooldown: t ? t('attentionTypes.active_cooldown') : '当前存在冷却中的路由',
-    site_unhealthy: t ? t('attentionTypes.site_unhealthy') : '站点健康检查失败',
-    missing_model_pricing: t ? t('attentionTypes.missing_model_pricing') : '模型价格缺失',
-    high_failure_rate: t ? t('attentionTypes.high_failure_rate') : '站点请求失败率偏高',
-    rate_limit_exceeded: t ? t('attentionTypes.rate_limit_exceeded') : '请求触发限流',
-    high_latency: t ? t('attentionTypes.high_latency') : '请求延迟偏高',
-    automatic_anomaly: t ? t('attentionTypes.automatic_anomaly') : '路由自动异常降权',
+    no_route_candidates: t ? t('attentionTypes.no_route_candidates', { defaultValue: 'No available upstream candidates' }) : 'No available upstream candidates',
+    low_route_candidates: t ? t('attentionTypes.low_route_candidates', { defaultValue: 'Few upstream candidates' }) : 'Few upstream candidates',
+    active_cooldown: t ? t('attentionTypes.active_cooldown', { defaultValue: 'Routes are cooling down' }) : 'Routes are cooling down',
+    site_unhealthy: t ? t('attentionTypes.site_unhealthy', { defaultValue: 'Site health check failed' }) : 'Site health check failed',
+    missing_model_pricing: t ? t('attentionTypes.missing_model_pricing', { defaultValue: 'Model pricing missing' }) : 'Model pricing missing',
+    high_failure_rate: t ? t('attentionTypes.high_failure_rate', { defaultValue: 'High site failure rate' }) : 'High site failure rate',
+    rate_limit_exceeded: t ? t('attentionTypes.rate_limit_exceeded', { defaultValue: 'Rate limit triggered' }) : 'Rate limit triggered',
+    high_latency: t ? t('attentionTypes.high_latency', { defaultValue: 'High request latency' }) : 'High request latency',
+    automatic_anomaly: t ? t('attentionTypes.automatic_anomaly', { defaultValue: 'Automatic route anomaly down-rank' }) : 'Automatic route anomaly down-rank',
   }
   return map[type] ?? type
 }

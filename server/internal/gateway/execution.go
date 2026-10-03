@@ -521,6 +521,19 @@ func (h Handler) forwardGatewayRequest(
 		if headerAdapter, ok := protocol.(gatewayProtocolHeaderAdapter); ok {
 			headerAdapter.ApplyUpstreamHeaders(req, upstreamKey, accountID, upstreamStream)
 		}
+		if isCommandCodeSite(candidate.Site.SiteType) {
+			baseURL := strings.TrimRight(strings.TrimSpace(candidate.Site.BaseURL), "/")
+			if baseURL == "" {
+				baseURL = "https://api.commandcode.ai"
+			}
+			ensureCommandCodeInitialized(
+				attemptCtx,
+				upstreamClient,
+				baseURL,
+				upstreamKey,
+				candidate.Site.ID.String()+":"+selectedCredential.Credential.ID.String(),
+			)
+		}
 		applyDownstreamPassthroughHeaders(req, request, candidate)
 		applyGatewayClientImpersonationHeaders(req, siteConfig, protocol, request, candidate, claudeCodeSessionID)
 		for k, v := range requestHeaders {
@@ -568,7 +581,9 @@ func (h Handler) forwardGatewayRequest(
 		}
 
 		firstByteStartedAt = time.Now()
-		monitorGatewayFirstByteTimeout(attemptCtx, h.gatewayFirstByteTimeout(request, sitePolicyConfig), attemptCancel, outputStarted)
+		if request.Stream {
+			monitorGatewayFirstByteTimeout(attemptCtx, h.gatewayFirstByteTimeout(request, sitePolicyConfig), attemptCancel, outputStarted)
+		}
 		upstreamStartedAt := firstByteStartedAt
 		connectionReused := false
 		connectionObserved := false

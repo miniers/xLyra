@@ -743,7 +743,13 @@ func (h Handler) buildModelsPayload(ctx context.Context, apiKey store.APIKey) (m
 			continue
 		}
 		candidates, err := h.router.Candidates(ctx, routeCandidateQuery(model.ModelKey, access))
-		if err != nil || len(candidates.Items) == 0 {
+		if err != nil {
+			if h.logger != nil {
+				h.logger.WarnContext(ctx, "gateway model candidate lookup failed", "scope", "gateway", "model", model.ModelKey, "error", err)
+			}
+			continue
+		}
+		if len(candidates.Items) == 0 {
 			continue
 		}
 		data = append(data, map[string]any{

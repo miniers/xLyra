@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -17,7 +18,7 @@ import (
 )
 
 type RequestLog struct {
-	ID                 uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	ID                 uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey;index:request_logs_started_at_created_id_idx,priority:3,sort:desc"`
 	RequestID          string
 	ParentRequestID    sql.NullString `gorm:"index:request_logs_parent_request_id_idx"`
 	APIKeyID           uuid.NullUUID  `gorm:"index:request_logs_cache_observation_lookup_idx,priority:1"`
@@ -35,7 +36,8 @@ type RequestLog struct {
 	Metadata           JSON          `gorm:"type:jsonb"`
 	Internal           bool          `gorm:"default:false;not null"`
 	ParentRequestLogID uuid.NullUUID `gorm:"type:uuid;index:request_logs_parent_request_log_id_idx"`
-	CreatedAt          time.Time     `gorm:"index:request_logs_cache_observation_lookup_idx,priority:3;index:request_logs_site_model_created_idx,priority:2"`
+	StartedAt          time.Time     `gorm:"not null;index:request_logs_started_at_created_id_idx,priority:1,sort:desc"`
+	CreatedAt          time.Time     `gorm:"index:request_logs_cache_observation_lookup_idx,priority:3;index:request_logs_site_model_created_idx,priority:2;index:request_logs_started_at_created_id_idx,priority:2,sort:desc"`
 }
 
 type CreateRequestLogParams struct {
@@ -56,6 +58,7 @@ type CreateRequestLogParams struct {
 	Metadata           JSON
 	Internal           bool
 	ParentRequestLogID any
+	StartedAt          time.Time
 }
 
 type ListRequestLogsParams struct {
@@ -148,11 +151,27 @@ func (r RequestLogRepository) Create(ctx context.Context, params CreateRequestLo
 		Metadata:           jsonDefault(params.Metadata, "{}"),
 		Internal:           params.Internal,
 		ParentRequestLogID: nullUUIDFromAny(params.ParentRequestLogID),
+		StartedAt:          requestLogStartedAt(params.StartedAt, params.Metadata),
 	}
 	if err := r.db.WithContext(ctx).Create(&item).Error; err != nil {
 		return RequestLog{}, fmt.Errorf("create request log: %w", err)
 	}
 	return item, nil
+}
+
+func requestLogStartedAt(value time.Time, metadata JSON) time.Time {
+	if !value.IsZero() {
+		return value
+	}
+	var fields struct {
+		StartedAt string `json:"started_at"`
+	}
+	if err := json.Unmarshal(metadata, &fields); err == nil {
+		if startedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(fields.StartedAt)); err == nil {
+			return startedAt
+		}
+	}
+	return time.Now()
 }
 
 func (r RequestLogRepository) ListRecentSiteModelAttempts(ctx context.Context, siteID uuid.UUID, siteModelID uuid.UUID, since time.Time, limit int) ([]RequestLog, error) {
@@ -564,16 +583,12 @@ func (r RequestLogRepository) requestLogQuery(ctx context.Context, exprs []claus
 	return db
 }
 
-const requestLogStartTimeOrderSQL = `COALESCE(
-  CASE
-    WHEN metadata ->> 'started_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$'
-    THEN (metadata ->> 'started_at')::timestamptz
-  END,
-  created_at
-) DESC, created_at DESC, id DESC`
-
 func requestLogDefaultOrderClause() clause.OrderBy {
-	return clause.OrderBy{Expression: clause.Expr{SQL: requestLogStartTimeOrderSQL}}
+	return clause.OrderBy{Columns: []clause.OrderByColumn{
+		{Column: clause.Column{Name: "started_at"}, Desc: true},
+		{Column: clause.Column{Name: "created_at"}, Desc: true},
+		{Column: clause.Column{Name: "id"}, Desc: true},
+	}}
 }
 
 func requestLogAttemptOrderClause() clause.OrderBy {

@@ -225,10 +225,28 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 	allowedModels := uuidSet(query.AllowedSiteModelIDs)
 	excludedSites := uuidSet(query.ExcludeSiteIDs)
 	excludedModels := uuidSet(query.ExcludeSiteModelIDs)
+	strictLockTargetExcludedByAllowList := false
+	if routingLock != nil && routingLock.Policy == store.RouteLockPolicyStrict {
+		for _, row := range rows {
+			if row.SiteModelID != routingLock.SiteModelID {
+				continue
+			}
+			if allowedSites != nil {
+				if _, ok := allowedSites[row.SiteID]; !ok {
+					strictLockTargetExcludedByAllowList = true
+				}
+			}
+			if allowedModels != nil {
+				if _, ok := allowedModels[row.SiteModelID]; !ok {
+					strictLockTargetExcludedByAllowList = true
+				}
+			}
+			break
+		}
+	}
 
 	candidates := make([]Candidate, 0, len(rows))
 	for _, row := range rows {
-		locked := routingLock != nil && row.SiteModelID == routingLock.SiteModelID
 		availableAPIKeys := row.ModelAvailableKeyCount
 		totalAPIKeys := row.ModelAPIKeyCount
 		if row.SiteType != "newapi" && totalAPIKeys == 0 {
@@ -248,9 +266,6 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 		if query.ImageGeneration && sitepkg.ResponsesToolDisabled(siteGatewayConfig(row.SiteMeta), sitepkg.ResponsesHostedToolImageGeneration) {
 			continue
 		}
-		if availableAPIKeys <= 0 {
-			continue
-		}
 		if allowedSites != nil {
 			if _, ok := allowedSites[row.SiteID]; !ok {
 				continue
@@ -267,6 +282,10 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 		if _, ok := excludedModels[row.SiteModelID]; ok {
 			continue
 		}
+		if availableAPIKeys <= 0 {
+			continue
+		}
+		locked := routingLock != nil && row.SiteModelID == routingLock.SiteModelID
 		if _, ok := cooldownState.sites[row.SiteID]; ok {
 			continue
 		}
@@ -410,16 +429,20 @@ func (s *Service) Candidates(ctx context.Context, query CandidateQuery) (Candida
 					lockedCandidates = append(lockedCandidates, candidate)
 				}
 			}
-			candidates = lockedCandidates
+			if len(lockedCandidates) > 0 {
+				candidates = lockedCandidates
+			} else if strictLockTargetExcludedByAllowList {
+				// A strict lock only applies when its target survives the
+				// request's allow-list and availability filters.
+				routingLock = nil
+			} else {
+				return CandidateList{}, &RouteLockUnavailableError{
+					SiteModelID: routingLock.SiteModelID,
+					Lock:        routingLock,
+				}
+			}
 		} else {
 			candidates = prioritizeLockedCandidate(candidates, routingLock.SiteModelID)
-		}
-		if routingLock.Policy == store.RouteLockPolicyStrict && len(candidates) == 0 {
-			lockCopy := *routingLock
-			return CandidateList{CanonicalModel: canonicalModel, RoutingLock: &lockCopy}, &RouteLockUnavailableError{
-				SiteModelID: routingLock.SiteModelID,
-				Lock:        &lockCopy,
-			}
 		}
 	}
 

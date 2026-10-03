@@ -137,6 +137,41 @@ func (r RouteAnomalyRepository) ClearActive(ctx context.Context, canonicalModelI
 	return nil
 }
 
+func (r RouteAnomalyRepository) ClaimEvaluation(ctx context.Context, canonicalModelID, siteModelID uuid.UUID, now time.Time) (bool, error) {
+	if canonicalModelID == uuid.Nil || siteModelID == uuid.Nil {
+		return false, fmt.Errorf("canonical_model_id and site_model_id are required")
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	insert := r.db.WithContext(ctx).Exec(`
+		INSERT INTO route_anomaly_states
+			(id, canonical_model_id, site_model_id, active, penalty, metrics, last_evaluated_at, created_at, updated_at)
+		VALUES (?, ?, ?, FALSE, 0, '[]'::jsonb, ?, ?, ?)
+		ON CONFLICT (canonical_model_id, site_model_id) DO NOTHING
+	`, uuid.New(), canonicalModelID, siteModelID, now, now, now)
+	if insert.Error != nil {
+		return false, fmt.Errorf("claim route anomaly evaluation: %w", insert.Error)
+	}
+	if insert.RowsAffected == 1 {
+		return true, nil
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&RouteAnomalyState{}).
+		Where("canonical_model_id = ? AND site_model_id = ?", canonicalModelID, siteModelID).
+		Where("last_evaluated_at IS NULL OR last_evaluated_at <= ?", now.Add(-routeAnomalyEvaluationInterval)).
+		Updates(map[string]any{
+			"last_evaluated_at": now,
+			"updated_at":        now,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("claim route anomaly evaluation: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func (r RouteAnomalyRepository) SaveEvaluation(ctx context.Context, state RouteAnomalyState) error {
 	if state.CanonicalModelID == uuid.Nil || state.SiteModelID == uuid.Nil {
 		return fmt.Errorf("canonical_model_id and site_model_id are required")

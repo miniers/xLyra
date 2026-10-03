@@ -294,6 +294,45 @@ func (r RouteCooldownRepository) ListActive(ctx context.Context, now time.Time) 
 	return items, nil
 }
 
+func (r RouteCooldownRepository) ListActiveForRouteCandidates(ctx context.Context, siteIDs, siteModelIDs, credentialIDs []uuid.UUID, now time.Time) ([]RouteCooldown, error) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	scopeExpressions := make([]clause.Expression, 0, 3)
+	if len(siteIDs) > 0 {
+		scopeExpressions = append(scopeExpressions, routeCooldownUUIDInExpression("site_id", siteIDs))
+	}
+	if len(siteModelIDs) > 0 {
+		scopeExpressions = append(scopeExpressions, routeCooldownUUIDInExpression("site_model_id", siteModelIDs))
+	}
+	if len(credentialIDs) > 0 {
+		scopeExpressions = append(scopeExpressions, routeCooldownUUIDInExpression("site_credential_id", credentialIDs))
+	}
+	if len(scopeExpressions) == 0 {
+		return []RouteCooldown{}, nil
+	}
+
+	exprs := []clause.Expression{
+		clause.Eq{Column: clause.Column{Name: "cleared_at"}, Value: nil},
+		clause.Gt{Column: clause.Column{Name: "active_until"}, Value: now},
+		clause.Or(scopeExpressions...),
+	}
+	var items []RouteCooldown
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.Where{Exprs: exprs}).
+		Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("list active route candidate cooldowns: %w", err)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if !items[i].ActiveUntil.Equal(items[j].ActiveUntil) {
+			return items[i].ActiveUntil.After(items[j].ActiveUntil)
+		}
+		return items[i].CreatedAt.After(items[j].CreatedAt)
+	})
+	return items, nil
+}
+
 func (r RouteCooldownRepository) ListActiveByCredential(ctx context.Context, siteID uuid.UUID, siteCredentialID uuid.UUID, reasons []string, now time.Time) ([]RouteCooldown, error) {
 	if siteID == uuid.Nil || siteCredentialID == uuid.Nil {
 		return nil, nil
@@ -321,6 +360,14 @@ func (r RouteCooldownRepository) ListActiveByCredential(ctx context.Context, sit
 		return nil, fmt.Errorf("list active credential route cooldowns: %w", err)
 	}
 	return items, nil
+}
+
+func routeCooldownUUIDInExpression(column string, values []uuid.UUID) clause.Expression {
+	items := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		items = append(items, value)
+	}
+	return clause.IN{Column: clause.Column{Name: column}, Values: items}
 }
 
 func (r RouteCooldownRepository) clearMatching(ctx context.Context, siteID uuid.UUID, siteModelID uuid.NullUUID, siteCredentialID uuid.NullUUID, source string, protectedReasons []string) error {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
 	"xlyra/server/internal/store"
 )
 
@@ -36,9 +37,11 @@ func classifyGoogleUpstreamError(statusCode int, body []byte, now time.Time) (co
 
 		cooldownReason := "google_rate_limited"
 		errorType := "google_rate_limited"
+		cooldownScope := "model"
 		if isDailyLimit {
 			cooldownReason = store.CooldownReasonCredentialRPDLimitReached
 			errorType = "google_daily_rate_limited"
+			cooldownScope = "credential"
 			duration = googleDailyResetDuration(now)
 		} else {
 			if duration <= 0 {
@@ -56,7 +59,7 @@ func classifyGoogleUpstreamError(statusCode int, body []byte, now time.Time) (co
 			ErrorType:         errorType,
 			ErrorMessage:      errorMsg,
 			CooldownReason:    cooldownReason,
-			CooldownScope:     "credential",
+			CooldownScope:     cooldownScope,
 			CooldownDuration:  duration,
 			RetryAfterSeconds: retryAfterSeconds,
 		}, true

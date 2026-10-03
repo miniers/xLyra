@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -78,6 +79,13 @@ type RouteCandidateRepository struct {
 	db *gorm.DB
 }
 
+type routeAnomalyEvaluationKey struct {
+	CanonicalModelID uuid.UUID
+	SiteModelID      uuid.UUID
+}
+
+var routeAnomalyEvaluations sync.Map
+
 func NewRouteCandidateRepository(db *gorm.DB) RouteCandidateRepository {
 	return RouteCandidateRepository{db: db}
 }
@@ -94,6 +102,25 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	if err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
+	if len(siteModels) == 0 {
+		return []RouteCandidateRow{}, nil
+	}
+
+	siteIDs := make([]uuid.UUID, 0, len(siteModels))
+	siteModelIDs := make([]uuid.UUID, 0, len(siteModels))
+	seenSiteIDs := make(map[uuid.UUID]struct{}, len(siteModels))
+	for _, model := range siteModels {
+		if model.ID != uuid.Nil {
+			siteModelIDs = append(siteModelIDs, model.ID)
+		}
+		if model.SiteID != uuid.Nil {
+			if _, ok := seenSiteIDs[model.SiteID]; !ok {
+				seenSiteIDs[model.SiteID] = struct{}{}
+				siteIDs = append(siteIDs, model.SiteID)
+			}
+		}
+	}
+
 	var sites []Site
 	var healthStates []SiteHealthState
 	var healthSnapshots []HealthSnapshot
@@ -103,31 +130,50 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	var pricings []SiteModelPricing
 	var oauthConnections []OAuthConnection
 	var overrides []SiteModelEndpointOverride
-	if err := r.db.WithContext(ctx).Find(&sites).Error; err != nil {
+	now := time.Now()
+	if err := r.db.WithContext(ctx).Where(map[string]any{"id": siteIDs}).Find(&sites).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&healthStates).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"site_id": siteIDs}).Find(&healthStates).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&healthSnapshots).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{
+		"site_model_id": siteModelIDs,
+		"scope":         "model",
+		"source":        "gateway",
+	}).Find(&healthSnapshots).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&apiKeyModels).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"site_model_id": siteModelIDs}).Find(&apiKeyModels).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&credentials).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"site_id": siteIDs}).Find(&credentials).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&keyStates).Error; err != nil {
+	credentialIDs := make([]uuid.UUID, 0, len(credentials))
+	for _, credential := range credentials {
+		if credential.ID != uuid.Nil {
+			credentialIDs = append(credentialIDs, credential.ID)
+		}
+	}
+	if len(credentialIDs) > 0 {
+		if err := r.db.WithContext(ctx).Where(map[string]any{"site_credential_id": credentialIDs}).Find(&keyStates).Error; err != nil {
+			return nil, fmt.Errorf("list route candidates: %w", err)
+		}
+	}
+	if err := r.db.WithContext(ctx).Where(map[string]any{
+		"site_model_id": siteModelIDs,
+		"available":     true,
+	}).Find(&pricings).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Where(&SiteModelPricing{Available: true}).Find(&pricings).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Select("site_id", "metadata").
+		Where(map[string]any{"site_id": siteIDs}).
+		Find(&oauthConnections).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&oauthConnections).Error; err != nil {
-		return nil, fmt.Errorf("list route candidates: %w", err)
-	}
-	cacheStats, err := r.listModelCacheStats(ctx, siteModels)
+	cacheStats, err := r.listModelCacheStatsFromHourlySummaries(ctx, canonical, siteModels, now)
 	if err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
@@ -135,18 +181,18 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	if err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	scoreAdjustments, err := NewRouteScoreAdjustmentRepository(r.db).ListActiveByCanonicalModel(ctx, canonicalModelID, time.Now())
+	scoreAdjustments, err := NewRouteScoreAdjustmentRepository(r.db).ListActiveByCanonicalModel(ctx, canonicalModelID, now)
 	if err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Find(&overrides).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"site_model_id": siteModelIDs}).Find(&overrides).Error; err != nil {
 		return nil, fmt.Errorf("list route candidates: %w", err)
 	}
 	overrideByModel := map[uuid.UUID]SiteModelEndpointOverride{}
 	for _, override := range overrides {
 		overrideByModel[override.SiteModelID] = override
 	}
-	cooldowns, err := NewRouteCooldownRepository(r.db).ListActive(ctx, time.Now())
+	cooldowns, err := NewRouteCooldownRepository(r.db).ListActiveForRouteCandidates(ctx, siteIDs, siteModelIDs, credentialIDs, now)
 	if err != nil {
 		return nil, err
 	}
@@ -188,9 +234,6 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 	for _, adjustment := range scoreAdjustments {
 		manualScoreAdjustmentsBySiteModelID[adjustment.SiteModelID] = adjustment.Delta
 	}
-	now := time.Now()
-	anomalyRepository := NewRouteAnomalyRepository(r.db)
-
 	items := make([]RouteCandidateRow, 0, len(siteModels))
 	for _, model := range siteModels {
 		site := sitesByID[model.SiteID]
@@ -228,14 +271,13 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 		fillModelHealth(&row, healthSnapshots)
 		fillModelCacheStats(&row, cacheStats[model.ID])
 		anomalyState := anomalyStatesBySiteModelID[model.ID]
-		observation := buildRouteAnomalyObservation(healthSnapshots, cacheStats[model.ID], model.ID, now)
-		if routeAnomalyStateNeedsEvaluation(anomalyState, now) && (anomalyState.ID != uuid.Nil || observationHasData(observation)) {
+		cacheStatsForModel := cacheStats[model.ID]
+		observation := buildRouteAnomalyObservation(healthSnapshots, cacheStatsForModel, model.ID, now)
+		if routeAnomalyStateNeedsEvaluation(anomalyState, now) &&
+			(anomalyState.ID != uuid.Nil || observationHasData(observation)) {
 			anomalyState.CanonicalModelID = canonical.ID
 			anomalyState.SiteModelID = model.ID
-			anomalyState = evaluateRouteAnomalyState(anomalyState, observation, now)
-			// Anomaly scoring is best-effort. A transient write failure must not
-			// make an otherwise routable candidate unavailable.
-			_ = anomalyRepository.SaveEvaluation(ctx, anomalyState)
+			scheduleRouteAnomalyEvaluation(ctx, r.db, anomalyState, healthSnapshots, observation, now)
 		}
 		row.AutomaticAnomaly = routeAnomalyFromState(anomalyState, now)
 		row.ManualScoreAdjustment = manualScoreAdjustmentsBySiteModelID[model.ID]
@@ -252,6 +294,119 @@ func (r RouteCandidateRepository) ListByCanonicalModel(ctx context.Context, cano
 		return items[i].UpstreamModelName < items[j].UpstreamModelName
 	})
 	return items, nil
+}
+
+func (r RouteCandidateRepository) listModelCacheStatsFromHourlySummaries(ctx context.Context, canonical CanonicalModel, siteModels []SiteModel, now time.Time) (map[uuid.UUID]RouteModelCacheStats, error) {
+	result := make(map[uuid.UUID]RouteModelCacheStats)
+	if canonical.ID == uuid.Nil || len(siteModels) == 0 {
+		return result, nil
+	}
+
+	siteModelKeys := make([]string, 0, len(siteModels))
+	siteModelIDs := make(map[uuid.UUID]struct{}, len(siteModels))
+	for _, model := range siteModels {
+		if model.ID == uuid.Nil {
+			continue
+		}
+		siteModelKeys = append(siteModelKeys, model.ID.String())
+		siteModelIDs[model.ID] = struct{}{}
+	}
+	if len(siteModelKeys) == 0 {
+		return result, nil
+	}
+
+	canonicalModelKeys := []string{canonical.ID.String()}
+	if strings.TrimSpace(canonical.ModelKey) != "" {
+		canonicalModelKeys = append(canonicalModelKeys, canonical.ModelKey)
+	}
+	baselineSince := now.Add(-routeAnomalyBaselineWindow)
+	recentSince := now.Add(-routeAnomalyRecentWindow)
+	var rows []RequestUsageHourlySummary
+	query := r.db.WithContext(ctx).
+		Model(&RequestUsageHourlySummary{}).
+		Select("bucket_start", "site_model_id", "site_model_key", "request_count", "prompt_tokens", "cached_tokens", "first_request_at", "last_request_at").
+		Where("canonical_model_key IN ? AND site_model_key IN ? AND bucket_start >= ? AND bucket_start <= ? AND internal = ?", canonicalModelKeys, siteModelKeys, baselineSince.Add(-time.Hour), now, false).
+		Find(&rows)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	for _, row := range rows {
+		siteModelID := uuid.Nil
+		if row.SiteModelID.Valid {
+			siteModelID = row.SiteModelID.UUID
+		} else if parsed, err := uuid.Parse(row.SiteModelKey); err == nil {
+			siteModelID = parsed
+		}
+		if _, ok := siteModelIDs[siteModelID]; !ok {
+			continue
+		}
+		firstRequestAt := row.BucketStart
+		if row.FirstRequestAt.Valid {
+			firstRequestAt = row.FirstRequestAt.Time
+		}
+		lastRequestAt := row.BucketStart.Add(time.Hour)
+		if row.LastRequestAt.Valid {
+			lastRequestAt = row.LastRequestAt.Time
+		}
+		if lastRequestAt.Before(baselineSince) || firstRequestAt.After(now) {
+			continue
+		}
+
+		stats := result[siteModelID]
+		stats.SiteModelID = siteModelID
+		stats.RequestCount += row.RequestCount
+		stats.PromptTokens += row.PromptTokens
+		if row.CachedTokens > 0 {
+			stats.CachedTokens += row.CachedTokens
+		}
+		if lastRequestAt.After(recentSince) {
+			stats.RecentRequestCount += row.RequestCount
+			stats.RecentPromptTokens += row.PromptTokens
+			if row.CachedTokens > 0 {
+				stats.RecentCachedTokens += row.CachedTokens
+			}
+		} else {
+			stats.BaselineRequestCount += row.RequestCount
+			stats.BaselinePromptTokens += row.PromptTokens
+			if row.CachedTokens > 0 {
+				stats.BaselineCachedTokens += row.CachedTokens
+			}
+		}
+		result[siteModelID] = stats
+	}
+	return result, nil
+}
+
+func scheduleRouteAnomalyEvaluation(ctx context.Context, db *gorm.DB, state RouteAnomalyState, snapshots []HealthSnapshot, fallbackObservation routeAnomalyObservation, now time.Time) {
+	key := routeAnomalyEvaluationKey{CanonicalModelID: state.CanonicalModelID, SiteModelID: state.SiteModelID}
+	if key.CanonicalModelID == uuid.Nil || key.SiteModelID == uuid.Nil {
+		return
+	}
+	if _, loaded := routeAnomalyEvaluations.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer routeAnomalyEvaluations.Delete(key)
+		baseContext := context.Background()
+		if ctx != nil {
+			baseContext = context.WithoutCancel(ctx)
+		}
+		evaluationContext, cancel := context.WithTimeout(baseContext, 5*time.Second)
+		defer cancel()
+		anomalyRepository := NewRouteAnomalyRepository(db)
+		claimed, err := anomalyRepository.ClaimEvaluation(evaluationContext, state.CanonicalModelID, state.SiteModelID, now)
+		if err != nil || !claimed {
+			return
+		}
+		observation := fallbackObservation
+		if stats, err := NewRouteCandidateRepository(db).listModelCacheStats(evaluationContext, []SiteModel{{ID: state.SiteModelID}}); err == nil {
+			observation = buildRouteAnomalyObservation(snapshots, stats[state.SiteModelID], state.SiteModelID, now)
+		}
+		evaluated := evaluateRouteAnomalyState(state, observation, now)
+		// Anomaly scoring is best-effort. A transient write failure must not
+		// make an otherwise routable candidate unavailable.
+		_ = anomalyRepository.SaveEvaluation(evaluationContext, evaluated)
+	}()
 }
 
 type RouteModelCacheStats struct {

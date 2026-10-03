@@ -59,13 +59,11 @@ export function decodeRequestActivityEvent(eventName: string, rawData: string): 
 }
 
 export function reduceRequestActivitySnapshot(
-  state: RequestActivityState,
+  _state: RequestActivityState,
   snapshot: RequestActivitySnapshot,
 ): RequestActivityState {
-  if (snapshot.sequence < state.sequence) return state
-
   const requests: Record<string, RequestActivityRequest> = {}
-  const startedAtByRequestID = { ...state.startedAtByRequestID }
+  const startedAtByRequestID: Record<string, string> = {}
   for (const request of snapshot.requests) {
     requests[request.request_id] = request
     startedAtByRequestID[request.request_id] = request.started_at

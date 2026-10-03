@@ -58,13 +58,15 @@ type canonicalStreamEvent struct {
 }
 
 type canonicalStreamOptions struct {
-	IncludeUsage        bool
-	RequireUsage        bool
-	Candidate           routeengine.Candidate
-	UpstreamLineInspect func([]byte, *streamCaptureState)
-	CustomTools         map[string]struct{}
-	ResponseTools       map[string]responsesToolIdentity
-	StopSequences       []string
+	IncludeUsage               bool
+	RequireUsage               bool
+	Candidate                  routeengine.Candidate
+	CommandCodeToolAliases     map[string]string
+	CommandCodeToolCallAliases map[string]string
+	UpstreamLineInspect        func([]byte, *streamCaptureState)
+	CustomTools                map[string]struct{}
+	ResponseTools              map[string]responsesToolIdentity
+	StopSequences              []string
 }
 
 type canonicalStreamDecoder interface {
@@ -164,6 +166,20 @@ func proxyCanonicalStream(ctx context.Context, w http.ResponseWriter, resp *http
 	}
 
 	decoder := source.NewDecoder()
+	if len(options.CommandCodeToolAliases) > 0 {
+		if setter, ok := decoder.(interface {
+			setReverseToolAliases(map[string]string)
+		}); ok {
+			setter.setReverseToolAliases(options.CommandCodeToolAliases)
+		}
+	}
+	if len(options.CommandCodeToolCallAliases) > 0 {
+		if setter, ok := decoder.(interface {
+			setToolCallAliases(map[string]string)
+		}); ok {
+			setter.setToolCallAliases(options.CommandCodeToolCallAliases)
+		}
+	}
 	encoder := target.NewEncoder(options, w, &capture)
 	stopFilter := newCanonicalStopSequenceFilter(options.StopSequences)
 	deferResponsesPreOutput := from == canonicalProtocolOpenAIResponses || from == canonicalProtocolCodexResponses

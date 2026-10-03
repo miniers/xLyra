@@ -89,8 +89,8 @@ func TestNormalizeCodexModelSnapshotsAcceptsOfficialSlugItems(t *testing.T) {
 func TestOAuthScalarHelpersParseAuthErrorsUUIDsAndStrings(t *testing.T) {
 	t.Parallel()
 
-	if !isPermanentAuthError("upstream returned 401 unauthorized") {
-		t.Fatal("401 errors should be permanent auth errors")
+	if isPermanentAuthError("upstream returned 401 unauthorized") {
+		t.Fatal("generic 401 errors should remain retryable")
 	}
 	if !isPermanentAuthError("refresh_token_reused") {
 		t.Fatal("refresh_token_reused should be a permanent auth error")

@@ -120,6 +120,7 @@ func (r Recorder) RecordGatewayRequest(ctx context.Context, record GatewayReques
 			Metadata:           metadataBytes,
 			Internal:           record.Internal,
 			ParentRequestLogID: nullableUUID(record.ParentRequestLogID),
+			StartedAt:          record.StartedAt,
 		})
 		if err != nil {
 			return err
