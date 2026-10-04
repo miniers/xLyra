@@ -1975,11 +1975,13 @@ func TestQuotaProbeClinePassLimitsURL(t *testing.T) {
 func TestProbeFactoryQuotaSuccess(t *testing.T) {
 	var capturedAuth string
 	var capturedUA string
+	var capturedClient string
 	var capturedProtocol string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuth = r.Header.Get("Authorization")
 		capturedUA = r.Header.Get("User-Agent")
+		capturedClient = r.Header.Get("X-Factory-Client")
 		capturedProtocol = r.Header.Get("X-Factory-Protocol-Version")
 
 		if r.URL.Path != "/api/billing/limits" {
@@ -2022,6 +2024,9 @@ func TestProbeFactoryQuotaSuccess(t *testing.T) {
 	}
 	if capturedUA != adapter.FactoryDefaultUserAgent {
 		t.Fatalf("capturedUA = %q, want %q", capturedUA, adapter.FactoryDefaultUserAgent)
+	}
+	if capturedClient != "cli" {
+		t.Fatalf("capturedClient = %q, want 'cli'", capturedClient)
 	}
 	if capturedProtocol != adapter.FactoryDefaultProtocolVersion {
 		t.Fatalf("capturedProtocol = %q, want %q", capturedProtocol, adapter.FactoryDefaultProtocolVersion)

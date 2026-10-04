@@ -127,11 +127,11 @@ func TestFactoryProtocolAdapterUpstreamPathsAndHeaders(t *testing.T) {
 			if tc.wantOpenAIPlat && httpReq.Header.Get("OpenAI-Platform") != factoryOpenAIPlatform {
 				t.Errorf("missing or wrong OpenAI-Platform header")
 			}
-			if client := httpReq.Header.Get("X-Factory-Client"); client != "sdk" {
-				t.Errorf("X-Factory-Client = %q, want sdk", client)
+			if client := httpReq.Header.Get("X-Factory-Client"); client != "cli" {
+				t.Errorf("X-Factory-Client = %q, want cli", client)
 			}
-			if sdk := httpReq.Header.Get("X-Factory-Sdk"); sdk != "typescript/0.9.1" {
-				t.Errorf("X-Factory-Sdk = %q, want typescript/0.9.1", sdk)
+			if sdk := httpReq.Header.Get("X-Factory-Sdk"); sdk != "" {
+				t.Errorf("X-Factory-Sdk = %q, want empty", sdk)
 			}
 			if httpReq.Header.Get("x-session-id") == "" {
 				t.Errorf("missing x-session-id header")

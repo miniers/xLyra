@@ -17,7 +17,7 @@ const (
 	FactoryDefaultBaseURL         = "https://api.factory.ai"
 	FactoryDefaultUserAgent       = "factory-cli/0.232.0"
 	FactoryDefaultClientVersion   = "0.232.0"
-	FactoryDefaultClientHeader    = "sdk"
+	FactoryDefaultClientHeader    = "cli"
 	FactoryDefaultSDKHeader       = "typescript/0.9.1"
 	FactoryDefaultProtocolVersion = "1.244.0"
 
@@ -204,7 +204,9 @@ func (a Factory) applyDefaultHeaders(req *http.Request, apiKey string) {
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
-	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
+	if strings.EqualFold(factoryClientHeader, "sdk") && strings.TrimSpace(factorySdkHeader) != "" {
+		req.Header.Set("X-Factory-Sdk", factorySdkHeader)
+	}
 	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 }

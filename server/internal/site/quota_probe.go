@@ -1429,7 +1429,9 @@ func quotaProbeFactoryGetJSON(ctx context.Context, client *http.Client, url stri
 	req.Header.Set("User-Agent", adapter.FactoryDefaultUserAgent)
 	req.Header.Set("X-Client-Version", adapter.FactoryDefaultClientVersion)
 	req.Header.Set("X-Factory-Client", adapter.FactoryDefaultClientHeader)
-	req.Header.Set("X-Factory-Sdk", adapter.FactoryDefaultSDKHeader)
+	if strings.EqualFold(adapter.FactoryDefaultClientHeader, "sdk") && adapter.FactoryDefaultSDKHeader != "" {
+		req.Header.Set("X-Factory-Sdk", adapter.FactoryDefaultSDKHeader)
+	}
 	req.Header.Set("X-Factory-Protocol-Version", adapter.FactoryDefaultProtocolVersion)
 
 	resp, err := client.Do(req)
