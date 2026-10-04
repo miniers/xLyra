@@ -20,6 +20,17 @@ func TestClassifyFactoryRoute(t *testing.T) {
 		{"claude-3-7-sonnet-20250219", factoryRouteClaude},
 		{"atlas-07-21", factoryRouteClaude},
 		{"aster-07-15", factoryRouteClaude},
+		{"auto", factoryRouteClaude},
+		{"auto-fast", factoryRouteClaude},
+		{"anthropic-latest-premium", factoryRouteClaude},
+		{"anthropic-latest-fast", factoryRouteClaude},
+		{"openai-latest-premium", factoryRouteGPT},
+		{"openai-latest-balanced", factoryRouteGPT},
+		{"oss-latest-premium", factoryRouteCoreOpenSource},
+		{"oss-latest-fast", factoryRouteCoreOpenSource},
+		{"shield-risk", factoryRouteCoreOpenSource},
+		{"shield-downgrade", factoryRouteCoreOpenSource},
+		{"inkling", factoryRouteCoreOpenSource},
 		{"minimax-m3", factoryRouteMiniMax},
 		{"minimax-m2.7", factoryRouteMiniMax},
 		{"gpt-6.1-sol", factoryRouteGPT},
@@ -211,5 +222,106 @@ func TestFactoryProtocolAdapterEnsuresSystemPrompt(t *testing.T) {
 	instructions, ok := payload["instructions"].(string)
 	if !ok || !strings.Contains(instructions, "You are Droid") {
 		t.Errorf("instructions missing Factory system declaration: %#v", payload["instructions"])
+	}
+}
+
+func TestFactoryProtocolAdapterStripsEmptyTools(t *testing.T) {
+	t.Parallel()
+
+	req := gatewayRequest{
+		DownstreamPath: gatewayEndpointChatCompletions,
+		RequestedModel: "claude-opus-5-5",
+		Payload: map[string]any{
+			"model":       "claude-opus-5-5",
+			"messages":    []any{map[string]any{"role": "user", "content": "hi"}},
+			"tools":       []any{},
+			"tool_choice": "auto",
+		},
+	}
+	cand := routeengine.Candidate{
+		Site: routeengine.CandidateSite{
+			SiteType: "factory",
+			BaseURL:  "https://api.factory.ai",
+		},
+		Model: routeengine.CandidateModel{
+			UpstreamName: "claude-opus-5-5",
+		},
+	}
+
+	adapter := newFactoryProtocolAdapter(req, cand)
+	payload, err := adapter.BuildUpstreamPayload(req, cand)
+	if err != nil {
+		t.Fatalf("BuildUpstreamPayload error: %v", err)
+	}
+
+	if _, exists := payload["tools"]; exists {
+		t.Errorf("empty tools was not removed from payload: %#v", payload["tools"])
+	}
+	if _, exists := payload["tool_choice"]; exists {
+		t.Errorf("tool_choice was not removed when tools is empty: %#v", payload["tool_choice"])
+	}
+}
+
+func TestFactoryProtocolAdapterHeadersPassthrough(t *testing.T) {
+	t.Parallel()
+
+	downstreamHeaders := http.Header{}
+	downstreamHeaders.Set("X-Factory-Client", "sdk")
+	downstreamHeaders.Set("X-Factory-Sdk", "@factory/droid-sdk@0.9.1")
+	downstreamHeaders.Set("X-Factory-Protocol-Version", "1.201.1")
+	downstreamHeaders.Set("x-session-id", "session-custom-uuid-1234")
+	downstreamHeaders.Set("x-assistant-message-id", "msg-custom-uuid-5678")
+	downstreamHeaders.Set("x-message-call-type", "direct")
+
+	req := gatewayRequest{
+		DownstreamPath:    gatewayEndpointChatCompletions,
+		RequestedModel:    "auto",
+		DownstreamHeaders: downstreamHeaders,
+		Payload: map[string]any{
+			"model":    "auto",
+			"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+		},
+	}
+	cand := routeengine.Candidate{
+		Site: routeengine.CandidateSite{
+			SiteType: "factory",
+			BaseURL:  "https://api.factory.ai",
+		},
+		Model: routeengine.CandidateModel{
+			UpstreamName: "auto",
+		},
+	}
+
+	adapter := newFactoryProtocolAdapter(req, cand)
+	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://api.factory.ai", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.ApplyUpstreamHeaders(httpReq, "test-api-key", "org-from-account", false)
+
+	if client := httpReq.Header.Get("X-Factory-Client"); client != "sdk" {
+		t.Errorf("X-Factory-Client = %q, want sdk", client)
+	}
+	if sdk := httpReq.Header.Get("X-Factory-Sdk"); sdk != "@factory/droid-sdk@0.9.1" {
+		t.Errorf("X-Factory-Sdk = %q, want @factory/droid-sdk@0.9.1", sdk)
+	}
+	if proto := httpReq.Header.Get("X-Factory-Protocol-Version"); proto != "1.201.1" {
+		t.Errorf("X-Factory-Protocol-Version = %q, want 1.201.1", proto)
+	}
+	if sid := httpReq.Header.Get("x-session-id"); sid != "session-custom-uuid-1234" {
+		t.Errorf("x-session-id = %q, want session-custom-uuid-1234", sid)
+	}
+	if mid := httpReq.Header.Get("x-assistant-message-id"); mid != "msg-custom-uuid-5678" {
+		t.Errorf("x-assistant-message-id = %q, want msg-custom-uuid-5678", mid)
+	}
+	if mtype := httpReq.Header.Get("x-message-call-type"); mtype != "direct" {
+		t.Errorf("x-message-call-type = %q, want direct", mtype)
+	}
+	if org := httpReq.Header.Get("X-Factory-Org-Id"); org != "org-from-account" {
+		t.Errorf("X-Factory-Org-Id = %q, want org-from-account", org)
+	}
+	// auto routes to claude by default
+	if prov := httpReq.Header.Get("x-api-provider"); prov != "anthropic" {
+		t.Errorf("x-api-provider = %q, want anthropic", prov)
 	}
 }

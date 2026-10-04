@@ -52,6 +52,19 @@ func TestFactoryListModelsCatalog(t *testing.T) {
 	}
 
 	expectedIDs := []string{
+		// Router series
+		"auto",
+		"auto-fast",
+		// Aliases series
+		"openai-latest-premium",
+		"openai-latest-balanced",
+		"openai-latest-fast",
+		"anthropic-latest-premium",
+		"anthropic-latest-balanced",
+		"anthropic-latest-fast",
+		"oss-latest-premium",
+		"oss-latest-balanced",
+		"oss-latest-fast",
 		// Claude series
 		"claude-opus-5-5",
 		"claude-opus-5-5-fast",
@@ -138,6 +151,10 @@ func TestFactoryListModelsCatalog(t *testing.T) {
 		"qwen3.8-max",
 		"mistral-medium-3.5",
 		"nemotron-3-ultra",
+		// Special safety / audit models
+		"shield-risk",
+		"shield-downgrade",
+		"inkling",
 	}
 
 	if len(models) != len(expectedIDs) {
@@ -167,6 +184,16 @@ func TestFactoryListModelsCatalog(t *testing.T) {
 		if m.Capabilities["tool_call"] != true || m.Capabilities["streaming"] != true {
 			t.Fatalf("model %q missing tool_call or streaming", expectedID)
 		}
+	}
+
+	if autoModel := modelMap["auto"]; autoModel.Capabilities["kind"] != "router" {
+		t.Fatalf("auto model kind = %v, want router", autoModel.Capabilities["kind"])
+	}
+	if gpt6Model := modelMap["gpt-6-sol"]; gpt6Model.Capabilities["tier"] != "premium" {
+		t.Fatalf("gpt-6-sol tier = %v, want premium", gpt6Model.Capabilities["tier"])
+	}
+	if kimiModel := modelMap["kimi-k3"]; kimiModel.Capabilities["tier"] != "core" {
+		t.Fatalf("kimi-k3 tier = %v, want core", kimiModel.Capabilities["tier"])
 	}
 }
 
@@ -328,6 +355,9 @@ func TestFactoryFetchBalance_Success(t *testing.T) {
 		if client := r.Header.Get("X-Factory-Client"); client != "cli" {
 			t.Fatalf("X-Factory-Client = %q, want cli", client)
 		}
+		if proto := r.Header.Get("X-Factory-Protocol-Version"); proto != "1.244.0" {
+			t.Fatalf("X-Factory-Protocol-Version = %q, want 1.244.0", proto)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -341,6 +371,11 @@ func TestFactoryFetchBalance_Success(t *testing.T) {
 					"fiveHour": { "usedPercent": 0.0 },
 					"weekly": { "usedPercent": 10.0 },
 					"monthly": { "usedPercent": 20.0 }
+				},
+				"premium": {
+					"fiveHour": { "usedPercent": 5.0 },
+					"weekly": { "usedPercent": 12.5 },
+					"monthly": { "usedPercent": 30.0 }
 				}
 			}
 		}`))
@@ -385,6 +420,15 @@ func TestFactoryFetchBalance_Success(t *testing.T) {
 	coreWeekly, ok := core["weekly"].(map[string]any)
 	if !ok || coreWeekly["usedPercent"] != 10.0 {
 		t.Fatalf("core weekly = %#v, want usedPercent 10.0", core["weekly"])
+	}
+
+	premium, ok := rawMap["premium"].(map[string]any)
+	if !ok {
+		t.Fatalf("premium is not map[string]any: %#v", rawMap["premium"])
+	}
+	premiumFiveHour, ok := premium["fiveHour"].(map[string]any)
+	if !ok || premiumFiveHour["usedPercent"] != 5.0 {
+		t.Fatalf("premium fiveHour = %#v, want usedPercent 5.0", premium["fiveHour"])
 	}
 }
 

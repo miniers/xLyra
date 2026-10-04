@@ -19,105 +19,128 @@ const (
 	factorySiteType       = FactorySiteType
 	factoryDefaultBaseURL = FactoryDefaultBaseURL
 
-	factoryUserAgent     = "factory-cli/0.232.0"
-	factoryClientVersion = "0.232.0"
-	factoryClientHeader  = "cli"
+	factoryUserAgent       = "factory-cli/0.232.0"
+	factoryClientVersion   = "0.232.0"
+	factoryClientHeader    = "cli"
+	factoryProtocolVersion = "1.244.0"
 )
 
 var factoryCuratedModels = []struct {
 	ID          string
 	DisplayName string
+	Tier        string
+	Kind        string
 }{
+	// Router series
+	{ID: "auto", DisplayName: "Factory Auto Router", Tier: "standard", Kind: "router"},
+	{ID: "auto-fast", DisplayName: "Factory Auto Router Fast", Tier: "standard", Kind: "router"},
+
+	// Aliases series
+	{ID: "openai-latest-premium", DisplayName: "OpenAI Latest Premium", Tier: "premium", Kind: "concrete"},
+	{ID: "openai-latest-balanced", DisplayName: "OpenAI Latest Balanced", Tier: "standard", Kind: "concrete"},
+	{ID: "openai-latest-fast", DisplayName: "OpenAI Latest Fast", Tier: "standard", Kind: "concrete"},
+	{ID: "anthropic-latest-premium", DisplayName: "Anthropic Latest Premium", Tier: "premium", Kind: "concrete"},
+	{ID: "anthropic-latest-balanced", DisplayName: "Anthropic Latest Balanced", Tier: "standard", Kind: "concrete"},
+	{ID: "anthropic-latest-fast", DisplayName: "Anthropic Latest Fast", Tier: "standard", Kind: "concrete"},
+	{ID: "oss-latest-premium", DisplayName: "OSS Latest Premium", Tier: "core", Kind: "concrete"},
+	{ID: "oss-latest-balanced", DisplayName: "OSS Latest Balanced", Tier: "core", Kind: "concrete"},
+	{ID: "oss-latest-fast", DisplayName: "OSS Latest Fast", Tier: "core", Kind: "concrete"},
+
 	// Claude series
-	{ID: "claude-opus-5-5", DisplayName: "Claude Opus 5.5"},
-	{ID: "claude-opus-5-5-fast", DisplayName: "Claude Opus 5.5 Fast Mode"},
-	{ID: "claude-opus-5", DisplayName: "Claude Opus 5"},
-	{ID: "claude-opus-5-fast", DisplayName: "Claude Opus 5 Fast Mode"},
-	{ID: "claude-opus-4-8", DisplayName: "Claude Opus 4.8"},
-	{ID: "claude-opus-4-8-fast", DisplayName: "Claude Opus 4.8 Fast Mode"},
-	{ID: "claude-opus-4-7", DisplayName: "Claude Opus 4.7"},
-	{ID: "claude-opus-4-7-fast", DisplayName: "Claude Opus 4.7 Fast Mode"},
-	{ID: "claude-opus-4-6", DisplayName: "Claude Opus 4.6"},
-	{ID: "claude-opus-4-6-fast", DisplayName: "Claude Opus 4.6 Fast Mode"},
-	{ID: "claude-opus-4-5-20251101", DisplayName: "Claude Opus 4.5"},
-	{ID: "claude-opus-4-1-20250805", DisplayName: "Claude Opus 4.1"},
-	{ID: "claude-sonnet-5-5", DisplayName: "Claude Sonnet 5.5"},
-	{ID: "claude-sonnet-5", DisplayName: "Claude Sonnet 5"},
-	{ID: "claude-sonnet-4-6", DisplayName: "Claude Sonnet 4.6"},
-	{ID: "claude-sonnet-4-5-20250929", DisplayName: "Claude Sonnet 4.5"},
-	{ID: "claude-sonnet-4-20250514", DisplayName: "Claude Sonnet 4"},
-	{ID: "claude-3-7-sonnet-20250219", DisplayName: "Claude 3.7 Sonnet"},
-	{ID: "claude-3-5-sonnet-20241022", DisplayName: "Claude 3.5 Sonnet v2"},
-	{ID: "claude-fable-5.1", DisplayName: "Claude Fable 5.1"},
-	{ID: "claude-fable-5", DisplayName: "Claude Fable 5"},
-	{ID: "claude-haiku-4-5-20251001", DisplayName: "Claude Haiku 4.5"},
-	{ID: "claude-3-5-haiku-20241022", DisplayName: "Claude 3.5 Haiku"},
-	{ID: "atlas-07-21", DisplayName: "Atlas 07/21 (Preview)"},
-	{ID: "aster-07-15", DisplayName: "Aster 07/15 (Preview)"},
+	{ID: "claude-opus-5-5", DisplayName: "Claude Opus 5.5", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-5-5-fast", DisplayName: "Claude Opus 5.5 Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-5", DisplayName: "Claude Opus 5", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-5-fast", DisplayName: "Claude Opus 5 Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-8", DisplayName: "Claude Opus 4.8", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-8-fast", DisplayName: "Claude Opus 4.8 Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-7", DisplayName: "Claude Opus 4.7", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-7-fast", DisplayName: "Claude Opus 4.7 Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-6", DisplayName: "Claude Opus 4.6", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-6-fast", DisplayName: "Claude Opus 4.6 Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-5-20251101", DisplayName: "Claude Opus 4.5", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-opus-4-1-20250805", DisplayName: "Claude Opus 4.1", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-sonnet-5-5", DisplayName: "Claude Sonnet 5.5", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-sonnet-5", DisplayName: "Claude Sonnet 5", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-sonnet-4-6", DisplayName: "Claude Sonnet 4.6", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-sonnet-4-5-20250929", DisplayName: "Claude Sonnet 4.5", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-sonnet-4-20250514", DisplayName: "Claude Sonnet 4", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-3-7-sonnet-20250219", DisplayName: "Claude 3.7 Sonnet", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-3-5-sonnet-20241022", DisplayName: "Claude 3.5 Sonnet v2", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-fable-5.1", DisplayName: "Claude Fable 5.1", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-fable-5", DisplayName: "Claude Fable 5", Tier: "premium", Kind: "concrete"},
+	{ID: "claude-haiku-4-5-20251001", DisplayName: "Claude Haiku 4.5", Tier: "standard", Kind: "concrete"},
+	{ID: "claude-3-5-haiku-20241022", DisplayName: "Claude 3.5 Haiku", Tier: "standard", Kind: "concrete"},
+	{ID: "atlas-07-21", DisplayName: "Atlas 07/21 (Preview)", Tier: "standard", Kind: "concrete"},
+	{ID: "aster-07-15", DisplayName: "Aster 07/15 (Preview)", Tier: "standard", Kind: "concrete"},
 
 	// GPT series
-	{ID: "gpt-6.1-sol", DisplayName: "GPT-6.1 Sol"},
-	{ID: "gpt-6-sol", DisplayName: "GPT-6 Sol"},
-	{ID: "gpt-6-astra", DisplayName: "GPT-6 Astra"},
-	{ID: "gpt-6-luna", DisplayName: "GPT-6 Luna"},
-	{ID: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol"},
-	{ID: "gpt-5.6-sol-fast", DisplayName: "GPT-5.6 Sol Fast Mode"},
-	{ID: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra"},
-	{ID: "gpt-5.6-luna", DisplayName: "GPT-5.6 Luna"},
-	{ID: "gpt-5.5-pro", DisplayName: "GPT-5.5 Pro"},
-	{ID: "gpt-5.5", DisplayName: "GPT-5.5"},
-	{ID: "gpt-5.5-fast", DisplayName: "GPT-5.5 Fast Mode"},
-	{ID: "gpt-5.4", DisplayName: "GPT-5.4"},
-	{ID: "gpt-5.4-fast", DisplayName: "GPT-5.4 Fast Mode"},
-	{ID: "gpt-5.4-mini", DisplayName: "GPT-5.4 Mini"},
-	{ID: "gpt-5.4-mini-fast", DisplayName: "GPT-5.4 Mini Fast Mode"},
-	{ID: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex"},
-	{ID: "gpt-5.3-codex-fast", DisplayName: "GPT-5.3 Codex Fast Mode"},
-	{ID: "gpt-5.2-codex", DisplayName: "GPT-5.2 Codex"},
-	{ID: "gpt-5.2", DisplayName: "GPT-5.2"},
-	{ID: "gpt-5.1-codex-max", DisplayName: "GPT-5.1 Codex Max"},
-	{ID: "gpt-5.1-codex", DisplayName: "GPT-5.1 Codex"},
-	{ID: "gpt-5.1", DisplayName: "GPT-5.1"},
-	{ID: "gpt-5-codex", DisplayName: "GPT-5 Codex"},
-	{ID: "gpt-5-mini-2025-08-07", DisplayName: "GPT-5 Mini"},
-	{ID: "gpt-5-2025-08-07", DisplayName: "GPT-5"},
+	{ID: "gpt-6.1-sol", DisplayName: "GPT-6.1 Sol", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-6-sol", DisplayName: "GPT-6 Sol", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-6-astra", DisplayName: "GPT-6 Astra", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-6-luna", DisplayName: "GPT-6 Luna", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.6-sol", DisplayName: "GPT-5.6 Sol", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.6-sol-fast", DisplayName: "GPT-5.6 Sol Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.6-terra", DisplayName: "GPT-5.6 Terra", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.6-luna", DisplayName: "GPT-5.6 Luna", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.5-pro", DisplayName: "GPT-5.5 Pro", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.5", DisplayName: "GPT-5.5", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.5-fast", DisplayName: "GPT-5.5 Fast Mode", Tier: "premium", Kind: "concrete"},
+	{ID: "gpt-5.4", DisplayName: "GPT-5.4", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.4-fast", DisplayName: "GPT-5.4 Fast Mode", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.4-mini", DisplayName: "GPT-5.4 Mini", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.4-mini-fast", DisplayName: "GPT-5.4 Mini Fast Mode", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.3-codex", DisplayName: "GPT-5.3 Codex", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.3-codex-fast", DisplayName: "GPT-5.3 Codex Fast Mode", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.2-codex", DisplayName: "GPT-5.2 Codex", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.2", DisplayName: "GPT-5.2", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.1-codex-max", DisplayName: "GPT-5.1 Codex Max", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.1-codex", DisplayName: "GPT-5.1 Codex", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5.1", DisplayName: "GPT-5.1", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5-codex", DisplayName: "GPT-5 Codex", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5-mini-2025-08-07", DisplayName: "GPT-5 Mini", Tier: "standard", Kind: "concrete"},
+	{ID: "gpt-5-2025-08-07", DisplayName: "GPT-5", Tier: "standard", Kind: "concrete"},
 
 	// Gemini series
-	{ID: "gemini-3.8-flash", DisplayName: "Gemini 3.8 Flash"},
-	{ID: "gemini-3.7-flash", DisplayName: "Gemini 3.7 Flash"},
-	{ID: "gemini-3.6-flash", DisplayName: "Gemini 3.6 Flash"},
-	{ID: "gemini-3.5-flash", DisplayName: "Gemini 3.5 Flash"},
-	{ID: "gemini-3.1-pro-preview", DisplayName: "Gemini 3.1 Pro"},
-	{ID: "gemini-3-pro-preview", DisplayName: "Gemini 3 Pro"},
-	{ID: "gemini-3-flash-preview", DisplayName: "Gemini 3 Flash"},
-	{ID: "gemini-2.5-pro", DisplayName: "Gemini 2.5 Pro"},
-	{ID: "gemini-2.5-flash", DisplayName: "Gemini 2.5 Flash"},
-	{ID: "garnet-07-15", DisplayName: "Garnet 07/15 (Preview)"},
+	{ID: "gemini-3.8-flash", DisplayName: "Gemini 3.8 Flash", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-3.7-flash", DisplayName: "Gemini 3.7 Flash", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-3.6-flash", DisplayName: "Gemini 3.6 Flash", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-3.5-flash", DisplayName: "Gemini 3.5 Flash", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-3.1-pro-preview", DisplayName: "Gemini 3.1 Pro", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-3-pro-preview", DisplayName: "Gemini 3 Pro", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-3-flash-preview", DisplayName: "Gemini 3 Flash", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-2.5-pro", DisplayName: "Gemini 2.5 Pro", Tier: "standard", Kind: "concrete"},
+	{ID: "gemini-2.5-flash", DisplayName: "Gemini 2.5 Flash", Tier: "standard", Kind: "concrete"},
+	{ID: "garnet-07-15", DisplayName: "Garnet 07/15 (Preview)", Tier: "standard", Kind: "concrete"},
 
 	// Grok series
-	{ID: "grok-4.7", DisplayName: "Grok 4.7"},
-	{ID: "grok-4.6", DisplayName: "Grok 4.6"},
-	{ID: "grok-4.5", DisplayName: "Grok 4.5"},
+	{ID: "grok-4.7", DisplayName: "Grok 4.7", Tier: "premium", Kind: "concrete"},
+	{ID: "grok-4.6", DisplayName: "Grok 4.6", Tier: "premium", Kind: "concrete"},
+	{ID: "grok-4.5", DisplayName: "Grok 4.5", Tier: "premium", Kind: "concrete"},
 
 	// Droid Core open source series
-	{ID: "kimi-k3", DisplayName: "Kimi K3"},
-	{ID: "kimi-k2.7-code", DisplayName: "Kimi K2.7 Code"},
-	{ID: "kimi-k2.6", DisplayName: "Kimi K2.6"},
-	{ID: "glm-5.3", DisplayName: "GLM-5.3"},
-	{ID: "glm-5.3-flash", DisplayName: "GLM-5.3 Flash"},
-	{ID: "glm-5.2", DisplayName: "GLM-5.2"},
-	{ID: "glm-5.2-fast", DisplayName: "GLM-5.2 Fast Mode"},
-	{ID: "glm-5.1", DisplayName: "GLM-5.1"},
-	{ID: "glm-5", DisplayName: "GLM-5"},
-	{ID: "deepseek-v4.1-flash", DisplayName: "DeepSeek V4.1 Flash"},
-	{ID: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro"},
-	{ID: "deepseek-v4-flash-0731", DisplayName: "DeepSeek V4 Flash 0731"},
-	{ID: "minimax-m3", DisplayName: "MiniMax M3"},
-	{ID: "minimax-m2.7", DisplayName: "MiniMax M2.7"},
-	{ID: "minimax-m2.5", DisplayName: "MiniMax M2.5"},
-	{ID: "qwen3.8-max", DisplayName: "Qwen3.8 Max"},
-	{ID: "mistral-medium-3.5", DisplayName: "Mistral Medium 3.5"},
-	{ID: "nemotron-3-ultra", DisplayName: "Nemotron 3 Ultra"},
+	{ID: "kimi-k3", DisplayName: "Kimi K3", Tier: "core", Kind: "concrete"},
+	{ID: "kimi-k2.7-code", DisplayName: "Kimi K2.7 Code", Tier: "core", Kind: "concrete"},
+	{ID: "kimi-k2.6", DisplayName: "Kimi K2.6", Tier: "core", Kind: "concrete"},
+	{ID: "glm-5.3", DisplayName: "GLM-5.3", Tier: "core", Kind: "concrete"},
+	{ID: "glm-5.3-flash", DisplayName: "GLM-5.3 Flash", Tier: "core", Kind: "concrete"},
+	{ID: "glm-5.2", DisplayName: "GLM-5.2", Tier: "core", Kind: "concrete"},
+	{ID: "glm-5.2-fast", DisplayName: "GLM-5.2 Fast Mode", Tier: "core", Kind: "concrete"},
+	{ID: "glm-5.1", DisplayName: "GLM-5.1", Tier: "core", Kind: "concrete"},
+	{ID: "glm-5", DisplayName: "GLM-5", Tier: "core", Kind: "concrete"},
+	{ID: "deepseek-v4.1-flash", DisplayName: "DeepSeek V4.1 Flash", Tier: "core", Kind: "concrete"},
+	{ID: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", Tier: "core", Kind: "concrete"},
+	{ID: "deepseek-v4-flash-0731", DisplayName: "DeepSeek V4 Flash 0731", Tier: "core", Kind: "concrete"},
+	{ID: "minimax-m3", DisplayName: "MiniMax M3", Tier: "core", Kind: "concrete"},
+	{ID: "minimax-m2.7", DisplayName: "MiniMax M2.7", Tier: "core", Kind: "concrete"},
+	{ID: "minimax-m2.5", DisplayName: "MiniMax M2.5", Tier: "core", Kind: "concrete"},
+	{ID: "qwen3.8-max", DisplayName: "Qwen3.8 Max", Tier: "core", Kind: "concrete"},
+	{ID: "mistral-medium-3.5", DisplayName: "Mistral Medium 3.5", Tier: "core", Kind: "concrete"},
+	{ID: "nemotron-3-ultra", DisplayName: "Nemotron 3 Ultra", Tier: "core", Kind: "concrete"},
+
+	// Special safety / audit models
+	{ID: "shield-risk", DisplayName: "Factory Shield Risk", Tier: "standard", Kind: "concrete"},
+	{ID: "shield-downgrade", DisplayName: "Factory Shield Downgrade", Tier: "standard", Kind: "concrete"},
+	{ID: "inkling", DisplayName: "Inkling", Tier: "core", Kind: "concrete"},
 }
 
 type Factory struct {
@@ -187,6 +210,7 @@ func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (st
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
@@ -268,6 +292,7 @@ func (a Factory) fetchRemoteModels(ctx context.Context, site SiteConfig, apiKey 
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
@@ -353,17 +378,24 @@ func mergeFactoryModels(primary []Model, fallback []Model) []Model {
 func (a Factory) curatedModels() []Model {
 	models := make([]Model, 0, len(factoryCuratedModels))
 	for _, item := range factoryCuratedModels {
+		caps := map[string]any{
+			"object":                   "model",
+			"supported_endpoint_types": []string{"openai", "openai-response", "anthropic-messages"},
+			"source":                   "factory_curated",
+			"tool_call":                true,
+			"supports_tools":           true,
+			"streaming":                true,
+		}
+		if item.Tier != "" {
+			caps["tier"] = item.Tier
+		}
+		if item.Kind != "" {
+			caps["kind"] = item.Kind
+		}
 		models = append(models, Model{
 			UpstreamName: item.ID,
 			DisplayName:  item.DisplayName,
-			Capabilities: map[string]any{
-				"object":                   "model",
-				"supported_endpoint_types": []string{"openai", "openai-response", "anthropic-messages"},
-				"source":                   "factory_curated",
-				"tool_call":                true,
-				"supports_tools":           true,
-				"streaming":                true,
-			},
+			Capabilities: caps,
 		})
 	}
 	return models
@@ -403,6 +435,7 @@ func (a Factory) FetchBalanceWithKey(ctx context.Context, site SiteConfig, apiKe
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
@@ -433,17 +466,21 @@ func (a Factory) FetchBalanceWithKey(ctx context.Context, site SiteConfig, apiKe
 
 	standardMap, _ := limitsMap["standard"].(map[string]any)
 	coreMap, _ := limitsMap["core"].(map[string]any)
+	premiumMap, _ := limitsMap["premium"].(map[string]any)
 
 	standardParsed := parseFactoryLimitTier(standardMap)
 	coreParsed := parseFactoryLimitTier(coreMap)
+	premiumParsed := parseFactoryLimitTier(premiumMap)
 
 	balance := map[string]any{
 		"type":     "factory",
 		"standard": standardParsed,
 		"core":     coreParsed,
+		"premium":  premiumParsed,
 		"limits": map[string]any{
 			"standard": standardParsed,
 			"core":     coreParsed,
+			"premium":  premiumParsed,
 		},
 		"raw": rawPayload,
 	}

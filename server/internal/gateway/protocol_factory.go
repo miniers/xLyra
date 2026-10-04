@@ -40,6 +40,18 @@ func classifyFactoryRoute(model string) factoryRouteTarget {
 	if idx := strings.LastIndex(lower, "/"); idx >= 0 {
 		lower = lower[idx+1:]
 	}
+	if lower == "auto" || lower == "auto-fast" {
+		return factoryRouteClaude
+	}
+	if strings.HasPrefix(lower, "anthropic-latest") {
+		return factoryRouteClaude
+	}
+	if strings.HasPrefix(lower, "openai-latest") {
+		return factoryRouteGPT
+	}
+	if strings.HasPrefix(lower, "oss-latest") || lower == "shield-risk" || lower == "shield-downgrade" || lower == "inkling" {
+		return factoryRouteCoreOpenSource
+	}
 	if strings.Contains(lower, "minimax") {
 		return factoryRouteMiniMax
 	}
@@ -154,6 +166,12 @@ func (a *factoryProtocolAdapter) BuildUpstreamPayload(request gatewayRequest, ca
 	}
 
 	delete(payload, "stream_options")
+	if tools, exists := payload["tools"]; exists {
+		if toolsSlice, ok := tools.([]any); ok && len(toolsSlice) == 0 {
+			delete(payload, "tools")
+			delete(payload, "tool_choice")
+		}
+	}
 
 	return payload, nil
 }
@@ -174,7 +192,29 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 	if strings.TrimSpace(upstreamKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(upstreamKey))
 	}
-	req.Header.Set("X-Factory-Client", factoryHeaderClient)
+
+	client := factoryHeaderClient
+	if a.request.DownstreamHeaders != nil {
+		if v := strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Client")); v != "" {
+			client = v
+		}
+	}
+	req.Header.Set("X-Factory-Client", client)
+
+	if a.request.DownstreamHeaders != nil {
+		if v := strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Sdk")); v != "" {
+			req.Header.Set("X-Factory-Sdk", v)
+		}
+	}
+
+	protoVer := "1.244.0"
+	if a.request.DownstreamHeaders != nil {
+		if v := strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Protocol-Version")); v != "" {
+			protoVer = v
+		}
+	}
+	req.Header.Set("X-Factory-Protocol-Version", protoVer)
+
 	req.Header.Set("X-Client-Version", factoryHeaderClientVersion)
 	req.Header.Set("User-Agent", factoryHeaderUserAgent)
 
@@ -182,8 +222,39 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 		req.Header.Set("X-Factory-Org-Id", orgID)
 	}
 
-	req.Header.Set("x-session-id", uuid.NewString())
-	req.Header.Set("x-assistant-message-id", uuid.NewString())
+	sessionID := ""
+	if a.request.DownstreamHeaders != nil {
+		for _, key := range []string{"x-session-id", "X-Session-Id", "X-Session-ID"} {
+			if v := strings.TrimSpace(a.request.DownstreamHeaders.Get(key)); v != "" {
+				sessionID = v
+				break
+			}
+		}
+	}
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
+	req.Header.Set("x-session-id", sessionID)
+
+	msgID := ""
+	if a.request.DownstreamHeaders != nil {
+		for _, key := range []string{"x-assistant-message-id", "X-Assistant-Message-Id"} {
+			if v := strings.TrimSpace(a.request.DownstreamHeaders.Get(key)); v != "" {
+				msgID = v
+				break
+			}
+		}
+	}
+	if msgID == "" {
+		msgID = uuid.NewString()
+	}
+	req.Header.Set("x-assistant-message-id", msgID)
+
+	if a.request.DownstreamHeaders != nil {
+		if v := strings.TrimSpace(a.request.DownstreamHeaders.Get("x-message-call-type")); v != "" {
+			req.Header.Set("x-message-call-type", v)
+		}
+	}
 
 	switch a.target {
 	case factoryRouteClaude:
