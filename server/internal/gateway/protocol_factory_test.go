@@ -127,8 +127,11 @@ func TestFactoryProtocolAdapterUpstreamPathsAndHeaders(t *testing.T) {
 			if tc.wantOpenAIPlat && httpReq.Header.Get("OpenAI-Platform") != factoryOpenAIPlatform {
 				t.Errorf("missing or wrong OpenAI-Platform header")
 			}
-			if client := httpReq.Header.Get("X-Factory-Client"); client != "cli" {
-				t.Errorf("X-Factory-Client = %q, want cli", client)
+			if client := httpReq.Header.Get("X-Factory-Client"); client != "sdk" {
+				t.Errorf("X-Factory-Client = %q, want sdk", client)
+			}
+			if sdk := httpReq.Header.Get("X-Factory-Sdk"); sdk != "typescript/0.9.1" {
+				t.Errorf("X-Factory-Sdk = %q, want typescript/0.9.1", sdk)
 			}
 			if httpReq.Header.Get("x-session-id") == "" {
 				t.Errorf("missing x-session-id header")
@@ -323,5 +326,31 @@ func TestFactoryProtocolAdapterHeadersPassthrough(t *testing.T) {
 	// auto routes to claude by default
 	if prov := httpReq.Header.Get("x-api-provider"); prov != "anthropic" {
 		t.Errorf("x-api-provider = %q, want anthropic", prov)
+	}
+
+	// Test downstream passthrough of cli
+	downstreamCliHeaders := http.Header{}
+	downstreamCliHeaders.Set("X-Factory-Client", "cli")
+
+	reqCli := gatewayRequest{
+		DownstreamPath:    gatewayEndpointChatCompletions,
+		RequestedModel:    "auto",
+		DownstreamHeaders: downstreamCliHeaders,
+		Payload: map[string]any{
+			"model":    "auto",
+			"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+		},
+	}
+	adapterCli := newFactoryProtocolAdapter(reqCli, cand)
+	httpReqCli, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://api.factory.ai", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapterCli.ApplyUpstreamHeaders(httpReqCli, "test-api-key", "", false)
+	if client := httpReqCli.Header.Get("X-Factory-Client"); client != "cli" {
+		t.Errorf("X-Factory-Client = %q, want cli", client)
+	}
+	if sdk := httpReqCli.Header.Get("X-Factory-Sdk"); sdk != "" {
+		t.Errorf("X-Factory-Sdk = %q, want empty for cli client", sdk)
 	}
 }

@@ -206,7 +206,11 @@ func TestFactoryListModelsRemoteWithMerge(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			if r.Header.Get("X-Factory-Client") != "cli" {
+			if r.Header.Get("X-Factory-Client") != "sdk" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.Header.Get("X-Factory-Sdk") != "typescript/0.9.1" {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -271,8 +275,11 @@ func TestFactoryValidateCredentials_Success(t *testing.T) {
 		if ver := r.Header.Get("X-Client-Version"); ver != "0.232.0" {
 			t.Fatalf("X-Client-Version = %q, want 0.232.0", ver)
 		}
-		if client := r.Header.Get("X-Factory-Client"); client != "cli" {
-			t.Fatalf("X-Factory-Client = %q, want cli", client)
+		if client := r.Header.Get("X-Factory-Client"); client != "sdk" {
+			t.Fatalf("X-Factory-Client = %q, want sdk", client)
+		}
+		if sdk := r.Header.Get("X-Factory-Sdk"); sdk != "typescript/0.9.1" {
+			t.Fatalf("X-Factory-Sdk = %q, want typescript/0.9.1", sdk)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -352,8 +359,11 @@ func TestFactoryFetchBalance_Success(t *testing.T) {
 		if ver := r.Header.Get("X-Client-Version"); ver != "0.232.0" {
 			t.Fatalf("X-Client-Version = %q, want 0.232.0", ver)
 		}
-		if client := r.Header.Get("X-Factory-Client"); client != "cli" {
-			t.Fatalf("X-Factory-Client = %q, want cli", client)
+		if client := r.Header.Get("X-Factory-Client"); client != "sdk" {
+			t.Fatalf("X-Factory-Client = %q, want sdk", client)
+		}
+		if sdk := r.Header.Get("X-Factory-Sdk"); sdk != "typescript/0.9.1" {
+			t.Fatalf("X-Factory-Sdk = %q, want typescript/0.9.1", sdk)
 		}
 		if proto := r.Header.Get("X-Factory-Protocol-Version"); proto != "1.244.0" {
 			t.Fatalf("X-Factory-Protocol-Version = %q, want 1.244.0", proto)

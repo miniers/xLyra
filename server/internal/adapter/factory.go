@@ -21,7 +21,8 @@ const (
 
 	factoryUserAgent       = "factory-cli/0.232.0"
 	factoryClientVersion   = "0.232.0"
-	factoryClientHeader    = "cli"
+	factoryClientHeader    = "sdk"
+	factorySdkHeader       = "typescript/0.9.1"
 	factoryProtocolVersion = "1.244.0"
 )
 
@@ -210,6 +211,7 @@ func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (st
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
 	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 
@@ -292,6 +294,7 @@ func (a Factory) fetchRemoteModels(ctx context.Context, site SiteConfig, apiKey 
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
 	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 
@@ -435,6 +438,7 @@ func (a Factory) FetchBalanceWithKey(ctx context.Context, site SiteConfig, apiKe
 	req.Header.Set("User-Agent", factoryUserAgent)
 	req.Header.Set("X-Client-Version", factoryClientVersion)
 	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
 	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
 	req.Header.Set("Accept", "application/json")
 

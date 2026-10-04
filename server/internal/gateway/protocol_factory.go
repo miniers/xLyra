@@ -19,7 +19,8 @@ const (
 	factorySystemDeclaration   = "You are Droid, an AI software engineering agent built by Factory."
 	factoryHeaderClientVersion = "0.232.0"
 	factoryHeaderUserAgent     = "factory-cli/0.232.0"
-	factoryHeaderClient        = "cli"
+	factoryHeaderClient        = "sdk"
+	factoryHeaderSdk           = "typescript/0.9.1"
 	factoryOpenAIPlatform      = "org-bHuLtG1fGmYk5YaOihAAXFBw"
 	factoryAnthropicVersion    = "2023-06-01"
 )
@@ -201,10 +202,15 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 	}
 	req.Header.Set("X-Factory-Client", client)
 
+	sdk := ""
 	if a.request.DownstreamHeaders != nil {
-		if v := strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Sdk")); v != "" {
-			req.Header.Set("X-Factory-Sdk", v)
-		}
+		sdk = strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Sdk"))
+	}
+	if sdk == "" && client == "sdk" {
+		sdk = factoryHeaderSdk
+	}
+	if sdk != "" {
+		req.Header.Set("X-Factory-Sdk", sdk)
 	}
 
 	protoVer := "1.244.0"
