@@ -773,9 +773,6 @@ func siteModelTestGatewayRequest(path string, model string, prompt string, strea
 			"max_output_tokens": 16,
 			"stream":            stream,
 		}
-		if stream {
-			payload["stream_options"] = map[string]any{"include_usage": true}
-		}
 		canonical, err := canonicalRequestFromOpenAIResponsesPayload(payload, model)
 		if err != nil {
 			return gatewayRequest{}, err

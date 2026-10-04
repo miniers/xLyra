@@ -165,6 +165,7 @@ func (a openAIResponsesProtocolAdapter) BuildUpstreamPayload(request gatewayRequ
 		if isOfficialDeepSeekResponsesCandidate(candidate) {
 			normalizeDeepSeekResponsesInput(payload)
 		}
+		delete(payload, "stream_options")
 		return applyRequestPolicyForCandidate(payload, canonicalProtocolOpenAIResponses, candidate), nil
 	}
 	if request.Canonical != nil {
@@ -175,9 +176,15 @@ func (a openAIResponsesProtocolAdapter) BuildUpstreamPayload(request gatewayRequ
 		if err != nil {
 			return nil, err
 		}
+		delete(payload, "stream_options")
 		return applyRequestPolicyForCandidate(payload, canonicalProtocolOpenAIResponses, candidate), nil
 	}
-	return convertRequestBetweenProtocols(canonicalProtocolOpenAIChat, canonicalProtocolOpenAIResponses, request.Payload, stringFromPayloadModel(request.Payload), candidate)
+	payload, err := convertRequestBetweenProtocols(canonicalProtocolOpenAIChat, canonicalProtocolOpenAIResponses, request.Payload, stringFromPayloadModel(request.Payload), candidate)
+	if err != nil {
+		return nil, err
+	}
+	delete(payload, "stream_options")
+	return payload, nil
 }
 
 func isOfficialDeepSeekResponsesCandidate(candidate routeengine.Candidate) bool {

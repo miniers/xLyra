@@ -109,7 +109,7 @@ func (r openAIProtocolResolver) Resolve(ctx context.Context, request gatewayRequ
 		return newCommandCodeProtocolAdapter(request, candidate), nil
 	}
 	if isFactorySite(candidate.Site.SiteType) {
-		return newFactoryProtocolAdapter(request, candidate), nil
+		return newFactoryProtocolAdapter(request, candidate, r.db), nil
 	}
 	if isGrokSite(candidate.Site.SiteType) {
 		return newGrokResponsesProtocolAdapterWithReasoningEfforts(request, r.grokModelReasoningEfforts(ctx, candidate.Model.SiteModelID)), nil

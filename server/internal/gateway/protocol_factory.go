@@ -30,16 +30,27 @@ const (
 	factoryRouteClaude factoryRouteTarget = iota
 	factoryRouteMiniMax
 	factoryRouteGPT
+	factoryRouteGrok
+	factoryRouteGemini
 	factoryRouteCoreOpenSource
 )
 
 func classifyFactoryRoute(model string) factoryRouteTarget {
 	lower := strings.ToLower(strings.TrimSpace(model))
+	if idx := strings.LastIndex(lower, "/"); idx >= 0 {
+		lower = lower[idx+1:]
+	}
 	if strings.Contains(lower, "minimax") {
 		return factoryRouteMiniMax
 	}
-	if strings.HasPrefix(lower, "claude") {
+	if strings.HasPrefix(lower, "claude") || strings.HasPrefix(lower, "atlas") || strings.HasPrefix(lower, "aster") {
 		return factoryRouteClaude
+	}
+	if strings.HasPrefix(lower, "grok") {
+		return factoryRouteGrok
+	}
+	if strings.HasPrefix(lower, "gemini") || strings.HasPrefix(lower, "garnet") {
+		return factoryRouteGemini
 	}
 	if strings.HasPrefix(lower, "gpt") || strings.Contains(lower, "codex") {
 		return factoryRouteGPT
@@ -78,9 +89,9 @@ func newFactoryProtocolAdapter(request gatewayRequest, candidate routeengine.Can
 	switch target {
 	case factoryRouteClaude, factoryRouteMiniMax:
 		delegate = newAnthropicMessagesProtocolAdapter(downstream)
-	case factoryRouteGPT:
+	case factoryRouteGPT, factoryRouteGrok:
 		delegate = newOpenAIResponsesProtocolAdapterForCandidate(request, candidate)
-	case factoryRouteCoreOpenSource:
+	case factoryRouteCoreOpenSource, factoryRouteGemini:
 		delegate = newOpenAIChatProtocolAdapter(request, candidate)
 	}
 
@@ -110,9 +121,9 @@ func (a *factoryProtocolAdapter) UpstreamPath(baseURL string) string {
 	switch a.target {
 	case factoryRouteClaude, factoryRouteMiniMax:
 		return base + "/api/llm/a/v1/messages"
-	case factoryRouteGPT:
+	case factoryRouteGPT, factoryRouteGrok:
 		return base + "/api/llm/o/v1/responses"
-	case factoryRouteCoreOpenSource:
+	case factoryRouteCoreOpenSource, factoryRouteGemini:
 		return base + "/api/llm/o/v1/chat/completions"
 	}
 	return base + "/api/llm/o/v1/chat/completions"
@@ -141,6 +152,8 @@ func (a *factoryProtocolAdapter) BuildUpstreamPayload(request gatewayRequest, ca
 	if modelName != "" {
 		payload["model"] = modelName
 	}
+
+	delete(payload, "stream_options")
 
 	return payload, nil
 }
@@ -182,6 +195,10 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 	case factoryRouteGPT:
 		req.Header.Set("x-api-provider", "openai")
 		req.Header.Set("OpenAI-Platform", factoryOpenAIPlatform)
+	case factoryRouteGrok:
+		req.Header.Set("x-api-provider", "xai")
+	case factoryRouteGemini:
+		req.Header.Set("x-api-provider", "google")
 	case factoryRouteCoreOpenSource:
 		req.Header.Set("x-api-provider", "fireworks")
 	}
@@ -275,7 +292,7 @@ func ensureFactoryPayloadSystemPrompt(payload map[string]any, target factoryRout
 			payload["system"] = factorySystemPrefix
 		}
 
-	case factoryRouteGPT:
+	case factoryRouteGPT, factoryRouteGrok:
 		instVal, exists := payload["instructions"]
 		if !exists || instVal == nil {
 			payload["instructions"] = factorySystemPrefix
@@ -293,7 +310,7 @@ func ensureFactoryPayloadSystemPrompt(payload map[string]any, target factoryRout
 			payload["instructions"] = factorySystemPrefix
 		}
 
-	case factoryRouteCoreOpenSource:
+	case factoryRouteCoreOpenSource, factoryRouteGemini:
 		var messages []any
 		switch v := payload["messages"].(type) {
 		case []any:

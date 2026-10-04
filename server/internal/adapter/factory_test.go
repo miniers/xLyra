@@ -53,25 +53,90 @@ func TestFactoryListModelsCatalog(t *testing.T) {
 
 	expectedIDs := []string{
 		// Claude series
+		"claude-opus-5-5",
+		"claude-opus-5-5-fast",
+		"claude-opus-5",
+		"claude-opus-5-fast",
 		"claude-opus-4-8",
+		"claude-opus-4-8-fast",
 		"claude-opus-4-7",
+		"claude-opus-4-7-fast",
+		"claude-opus-4-6",
+		"claude-opus-4-6-fast",
+		"claude-opus-4-5-20251101",
+		"claude-opus-4-1-20250805",
+		"claude-sonnet-5-5",
 		"claude-sonnet-5",
 		"claude-sonnet-4-6",
+		"claude-sonnet-4-5-20250929",
+		"claude-sonnet-4-20250514",
+		"claude-3-7-sonnet-20250219",
+		"claude-3-5-sonnet-20241022",
+		"claude-fable-5.1",
+		"claude-fable-5",
 		"claude-haiku-4-5-20251001",
+		"claude-3-5-haiku-20241022",
+		"atlas-07-21",
+		"aster-07-15",
 		// GPT series
-		"gpt-5.5",
+		"gpt-6.1-sol",
+		"gpt-6-sol",
+		"gpt-6-astra",
+		"gpt-6-luna",
+		"gpt-5.6-sol",
+		"gpt-5.6-sol-fast",
+		"gpt-5.6-terra",
+		"gpt-5.6-luna",
 		"gpt-5.5-pro",
+		"gpt-5.5",
+		"gpt-5.5-fast",
 		"gpt-5.4",
+		"gpt-5.4-fast",
 		"gpt-5.4-mini",
+		"gpt-5.4-mini-fast",
 		"gpt-5.3-codex",
+		"gpt-5.3-codex-fast",
+		"gpt-5.2-codex",
 		"gpt-5.2",
+		"gpt-5.1-codex-max",
+		"gpt-5.1-codex",
+		"gpt-5.1",
+		"gpt-5-codex",
+		"gpt-5-mini-2025-08-07",
+		"gpt-5-2025-08-07",
+		// Gemini series
+		"gemini-3.8-flash",
+		"gemini-3.7-flash",
+		"gemini-3.6-flash",
+		"gemini-3.5-flash",
+		"gemini-3.1-pro-preview",
+		"gemini-3-pro-preview",
+		"gemini-3-flash-preview",
+		"gemini-2.5-pro",
+		"gemini-2.5-flash",
+		"garnet-07-15",
+		// Grok series
+		"grok-4.7",
+		"grok-4.6",
+		"grok-4.5",
 		// Droid Core series
-		"deepseek-v4-pro",
-		"glm-5.2",
-		"glm-5.1",
+		"kimi-k3",
 		"kimi-k2.7-code",
 		"kimi-k2.6",
+		"glm-5.3",
+		"glm-5.3-flash",
+		"glm-5.2",
+		"glm-5.2-fast",
+		"glm-5.1",
+		"glm-5",
+		"deepseek-v4.1-flash",
+		"deepseek-v4-pro",
+		"deepseek-v4-flash-0731",
 		"minimax-m3",
+		"minimax-m2.7",
+		"minimax-m2.5",
+		"qwen3.8-max",
+		"mistral-medium-3.5",
 		"nemotron-3-ultra",
 	}
 
@@ -102,6 +167,61 @@ func TestFactoryListModelsCatalog(t *testing.T) {
 		if m.Capabilities["tool_call"] != true || m.Capabilities["streaming"] != true {
 			t.Fatalf("model %q missing tool_call or streaming", expectedID)
 		}
+	}
+}
+
+func TestFactoryListModelsRemoteWithMerge(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/models" {
+			if r.Header.Get("Authorization") != "Bearer test-key" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if r.Header.Get("X-Factory-Client") != "cli" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"data": [
+					{"id": "custom-factory-model-1", "name": "Custom Model 1", "owned_by": "custom", "context_window": 128000},
+					{"id": "gpt-6-sol", "name": "GPT-6 Sol Override"}
+				]
+			}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	f := NewFactory()
+	models, err := f.ListModels(context.Background(), SiteConfig{BaseURL: server.URL}, "test-key")
+	if err != nil {
+		t.Fatalf("ListModels returned error: %v", err)
+	}
+
+	modelMap := make(map[string]Model, len(models))
+	for _, m := range models {
+		modelMap[m.UpstreamName] = m
+	}
+
+	// Remote custom model should be included
+	custom, ok := modelMap["custom-factory-model-1"]
+	if !ok {
+		t.Fatalf("custom model missing from remote models")
+	}
+	if custom.DisplayName != "Custom Model 1" {
+		t.Fatalf("custom display name = %q, want Custom Model 1", custom.DisplayName)
+	}
+	if custom.Capabilities["source"] != "factory_remote" {
+		t.Fatalf("custom source = %v, want factory_remote", custom.Capabilities["source"])
+	}
+
+	// Curated models should still be merged and present
+	if _, ok := modelMap["claude-opus-5-5"]; !ok {
+		t.Fatalf("curated model claude-opus-5-5 missing from merged catalog")
 	}
 }
 
