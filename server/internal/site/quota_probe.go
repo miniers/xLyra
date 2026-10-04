@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"xlyra/server/internal/adapter"
 	"xlyra/server/internal/store"
 )
 
@@ -47,6 +48,7 @@ type QuotaProbeResult struct {
 	Plan        string            `json:"plan,omitempty"`
 	ExpiresAt   *string           `json:"expires_at,omitempty"`
 	Entries     []QuotaProbeEntry `json:"entries,omitempty"`
+	Limits      map[string]any    `json:"limits,omitempty"`
 	FetchedAt   time.Time         `json:"fetched_at"`
 }
 
@@ -76,6 +78,7 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 	var unlimitedUsedTotal *float64
 	var minEntry *QuotaProbeEntry
 	var summaryEntries []QuotaProbeEntry
+	var summaryLimits map[string]any
 	plan := ""
 	var expiresAt *string
 
@@ -112,7 +115,7 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 			result = preserveQuotaProbeResult(credential.Meta, result)
 		}
 		// 只对本次新鲜成功的探测同步冷却；失败时保留的旧数据不用于冷却判断
-		if freshOK && (probeType == QuotaProbeTypeKimi || probeType == QuotaProbeTypeGLM || probeType == QuotaProbeTypeCommandCode || probeType == QuotaProbeTypeClinePass) {
+		if freshOK && (probeType == QuotaProbeTypeKimi || probeType == QuotaProbeTypeGLM || probeType == QuotaProbeTypeCommandCode || probeType == QuotaProbeTypeClinePass || probeType == QuotaProbeTypeFactory) {
 			s.syncCodingPlanQuotaCooldown(ctx, item.ID, credential.ID, result)
 		}
 		if result.Status == "ok" {
@@ -127,6 +130,9 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 			}
 			if len(result.Entries) > 0 && summaryEntries == nil {
 				summaryEntries = result.Entries
+			}
+			if len(result.Limits) > 0 && summaryLimits == nil {
+				summaryLimits = result.Limits
 			}
 			if entry, ok := quotaProbeSummaryEntry(probeType, result); ok {
 				if minEntry == nil || *entry.Remaining < *minEntry.Remaining {
@@ -192,6 +198,9 @@ func (s *Service) runQuotaProbes(ctx context.Context, item store.Site) store.Sit
 	}
 	if expiresAt != nil {
 		summary["expires_at"] = *expiresAt
+	}
+	if len(summaryLimits) > 0 {
+		summary["limits"] = summaryLimits
 	}
 
 	meta := siteMetaMap(item)
@@ -398,6 +407,10 @@ func defaultQuotaProbeTypeForSite(item store.Site) string {
 		if quotaProbeBaseURLOfficial(item.BaseURL, "api.cline.bot") {
 			return QuotaProbeTypeClinePass
 		}
+	case "factory":
+		if quotaProbeBaseURLOfficial(item.BaseURL, "api.factory.ai") {
+			return QuotaProbeTypeFactory
+		}
 	}
 	return ""
 }
@@ -558,6 +571,15 @@ func quotaProbeSummaryEntry(probeType string, result QuotaProbeResult) (QuotaPro
 		}
 		result.Entries = entries
 	}
+	if probeType == QuotaProbeTypeFactory {
+		entries := make([]QuotaProbeEntry, 0, 3)
+		for _, entry := range result.Entries {
+			if entry.Label == "five_hour" || entry.Label == "weekly" || entry.Label == "monthly" {
+				entries = append(entries, entry)
+			}
+		}
+		result.Entries = entries
+	}
 	if probeType == QuotaProbeTypeSub2API {
 		for _, entry := range result.Entries {
 			if entry.Label == "balance" && !entry.Unlimited && entry.Remaining != nil {
@@ -594,6 +616,8 @@ func probeQuota(ctx context.Context, client *http.Client, probeType string, base
 		kind, entries, result.IsAvailable, err = probeDeepSeekBalance(ctx, client, baseURL, secret)
 	case QuotaProbeTypeClinePass:
 		kind, entries, result.Plan, err = probeClinePassQuota(ctx, client, baseURL, secret)
+	case QuotaProbeTypeFactory:
+		kind, entries, result.Plan, result.ExpiresAt, result.Limits, err = probeFactoryQuota(ctx, client, baseURL, secret)
 	default:
 		err = fmt.Errorf("unsupported quota probe type %q", probeType)
 	}
@@ -1298,6 +1322,215 @@ func quotaProbeClinePassLimitsURL(baseURL string) string {
 	base = strings.TrimSuffix(base, "/api/v1")
 	base = strings.TrimSuffix(base, "/v1")
 	return base + "/api/v1/users/me/plan/usage-limits"
+}
+
+// probeFactoryQuota 查询 Factory (Droid) 订阅额度与使用窗口（5小时/周/月/Core）。
+// 接口：GET {base}/api/billing/limits，Bearer 为 API Key。
+func probeFactoryQuota(ctx context.Context, client *http.Client, baseURL string, secret string) (string, []QuotaProbeEntry, string, *string, map[string]any, error) {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		base = adapter.FactoryDefaultBaseURL
+	}
+	endpoint := base + "/api/billing/limits"
+	payload, err := quotaProbeFactoryGetJSON(ctx, client, endpoint, secret)
+	if err != nil {
+		return "", nil, "", nil, nil, err
+	}
+	if errObj, ok := payload["error"].(map[string]any); ok {
+		return "", nil, "", nil, nil, fmt.Errorf("limits returned error: %s", anyString(errObj["message"]))
+	}
+
+	var plan string
+	if p := strings.TrimSpace(anyString(payload["plan"])); p != "" {
+		plan = p
+	} else if t := strings.TrimSpace(anyString(payload["tier"])); t != "" {
+		plan = t
+	} else if sub, ok := payload["subscription"].(map[string]any); ok {
+		if p := strings.TrimSpace(anyString(sub["plan"])); p != "" {
+			plan = p
+		} else if n := strings.TrimSpace(anyString(sub["name"])); n != "" {
+			plan = n
+		}
+	}
+
+	var expiresAt *string
+	if exp := strings.TrimSpace(anyString(payload["expires_at"])); exp != "" {
+		expiresAt = &exp
+	} else if exp := strings.TrimSpace(anyString(payload["expiresAt"])); exp != "" {
+		expiresAt = &exp
+	} else if sub, ok := payload["subscription"].(map[string]any); ok {
+		for _, key := range []string{"expires_at", "expiresAt", "current_period_end", "currentPeriodEnd", "renews_at", "renewsAt"} {
+			if exp := strings.TrimSpace(anyString(sub[key])); exp != "" {
+				expiresAt = &exp
+				break
+			}
+		}
+	}
+
+	limitsMap, _ := payload["limits"].(map[string]any)
+	if limitsMap == nil {
+		limitsMap = payload
+	}
+
+	var entries []QuotaProbeEntry
+
+	if standardMap, ok := limitsMap["standard"].(map[string]any); ok {
+		if entry, ok := parseFactoryWindow("five_hour", pickFactoryWindow(standardMap, "fiveHour", "five_hour", "rolling_5_hour", "5h", "rolling5Hour")); ok {
+			entries = append(entries, entry)
+		}
+		if entry, ok := parseFactoryWindow("weekly", pickFactoryWindow(standardMap, "weekly", "week")); ok {
+			entries = append(entries, entry)
+		}
+		if entry, ok := parseFactoryWindow("monthly", pickFactoryWindow(standardMap, "monthly", "month")); ok {
+			entries = append(entries, entry)
+		}
+	}
+
+	if coreMap, ok := limitsMap["core"].(map[string]any); ok {
+		coreEntry := QuotaProbeEntry{Label: "core"}
+		hasCore := false
+		if rem := quotaProbeFloat(coreMap["remaining"]); rem != nil {
+			coreEntry.Remaining = rem
+			coreEntry.Limit = quotaProbeFloat(coreMap["limit"])
+			hasCore = true
+		} else if used := quotaProbeFloat(coreMap["used"]); used != nil {
+			coreEntry.Used = used
+			coreEntry.Limit = quotaProbeFloat(coreMap["limit"])
+			hasCore = true
+		} else if avail, ok := coreMap["available"].(bool); ok && avail {
+			coreEntry.Unlimited = true
+			hasCore = true
+		} else if allowed, ok := coreMap["allowed"].(bool); ok && allowed {
+			coreEntry.Unlimited = true
+			hasCore = true
+		} else if status, ok := coreMap["status"].(string); ok && strings.EqualFold(status, "active") {
+			coreEntry.Unlimited = true
+			hasCore = true
+		}
+		if hasCore {
+			entries = append(entries, coreEntry)
+		}
+	}
+
+	if len(entries) == 0 {
+		return "", nil, plan, expiresAt, limitsMap, fmt.Errorf("factory limits endpoint did not contain quota data")
+	}
+
+	return "window", entries, plan, expiresAt, limitsMap, nil
+}
+
+func quotaProbeFactoryGetJSON(ctx context.Context, client *http.Client, url string, secret string) (map[string]any, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(secret))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", adapter.FactoryDefaultUserAgent)
+	req.Header.Set("X-Client-Version", adapter.FactoryDefaultClientVersion)
+	req.Header.Set("X-Factory-Client", adapter.FactoryDefaultClientHeader)
+	req.Header.Set("X-Factory-Sdk", adapter.FactoryDefaultSDKHeader)
+	req.Header.Set("X-Factory-Protocol-Version", adapter.FactoryDefaultProtocolVersion)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, quotaProbeBodyLimit))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message := strings.TrimSpace(string(body))
+		if len(message) > 256 {
+			message = message[:256]
+		}
+		return nil, &quotaProbeHTTPError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("HTTP %d: %s", resp.StatusCode, message),
+		}
+	}
+
+	payload := map[string]any{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON response")
+	}
+	return payload, nil
+}
+
+func pickFactoryWindow(m map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if v, ok := m[key]; ok && v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+func parseFactoryWindow(label string, raw any) (QuotaProbeEntry, bool) {
+	if raw == nil {
+		return QuotaProbeEntry{}, false
+	}
+	var usedPercent *float64
+	var resetAt *string
+	limitVal := 100.0
+
+	switch val := raw.(type) {
+	case float64:
+		usedPercent = &val
+	case int:
+		f := float64(val)
+		usedPercent = &f
+	case map[string]any:
+		for _, k := range []string{"usedPercent", "used_percent", "percentUsed", "percent_used"} {
+			if f := quotaProbeFloat(val[k]); f != nil {
+				usedPercent = f
+				break
+			}
+		}
+		if usedPercent == nil {
+			used := quotaProbeFloat(val["used"])
+			limit := quotaProbeFloat(val["limit"])
+			if used != nil && limit != nil && *limit > 0 {
+				pct := (*used / *limit) * 100.0
+				usedPercent = &pct
+			} else if used != nil {
+				usedPercent = used
+			}
+		}
+		for _, k := range []string{"resetAt", "reset_at", "resetsAt", "resets_at"} {
+			if s := strings.TrimSpace(anyString(val[k])); s != "" {
+				resetAt = &s
+				break
+			}
+		}
+	default:
+		return QuotaProbeEntry{}, false
+	}
+
+	if usedPercent == nil {
+		return QuotaProbeEntry{}, false
+	}
+
+	used := *usedPercent
+	if used < 0 {
+		used = 0
+	}
+	remaining := limitVal - used
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return QuotaProbeEntry{
+		Label:     label,
+		Unit:      "percent",
+		Used:      &used,
+		Limit:     &limitVal,
+		Remaining: &remaining,
+		ResetAt:   resetAt,
+	}, true
 }
 
 func anySlice(value any) []any {

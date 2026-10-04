@@ -8,12 +8,13 @@ function getBalanceDetails(site: Site, apiKeys: SiteAPIKey[], language: string) 
   const details = siteBalanceDetails(site, language)
   const accountBalance = site.quota_probe?.probe_type === 'deepseek' || site.quota_probe?.probe_type === 'moonshot'
   const isFactoryKey = apiKeys.some((k) => k.quota_probe?.probe_type === 'factory')
-  const detailKeys = isSub2APIQuotaSite(site) || accountBalance || isFactoryKey ? apiKeys : []
+  const isFactory = site.site_type === 'factory' || site.quota_probe?.probe_type === 'factory' || isFactoryKey
+  const detailKeys = isSub2APIQuotaSite(site) || accountBalance || isFactory ? apiKeys : []
   const keyDetails = detailKeys.map((apiKey) => ({
     apiKey,
     details: accountBalance
       ? accountBalanceDetails(apiKey.quota_probe?.entries)
-      : apiKey.quota_probe?.probe_type === 'factory'
+      : apiKey.quota_probe?.probe_type === 'factory' || isFactory
         ? factoryQuotaDetails(apiKey.quota_probe, language)
         : sub2APIKeyQuotaDetails(apiKey.quota_probe, language),
   }))
@@ -118,7 +119,7 @@ export function SiteBalanceCell({ site, apiKeys = [], className }: { site: Site;
   const value = formatSiteBalance(site)
   const { details, keyDetails } = getBalanceDetails(site, apiKeys, i18n.language)
   const commandCode = site.quota_probe?.probe_type === 'command_code'
-  const factory = site.quota_probe?.probe_type === 'factory'
+  const factory = site.site_type === 'factory' || site.quota_probe?.probe_type === 'factory'
   const windows = commandCode
     ? commandCodeQuotaWindows(site.quota_probe)
     : factory

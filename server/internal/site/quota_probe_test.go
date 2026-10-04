@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"xlyra/server/internal/adapter"
 	"xlyra/server/internal/store"
 )
 
@@ -28,6 +29,7 @@ func TestNormalizeQuotaProbeType(t *testing.T) {
 		"glm":          QuotaProbeTypeGLM,
 		"command_code": QuotaProbeTypeCommandCode,
 		"cline_pass":   QuotaProbeTypeClinePass,
+		"factory":      QuotaProbeTypeFactory,
 	} {
 		value, err := NormalizeQuotaProbeType(input)
 		if err != nil || value != expected {
@@ -1969,3 +1971,162 @@ func TestQuotaProbeClinePassLimitsURL(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeFactoryQuotaSuccess(t *testing.T) {
+	var capturedAuth string
+	var capturedUA string
+	var capturedProtocol string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		capturedUA = r.Header.Get("User-Agent")
+		capturedProtocol = r.Header.Get("X-Factory-Protocol-Version")
+
+		if r.URL.Path != "/api/billing/limits" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"plan":       "Pro",
+			"expires_at": "2026-11-01T00:00:00Z",
+			"limits": map[string]any{
+				"standard": map[string]any{
+					"rolling_5_hour": map[string]any{
+						"usedPercent": 15.5,
+						"resetAt":     "2026-10-19T10:00:00Z",
+					},
+					"weekly": map[string]any{
+						"usedPercent": 42.0,
+						"resetAt":     "2026-10-25T00:00:00Z",
+					},
+					"monthly": map[string]any{
+						"usedPercent": 70.0,
+					},
+				},
+				"core": map[string]any{
+					"available": true,
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeFactory, server.URL, "factory-test-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok status, got %+v", result)
+	}
+	if capturedAuth != "Bearer factory-test-key" {
+		t.Fatalf("capturedAuth = %q, want 'Bearer factory-test-key'", capturedAuth)
+	}
+	if capturedUA != adapter.FactoryDefaultUserAgent {
+		t.Fatalf("capturedUA = %q, want %q", capturedUA, adapter.FactoryDefaultUserAgent)
+	}
+	if capturedProtocol != adapter.FactoryDefaultProtocolVersion {
+		t.Fatalf("capturedProtocol = %q, want %q", capturedProtocol, adapter.FactoryDefaultProtocolVersion)
+	}
+	if result.Plan != "Pro" {
+		t.Fatalf("result.Plan = %q, want 'Pro'", result.Plan)
+	}
+	if result.ExpiresAt == nil || *result.ExpiresAt != "2026-11-01T00:00:00Z" {
+		t.Fatalf("result.ExpiresAt = %v, want '2026-11-01T00:00:00Z'", result.ExpiresAt)
+	}
+	if result.Limits == nil {
+		t.Fatal("result.Limits is nil, want limits map")
+	}
+	if len(result.Entries) != 4 {
+		t.Fatalf("len(result.Entries) = %d, want 4 (5h, weekly, monthly, core)", len(result.Entries))
+	}
+
+	fiveHour := result.Entries[0]
+	if fiveHour.Label != "five_hour" || *fiveHour.Used != 15.5 || *fiveHour.Remaining != 84.5 || fiveHour.Unit != "percent" {
+		t.Fatalf("unexpected five_hour entry: %+v", fiveHour)
+	}
+	if fiveHour.ResetAt == nil || *fiveHour.ResetAt != "2026-10-19T10:00:00Z" {
+		t.Fatalf("unexpected five_hour ResetAt: %v", fiveHour.ResetAt)
+	}
+
+	coreEntry := result.Entries[3]
+	if coreEntry.Label != "core" || !coreEntry.Unlimited {
+		t.Fatalf("unexpected core entry: %+v", coreEntry)
+	}
+
+	summary, ok := quotaProbeSummaryEntry(QuotaProbeTypeFactory, result)
+	if !ok {
+		t.Fatal("expected quotaProbeSummaryEntry to succeed")
+	}
+	if summary.Label != "monthly" || *summary.Remaining != 30.0 {
+		t.Fatalf("unexpected summary entry: %+v (want monthly remaining 30.0)", summary)
+	}
+}
+
+func TestProbeFactoryQuotaCooldownOnExhausted(t *testing.T) {
+	futureReset := "2026-10-20T00:00:00Z"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"limits": map[string]any{
+				"standard": map[string]any{
+					"rolling_5_hour": map[string]any{
+						"usedPercent": 100.0,
+						"resetAt":     futureReset,
+					},
+					"weekly": map[string]any{
+						"usedPercent": 50.0,
+						"resetAt":     "2026-10-25T00:00:00Z",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	result := probeQuota(context.Background(), server.Client(), QuotaProbeTypeFactory, server.URL, "factory-test-key")
+	if result.Status != "ok" {
+		t.Fatalf("expected ok status, got %+v", result)
+	}
+
+	now, _ := time.Parse(time.RFC3339, "2026-10-19T12:00:00Z")
+	deadline, windows := codingPlanQuotaCooldownDeadline(result, now)
+	if deadline.IsZero() {
+		t.Fatal("expected non-zero deadline for exhausted 5-hour window")
+	}
+	if len(windows) != 1 || windows[0] != "five_hour" {
+		t.Fatalf("windows = %v, want ['five_hour']", windows)
+	}
+}
+
+func TestDefaultQuotaProbeTypeForFactorySite(t *testing.T) {
+	cases := []struct {
+		name    string
+		site    store.Site
+		want    string
+	}{
+		{
+			name: "official factory api url",
+			site: store.Site{SiteType: "factory", BaseURL: "https://api.factory.ai"},
+			want: QuotaProbeTypeFactory,
+		},
+		{
+			name: "empty base url defaults to official",
+			site: store.Site{SiteType: "factory", BaseURL: ""},
+			want: QuotaProbeTypeFactory,
+		},
+		{
+			name: "custom proxy site does not default to probe",
+			site: store.Site{SiteType: "factory", BaseURL: "https://my-proxy.com"},
+			want: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := defaultQuotaProbeTypeForSite(tc.site)
+			if got != tc.want {
+				t.Fatalf("defaultQuotaProbeTypeForSite(%+v) = %q, want %q", tc.site, got, tc.want)
+			}
+		})
+	}
+}
+

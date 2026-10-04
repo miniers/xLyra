@@ -21,6 +21,7 @@ const (
 	QuotaProbeTypeMoonshot    = "moonshot"
 	QuotaProbeTypeCommandCode = "command_code"
 	QuotaProbeTypeClinePass   = "cline_pass"
+	QuotaProbeTypeFactory     = "factory"
 )
 
 type GatewayConfig struct {
@@ -69,6 +70,8 @@ func NormalizeQuotaProbeType(value string) (string, error) {
 		return QuotaProbeTypeDeepSeek, nil
 	case QuotaProbeTypeClinePass:
 		return QuotaProbeTypeClinePass, nil
+	case QuotaProbeTypeFactory:
+		return QuotaProbeTypeFactory, nil
 	default:
 		return "", fmt.Errorf("unsupported quota_probe type %q", value)
 	}
