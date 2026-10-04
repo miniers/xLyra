@@ -1512,37 +1512,6 @@ func isPermanentAuthError(errMsg string) bool {
 	return false
 }
 
-func messageContainsHTTPAuthCode(message string) bool {
-	for _, prefix := range []string{
-		"returned ", "status ", "status=", "status_code ", "http ", "responded with ",
-	} {
-		remaining := message
-		for {
-			idx := strings.Index(remaining, prefix)
-			if idx < 0 {
-				break
-			}
-			codeStart := idx + len(prefix)
-			remaining = remaining[codeStart:]
-			if len(remaining) < 3 {
-				break
-			}
-			c1, c2 := remaining[1], remaining[2]
-			if c1 < '0' || c1 > '9' || c2 < '0' || c2 > '9' {
-				continue
-			}
-			if len(remaining) > 3 && remaining[3] >= '0' && remaining[3] <= '9' {
-				continue
-			}
-			code := remaining[:3]
-			if code == "401" || code == "403" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func (s *Service) disableSiteOnPermanentError(ctx context.Context, tx *gorm.DB, connection store.OAuthConnection, errMsg string) {
 	if !isPermanentAuthError(errMsg) {
 		return

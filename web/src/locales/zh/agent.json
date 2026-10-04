@@ -198,7 +198,9 @@
       "running": "运行中",
       "backlog": "待处理",
       "lastReview": "最近复盘",
-      "lastSuccess": "最近成功"
+      "lastSuccess": "最近成功",
+      "yes": "是",
+      "no": "否"
     }
   }
 }

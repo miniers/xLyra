@@ -18,7 +18,7 @@ type MobileDockMenuProps = {
 }
 
 export function MobileDockMenu({ open, items, anchorRef, onOpenChange }: MobileDockMenuProps) {
-  const { t } = useTranslation('common')
+  const { t } = useTranslation('components')
   const location = useLocation()
   const [anchorRight, setAnchorRight] = useState<number | null>(null)
 
@@ -65,7 +65,7 @@ export function MobileDockMenu({ open, items, anchorRef, onOpenChange }: MobileD
     <>
       <button
         type="button"
-        aria-label={t('actions.close')}
+        aria-label={t('navigation.closeOverlay')}
         className="fixed inset-0 z-40 cursor-default bg-transparent"
         onClick={() => onOpenChange(false)}
       />

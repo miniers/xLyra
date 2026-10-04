@@ -149,13 +149,8 @@ func (r RouteLockRepository) Upsert(ctx context.Context, params UpsertRouteLockP
 
 	// Validate the relation before writing. A site-model can be remapped after a
 	// lock was created, so this check is intentionally performed on every update.
-	var target SiteModel
-	if err := r.db.WithContext(ctx).
-		Where("id = ? AND canonical_model_id = ?", params.SiteModelID, params.CanonicalModelID).
-		First(&target).Error; err != nil {
-		return RouteLock{}, fmt.Errorf("validate route lock target: %w", err)
-	}
-
+	// The validation and the write share one transaction so a concurrent remap
+	// cannot leave the lock pointing at a site-model outside this canonical model.
 	item := RouteLock{
 		ID:               uuid.New(),
 		CanonicalModelID: params.CanonicalModelID,
@@ -165,18 +160,29 @@ func (r RouteLockRepository) Upsert(ctx context.Context, params UpsertRouteLockP
 		Reason:           params.Reason,
 		CreatedByAdminID: params.CreatedByAdminID,
 	}
-	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "canonical_model_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{
-			"site_model_id",
-			"expires_at",
-			"policy",
-			"reason",
-			"created_by_admin_id",
-			"updated_at",
-		}),
-	}).Create(&item).Error; err != nil {
-		return RouteLock{}, fmt.Errorf("upsert route lock: %w", err)
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var target SiteModel
+		if err := tx.WithContext(ctx).
+			Where("id = ? AND canonical_model_id = ?", params.SiteModelID, params.CanonicalModelID).
+			First(&target).Error; err != nil {
+			return fmt.Errorf("validate route lock target: %w", err)
+		}
+		if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "canonical_model_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"site_model_id",
+				"expires_at",
+				"policy",
+				"reason",
+				"created_by_admin_id",
+				"updated_at",
+			}),
+		}).Create(&item).Error; err != nil {
+			return fmt.Errorf("upsert route lock: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return RouteLock{}, err
 	}
 
 	result, err := r.GetByCanonicalModel(ctx, params.CanonicalModelID)

@@ -361,6 +361,9 @@ func (h Handler) forwardGatewayRequest(
 
 		upstreamKey, err := h.credentials.Decrypt(selectedCredential.Credential.EncryptedSecret)
 		if err != nil {
+			if h.credentialRateLimiter != nil {
+				h.credentialRateLimiter.Release(selectedCredential.Credential, startedAt)
+			}
 			result.statusCode = http.StatusBadGateway
 			result.errorType = "upstream_credential_decrypt_failed"
 			result.errorMessage = err.Error()
@@ -379,6 +382,9 @@ func (h Handler) forwardGatewayRequest(
 		if isCodexSite(candidate.Site.SiteType) {
 			connection, err := h.oauth.EnsureCodexConnectionFresh(attemptCtx, candidate.Site.ID)
 			if err != nil {
+				if h.credentialRateLimiter != nil {
+					h.credentialRateLimiter.Release(selectedCredential.Credential, startedAt)
+				}
 				result.statusCode = http.StatusBadGateway
 				result.errorType = "codex_oauth_refresh_failed"
 				result.errorMessage = err.Error()
@@ -392,6 +398,9 @@ func (h Handler) forwardGatewayRequest(
 		if isAntigravitySite(candidate.Site.SiteType) {
 			connection, err := h.oauth.EnsureAntigravityConnectionFresh(attemptCtx, candidate.Site.ID)
 			if err != nil {
+				if h.credentialRateLimiter != nil {
+					h.credentialRateLimiter.Release(selectedCredential.Credential, startedAt)
+				}
 				result.statusCode = http.StatusBadGateway
 				result.errorType = "antigravity_oauth_refresh_failed"
 				result.errorMessage = err.Error()
@@ -405,6 +414,9 @@ func (h Handler) forwardGatewayRequest(
 		if isClaudeCodeSite(candidate.Site.SiteType) {
 			connection, err := h.oauth.EnsureClaudeCodeConnectionFresh(attemptCtx, candidate.Site.ID)
 			if err != nil {
+				if h.credentialRateLimiter != nil {
+					h.credentialRateLimiter.Release(selectedCredential.Credential, startedAt)
+				}
 				result.statusCode = http.StatusBadGateway
 				result.errorType = "claude_code_oauth_refresh_failed"
 				result.errorMessage = err.Error()

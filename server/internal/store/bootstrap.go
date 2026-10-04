@@ -401,6 +401,9 @@ func ensureSchemaUpgrades(ctx context.Context, db *gorm.DB) error {
 	if err := ensureSchemaIndex(migrator, &RequestLog{}, "request_logs_site_model_created_idx"); err != nil {
 		return err
 	}
+	if err := ensureSchemaIndex(migrator, &RequestLog{}, "request_logs_started_at_created_id_idx"); err != nil {
+		return err
+	}
 	if migrator.HasIndex(&RequestLog{}, "request_logs_parent_request_id_metadata_idx") {
 		if err := migrator.DropIndex(&RequestLog{}, "request_logs_parent_request_id_metadata_idx"); err != nil {
 			return fmt.Errorf("remove request_logs parent request metadata index: %w", err)

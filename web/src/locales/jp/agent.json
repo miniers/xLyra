@@ -198,7 +198,9 @@
       "running": "実行中",
       "backlog": "バックログ",
       "lastReview": "最終レビュー",
-      "lastSuccess": "最終成功"
+      "lastSuccess": "最終成功",
+      "yes": "はい",
+      "no": "いいえ"
     }
   }
 }

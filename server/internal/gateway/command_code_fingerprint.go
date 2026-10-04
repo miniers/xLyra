@@ -24,6 +24,10 @@ const (
 
 	ccInitRefreshDuration = 8 * time.Hour
 	ccInitJitterDuration  = 2 * time.Hour
+
+	// ccInitFailureRetryDuration is the backoff window applied before retrying a
+	// failed initialization, so upstream 5xx/429 responses cannot cause a retry storm.
+	ccInitFailureRetryDuration = 5 * time.Minute
 	ccSessionDuration     = 12 * time.Hour
 	ccKeyStateMaxEntries  = 4096
 )
@@ -266,7 +270,8 @@ func ensureCommandCodeInitialized(ctx context.Context, client *http.Client, base
 				return
 			}
 			if !initialized {
-				delete(ccKeyStateStore, storeKey)
+				state.nextInitAt = time.Now().Add(ccInitFailureRetryDuration)
+				ccKeyStateStore[storeKey] = state
 			}
 			ccKeyStateMu.Unlock()
 		}()

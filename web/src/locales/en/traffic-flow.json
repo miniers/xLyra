@@ -24,6 +24,7 @@
     "resume": "Resume animation",
     "refresh": "Reload",
     "fullscreen": "Enter fullscreen",
+    "cancel": "Cancel",
     "exitFullscreen": "Exit fullscreen"
   },
   "metrics": {
@@ -99,6 +100,7 @@
     "tokens": "Window tokens",
     "avgLatency": "Avg latency",
     "successRate": "Success rate",
+    "cancelFailed": "Failed to cancel",
     "waiting": "Waiting for route"
   }
 }

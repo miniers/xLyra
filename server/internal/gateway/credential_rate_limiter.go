@@ -144,6 +144,59 @@ func (l *CredentialRateLimiter) CheckAndAcquire(
 	return true, nil
 }
 
+// Release rolls back the RPM/RPD quota that CheckAndAcquire pre-charged for the
+// current window of a credential, for the case where no upstream request was ever
+// sent after the charge was taken (local failures such as credential decryption or
+// OAuth refresh errors). The window matching mirrors CheckAndAcquire: counters are
+// only touched when the stored window still matches the window derived from now,
+// and both counters are clamped at zero.
+//
+// The timezone is read from the credential metadata the same way CheckAndAcquire
+// reads it, so pass the same credential that was charged.
+func (l *CredentialRateLimiter) Release(credential store.SiteCredential, now time.Time) {
+	if l == nil {
+		return
+	}
+	rateLimit := store.SiteCredentialRateLimit(credential)
+	if rateLimit == nil {
+		return
+	}
+
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	timezone := strings.TrimSpace(rateLimit.ResetTimezone)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	minuteWindowStart := now.UTC().Truncate(time.Minute)
+	dayWindowStart, _ := credentialDailyWindow(now, timezone)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	state, ok := l.states[credential.ID]
+	if !ok {
+		return
+	}
+
+	if state.minuteWindowStart.Equal(minuteWindowStart) {
+		state.minuteCount--
+		if state.minuteCount < 0 {
+			state.minuteCount = 0
+		}
+	}
+	if state.dayWindowStart.Equal(dayWindowStart) {
+		state.dayCount--
+		if state.dayCount < 0 {
+			state.dayCount = 0
+		}
+	}
+	state.lastUpdated = now
+}
+
 // CurrentUsage returns the current minute count and day count for the given credential.
 func (l *CredentialRateLimiter) CurrentUsage(credentialID uuid.UUID, timezone string, now time.Time) (int64, int64) {
 	if l == nil {

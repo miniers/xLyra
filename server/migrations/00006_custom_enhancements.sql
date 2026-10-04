@@ -66,9 +66,10 @@ CREATE TRIGGER route_locks_set_updated_at
 BEFORE UPDATE ON route_locks
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE TRIGGER route_anomaly_states_set_updated_at
-BEFORE UPDATE ON route_anomaly_states
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+-- route_anomaly_states deliberately has no set_updated_at trigger: SaveEvaluation
+-- performs an optimistic-lock CAS on route_anomaly_states.updated_at, and a BEFORE
+-- UPDATE trigger would overwrite the value the CAS just compared against.
+DROP TRIGGER IF EXISTS route_anomaly_states_set_updated_at ON route_anomaly_states;
 
 CREATE TRIGGER route_score_adjustments_set_updated_at
 BEFORE UPDATE ON route_score_adjustments
@@ -76,7 +77,6 @@ FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- +goose Down
 DROP TRIGGER IF EXISTS route_score_adjustments_set_updated_at ON route_score_adjustments;
-DROP TRIGGER IF EXISTS route_anomaly_states_set_updated_at ON route_anomaly_states;
 DROP TRIGGER IF EXISTS route_locks_set_updated_at ON route_locks;
 DROP INDEX IF EXISTS request_logs_site_model_created_idx;
 DROP TABLE IF EXISTS route_score_adjustments;

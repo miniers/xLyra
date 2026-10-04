@@ -164,7 +164,7 @@ export function ChannelSplitDialog({
   const emptySummary = useMemo(() => emptyChannelSplitSummary(allTime, dateFrom, dateTo), [allTime, dateFrom, dateTo])
   const summary = actualSummary ?? emptySummary
   const items = visibleData?.items ?? []
-  const analyticsUsage = analyticsParams && !analyticsQuery.isFetching ? analyticsQuery.data : undefined
+  const analyticsUsage = analyticsParams ? analyticsQuery.data : undefined
   const modelItems = useMemo(() => buildModelRows(analyticsUsage), [analyticsUsage])
   const trendPoints = useMemo(() => buildUsageTrendPoints(analyticsUsage), [analyticsUsage])
   const analyticsTotals = analyticsUsage?.totals
@@ -334,7 +334,7 @@ export function ChannelSplitDialog({
                   <SplitSecondaryMetric label={t('split.metrics.successRate')} value={formatSplitRate(analyticsMetrics?.success_rate ?? rate(displaySummary.success_count, displaySummary.request_count), hasUsage)} />
                   <SplitSecondaryMetric label={t('split.metrics.failureRate')} value={formatSplitRate(rate(displaySummary.failure_count, displaySummary.request_count), hasUsage)} />
                   <SplitSecondaryMetric label={t('split.metrics.cacheHitRate')} value={formatSplitRate(analyticsMetrics?.cache_hit_rate ?? rate(displaySummary.cached_tokens, displaySummary.prompt_tokens), hasUsage)} />
-                  <SplitSecondaryMetric label={t('split.metrics.avgLatency')} value={hasUsage && analyticsMetrics?.avg_latency_ms ? formatLatencyMs(analyticsMetrics.avg_latency_ms) : '—'} />
+                  <SplitSecondaryMetric label={t('split.metrics.avgLatency')} value={hasUsage && typeof analyticsMetrics?.avg_latency_ms === 'number' ? formatLatencyMs(analyticsMetrics.avg_latency_ms) : '—'} />
                 </div>
 
                 {!allTime && hasUsage && trendPoints.length > 0 ? (

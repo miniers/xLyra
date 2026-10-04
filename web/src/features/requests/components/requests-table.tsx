@@ -115,6 +115,7 @@ export function RequestsTable({
             const cacheTokens = requestCacheTokens(item)
             const cacheWriteTokens = requestCacheWriteTokens(item)
             const inProgress = requestIsInProgress(item)
+            const tps = requestTPS(item)
             const hasCacheRead = typeof cacheTokens === 'number' && cacheTokens > 0
             const hasCacheWrite = typeof cacheWriteTokens === 'number' && cacheWriteTokens > 0
 
@@ -211,9 +212,11 @@ export function RequestsTable({
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
                         <div>{item.tokens_estimated === true ? '~' : ''}{formatInteger(item.usage.completion_tokens)}</div>
-                        <div className="text-muted-soft whitespace-nowrap text-xs">
-                          {formatTPS(requestTPS(item))}
-                        </div>
+                        {tps != null ? (
+                          <div className="text-muted-soft whitespace-nowrap text-xs">
+                            {formatTPS(tps)}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-4 align-middle text-right text-sm text-foreground">
                         {formatCurrency(item.usage.estimated_cost, item.usage.currency)}

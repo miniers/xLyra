@@ -198,7 +198,9 @@
       "running": "Running",
       "backlog": "Backlog",
       "lastReview": "Last review",
-      "lastSuccess": "Last success"
+      "lastSuccess": "Last success",
+      "yes": "Yes",
+      "no": "No"
     }
   }
 }

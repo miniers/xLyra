@@ -864,7 +864,7 @@ func scoreCandidateWithPreference(item Candidate, minPrice float64, maxPrice flo
 
 func scoreCandidateWithPreferenceConfig(item Candidate, minPrice float64, maxPrice float64, preference string, rescueEnabled bool) (float64, map[string]float64) {
 	preference = store.NormalizeRoutingPreference(preference)
-	modelFirstByte := modelFirstByteLatency(item)
+	modelFirstByte := modelFirstByteLatencyForScore(item)
 	weights := map[string]float64{
 		"site_health":                         40,
 		"site_success_rate":                   10,
@@ -1083,6 +1083,21 @@ func modelFirstByteLatency(item Candidate) *int64 {
 	}
 	if item.Health.ModelFirstByteRequestCount > 0 && item.Health.ModelFirstByteRequestCount < 3 {
 		return item.Health.ModelAvgLatencyMS
+	}
+	return item.Health.ModelAvgFirstByteLatencyMS
+}
+
+// modelFirstByteLatencyForScore returns only a genuine first-byte measurement for
+// scoring. When the first-byte sample count is too low the overall latency must not
+// stand in for it: firstByteLatencyScore uses a 5s/20s scale while the overall
+// latency scale is 500ms/3s, so substituting overall latency would award a
+// systematic full score.
+func modelFirstByteLatencyForScore(item Candidate) *int64 {
+	if item.Health.ModelAvgFirstByteLatencyMS == nil {
+		return nil
+	}
+	if item.Health.ModelFirstByteRequestCount > 0 && item.Health.ModelFirstByteRequestCount < 3 {
+		return nil
 	}
 	return item.Health.ModelAvgFirstByteLatencyMS
 }

@@ -24,6 +24,7 @@
     "resume": "アニメーションを再開",
     "refresh": "再読み込み",
     "fullscreen": "全画面表示",
+    "cancel": "キャンセル",
     "exitFullscreen": "全画面を終了"
   },
   "metrics": {
@@ -99,6 +100,7 @@
     "tokens": "ウィンドウToken",
     "avgLatency": "平均レイテンシ",
     "successRate": "成功率",
+    "cancelFailed": "キャンセルに失敗しました",
     "waiting": "ルート待機中"
   }
 }
