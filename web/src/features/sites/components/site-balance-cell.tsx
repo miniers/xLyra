@@ -1,16 +1,21 @@
 import { HoverDetails } from '@/components/common/hover-details'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
-import { accountBalanceDetails, commandCodeQuotaWindows, formatDateTime, formatSiteBalance, isSub2APIQuotaSite, siteBalanceDetails, sub2APIKeyQuotaDetails } from '@/features/sites/lib/site-utils'
+import { accountBalanceDetails, commandCodeQuotaWindows, factoryQuotaDetails, factoryQuotaWindows, formatDateTime, formatSiteBalance, isSub2APIQuotaSite, siteBalanceDetails, sub2APIKeyQuotaDetails } from '@/features/sites/lib/site-utils'
 import type { Site, SiteAPIKey } from '@/features/sites/api/sites'
 
 function getBalanceDetails(site: Site, apiKeys: SiteAPIKey[], language: string) {
   const details = siteBalanceDetails(site, language)
   const accountBalance = site.quota_probe?.probe_type === 'deepseek' || site.quota_probe?.probe_type === 'moonshot'
-  const detailKeys = isSub2APIQuotaSite(site) || accountBalance ? apiKeys : []
+  const isFactoryKey = apiKeys.some((k) => k.quota_probe?.probe_type === 'factory')
+  const detailKeys = isSub2APIQuotaSite(site) || accountBalance || isFactoryKey ? apiKeys : []
   const keyDetails = detailKeys.map((apiKey) => ({
     apiKey,
-    details: accountBalance ? accountBalanceDetails(apiKey.quota_probe?.entries) : sub2APIKeyQuotaDetails(apiKey.quota_probe, language),
+    details: accountBalance
+      ? accountBalanceDetails(apiKey.quota_probe?.entries)
+      : apiKey.quota_probe?.probe_type === 'factory'
+        ? factoryQuotaDetails(apiKey.quota_probe, language)
+        : sub2APIKeyQuotaDetails(apiKey.quota_probe, language),
   }))
 
   return { details, keyDetails }
@@ -20,9 +25,13 @@ export function SiteBalanceDetailsContent({ site, apiKeys = [] }: { site: Site; 
   const { t, i18n } = useTranslation('sites')
   const { details, keyDetails } = getBalanceDetails(site, apiKeys, i18n.language)
   const detailValue = (detail: (typeof details)[number]) => {
+    let val = detail.value
+    if (val === 'available' || val === 'unavailable') {
+      val = t(`table.quotaDetails.${val}`)
+    }
     const quota = detail.valuePrefix
-      ? `${t(`table.quotaDetails.${detail.valuePrefix}`)} ${detail.value}`
-      : detail.value
+      ? `${t(`table.quotaDetails.${detail.valuePrefix}`)} ${val}`
+      : val
     return detail.extra ? `${quota} · ${detail.extra}` : quota
   }
   const probeFailureText = (probe: SiteAPIKey['quota_probe']) => {
@@ -36,7 +45,7 @@ export function SiteBalanceDetailsContent({ site, apiKeys = [] }: { site: Site; 
   if (keyDetails.length === 0) {
     return (
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-left">
-        {site.quota_probe?.probe_type === 'command_code' && (
+        {(site.quota_probe?.probe_type === 'command_code' || site.quota_probe?.probe_type === 'factory') && (
           <>
             {site.quota_probe.status === 'error' && <span className="col-span-2 text-destructive">{t('table.quotaDetails.probeFailed')}</span>}
             {site.quota_probe.plan && <>
@@ -109,13 +118,22 @@ export function SiteBalanceCell({ site, apiKeys = [], className }: { site: Site;
   const value = formatSiteBalance(site)
   const { details, keyDetails } = getBalanceDetails(site, apiKeys, i18n.language)
   const commandCode = site.quota_probe?.probe_type === 'command_code'
-  const windows = commandCodeQuotaWindows(site.quota_probe)
-  const failed = commandCode && site.quota_probe?.status === 'error'
-  const showTooltip = keyDetails.length > 0 || details.length > 0 || commandCode
+  const factory = site.quota_probe?.probe_type === 'factory'
+  const windows = commandCode
+    ? commandCodeQuotaWindows(site.quota_probe)
+    : factory
+      ? factoryQuotaWindows(site.quota_probe, i18n.language)
+      : []
+  const failed = (commandCode || factory) && site.quota_probe?.status === 'error'
+  const showTooltip = keyDetails.length > 0 || details.length > 0 || commandCode || factory
   const detailValue = (detail: (typeof details)[number]) => {
+    let val = detail.value
+    if (val === 'available' || val === 'unavailable') {
+      val = t(`table.quotaDetails.${val}`)
+    }
     const quota = detail.valuePrefix
-      ? `${t(`table.quotaDetails.${detail.valuePrefix}`)} ${detail.value}`
-      : detail.value
+      ? `${t(`table.quotaDetails.${detail.valuePrefix}`)} ${val}`
+      : val
     return detail.extra ? `${quota} · ${detail.extra}` : quota
   }
   const probeFailureText = (probe: SiteAPIKey['quota_probe']) => {
@@ -154,11 +172,11 @@ export function SiteBalanceCell({ site, apiKeys = [], className }: { site: Site;
       contentClassName="w-[440px]"
       content={<SiteBalanceDetailsContent site={site} apiKeys={apiKeys} />}
     >
-      <span className={cn('text-sm text-foreground tabular-nums', commandCode && 'inline-flex flex-col gap-0.5', className)}>
+      <span className={cn('text-sm text-foreground tabular-nums', (commandCode || factory) && 'inline-flex flex-col gap-0.5', className)}>
         <span>{value}</span>
         {windows.length > 0 && (
           <span className="text-xs text-muted-foreground">
-            {windows.map((window) => `${t(`table.quotaDetails.${window.label}`)} ${t('table.quotaDetails.remaining')} ${window.value}`).join(' · ')}
+            {windows.map((window) => `${window.labelText ?? t(`table.quotaDetails.${window.label}`)} ${window.valuePrefix ? `${t(`table.quotaDetails.${window.valuePrefix}`)} ` : ''}${window.value}`).join(' · ')}
           </span>
         )}
         {failed && <span className="text-xs text-destructive">{t('table.quotaDetails.probeFailed')}</span>}

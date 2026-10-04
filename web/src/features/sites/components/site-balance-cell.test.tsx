@@ -361,3 +361,61 @@ describe('Moonshot balance details', () => {
     expect(balance).toContain('aria-haspopup="dialog"')
   })
 })
+
+const factorySite: Site = {
+  id: 'factory-site',
+  name: 'Factory Droid',
+  slug: 'factory',
+  site_type: 'factory',
+  base_url: 'https://api.factory.ai',
+  status: 'active',
+  enabled: true,
+  routing_priority: 0,
+  meta: {},
+  created_at: '',
+  updated_at: '',
+  quota_probe: {
+    probe_type: 'factory',
+    status: 'ok',
+    plan: 'Pro',
+    expires_at: '2026-11-01T00:00:00Z',
+    limits: {
+      standard: {
+        rolling_5_hour: { percent_used: 12.5, reset_at: '2026-10-19T10:00:00Z' },
+        weekly: { percent_used: 45 },
+        monthly: { percent_used: 70 },
+      },
+      core: {
+        available: true,
+      },
+    },
+  },
+}
+
+describe('Factory balance cell', () => {
+  it('shows plan and standard usage window percentages in the list', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceCell site={factorySite} />
+      </I18nextProvider>,
+    )
+    expect(html).toContain('Pro')
+    expect(html).toContain('12.5%')
+    expect(html).toContain('45%')
+    expect(html).toContain('70%')
+  })
+
+  it('shows plan, expiry, windows, and core status in the details', () => {
+    const html = renderToStaticMarkup(
+      <I18nextProvider i18n={i18n}>
+        <SiteBalanceDetailsContent site={factorySite} />
+      </I18nextProvider>,
+    )
+    expect(html).toContain('Pro')
+    expect(html).toContain('5 小时窗口')
+    expect(html).toContain('12.5%')
+    expect(html).toContain('Core 模型额度')
+    expect(html).toContain('可用')
+    expect(html).toContain('到期时间')
+  })
+})

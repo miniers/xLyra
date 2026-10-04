@@ -53,5 +53,6 @@ describe('inferFallbackBrand', () => {
     expect(resolveThemedIconPath('/brand-icons/typesafe-dark.png', 'TypeSafe', 'light')).toBe('/brand-icons/typesafe-light.png')
     expect(siteTypeIconPath('typesafe', 'light')).toBe('/brand-icons/typesafe-light.png')
     expect(siteTypeIconPath('typesafe', 'dark')).toBe('/brand-icons/typesafe-dark.png')
+    expect(siteTypeIconPath('factory')).toBe('/brand-icons/factory.svg')
   })
 })

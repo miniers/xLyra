@@ -4,6 +4,8 @@ import type { Site, SiteQuotaProbeEntry } from '@/features/sites/api/sites'
 import {
   accountBalanceDetails,
   commandCodeQuotaWindows,
+  factoryQuotaDetails,
+  factoryQuotaWindows,
   formatAccountBalance,
   formatCompactTokens,
   formatDateTime,
@@ -325,5 +327,74 @@ describe('Moonshot balance formatting', () => {
       { label: 'voucherBalance', value: available > 0 ? '¥2.50' : '¥0.00' },
     ])
     expect(accountBalanceDetails(entries).filter((detail) => detail.label === 'accountBalance')).toEqual([{ label: 'accountBalance', value: amount }])
+  })
+})
+
+describe('Factory quota formatting', () => {
+  it('formats standard limits and core status from probe.limits', () => {
+    const probe = {
+      probe_type: 'factory',
+      plan: 'Pro',
+      limits: {
+        standard: {
+          rolling_5_hour: { percent_used: 15.2, reset_at: '2026-10-19T10:00:00Z' },
+          weekly: { percent_used: 42.0 },
+          monthly: { percent_used: 78.5 },
+        },
+        core: {
+          available: true,
+        },
+      },
+    }
+    const site: Site = {
+      ...siteWithSyncState('unknown'),
+      site_type: 'factory',
+      quota_probe: probe,
+    }
+
+    expect(formatSiteTypeLabel('factory')).toBe('Factory')
+    expect(formatSiteBalance(site)).toBe('Pro')
+    const windows = factoryQuotaWindows(probe, 'en')
+    expect(windows).toEqual([
+      { label: 'fiveHourWindow', value: '15.2%', valuePrefix: 'used', extra: formatDateTime('2026-10-19T10:00:00Z', 'en', 'h23') },
+      { label: 'weeklyWindow', value: '42%', valuePrefix: 'used', extra: undefined },
+      { label: 'monthlyWindow', value: '78.5%', valuePrefix: 'used', extra: undefined },
+    ])
+    const details = factoryQuotaDetails(probe, 'en')
+    expect(details).toEqual([
+      ...windows,
+      { label: 'coreQuota', value: 'available' },
+    ])
+    expect(siteBalanceDetails(site, 'en')).toEqual(details)
+  })
+
+  it('formats standard limits and core status from probe.entries', () => {
+    const probe = {
+      probe_type: 'factory',
+      entries: [
+        { label: 'five_hour', used: 20, limit: 100, reset_at: '2026-10-19T10:00:00Z' },
+        { label: 'weekly', used: 50, limit: 100 },
+        { label: 'monthly', used: 80, limit: 100 },
+        { label: 'core', remaining: 35, limit: 50 },
+      ],
+    }
+    const site: Site = {
+      ...siteWithSyncState('unknown'),
+      site_type: 'factory',
+      quota_probe: probe,
+    }
+
+    expect(formatSiteBalance(site)).toBe('20% / 50%')
+    const windows = factoryQuotaWindows(probe, 'en')
+    expect(windows).toEqual([
+      { label: 'fiveHourWindow', value: '20%', valuePrefix: 'used', extra: formatDateTime('2026-10-19T10:00:00Z', 'en', 'h23') },
+      { label: 'weeklyWindow', value: '50%', valuePrefix: 'used', extra: undefined },
+      { label: 'monthlyWindow', value: '80%', valuePrefix: 'used', extra: undefined },
+    ])
+    const details = factoryQuotaDetails(probe, 'en')
+    expect(details).toEqual([
+      ...windows,
+      { label: 'coreQuota', value: '35 / 50' },
+    ])
   })
 })

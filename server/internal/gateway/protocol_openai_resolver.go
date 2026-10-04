@@ -28,6 +28,10 @@ func isAnthropicSite(siteType string) bool {
 	return strings.EqualFold(strings.TrimSpace(siteType), "anthropic")
 }
 
+func isFactorySite(siteType string) bool {
+	return strings.EqualFold(strings.TrimSpace(siteType), "factory")
+}
+
 type openAIProtocolResolver struct {
 	db *store.Store
 }
@@ -103,6 +107,9 @@ func (r openAIProtocolResolver) Resolve(ctx context.Context, request gatewayRequ
 	}
 	if isCommandCodeSite(candidate.Site.SiteType) {
 		return newCommandCodeProtocolAdapter(request, candidate), nil
+	}
+	if isFactorySite(candidate.Site.SiteType) {
+		return newFactoryProtocolAdapter(request, candidate), nil
 	}
 	if isGrokSite(candidate.Site.SiteType) {
 		return newGrokResponsesProtocolAdapterWithReasoningEfforts(request, r.grokModelReasoningEfforts(ctx, candidate.Model.SiteModelID)), nil

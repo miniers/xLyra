@@ -40,6 +40,7 @@ export function siteTypeIconPath(siteType: string, resolvedMode: 'light' | 'dark
   if (type === 'zhipu' || type === 'glm_code') return '/brand-icons/zhipu.png'
   if (type === 'command_code') return '/brand-icons/commandcode.svg'
   if (type === 'cline_pass' || type === 'cline') return '/brand-icons/cline.png'
+  if (type === 'factory') return '/brand-icons/factory.svg'
   if (type === 'newapi') return '/brand-icons/newapi.png'
   if (type === 'xlyra') return '/brand-icons/xlyra.png'
   if (type === 'codex') return '/oauth-icons/codex.svg'

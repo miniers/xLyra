@@ -65,7 +65,7 @@ export type ResponsesToolPolicy = 'passthrough' | 'compatibility'
 export type ResponsesHostedTool = 'image_generation'
 export type ResponsesImageGenerationPolicy =
   'passthrough' | 'strip_auto_tool' | 'disabled'
-export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'command_code' | 'deepseek' | 'moonshot' | 'cline_pass'
+export type QuotaProbeType = 'none' | 'sub2api' | 'newapi' | 'xlyra' | 'kimi' | 'glm' | 'command_code' | 'deepseek' | 'moonshot' | 'cline_pass' | 'factory'
 
 export type SiteQuotaProbeSummary = {
   status?: string
@@ -82,6 +82,10 @@ export type SiteQuotaProbeSummary = {
   plan?: string
   expires_at?: string
   entries?: SiteQuotaProbeEntry[]
+  limits?: Record<string, unknown>
+  standard?: Record<string, unknown>
+  core?: Record<string, unknown>
+  raw?: unknown
 }
 
 export type SiteQuotaProbeEntry = {
@@ -103,10 +107,15 @@ export type SiteQuotaProbeResult = {
   status?: string
   error?: string
   kind?: string
+  probe_type?: string
   plan?: string
   expires_at?: string
   entries?: SiteQuotaProbeEntry[]
   fetched_at?: string
+  limits?: Record<string, unknown>
+  standard?: Record<string, unknown>
+  core?: Record<string, unknown>
+  raw?: unknown
 }
 
 export type SiteGatewayConfig = {

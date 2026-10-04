@@ -100,6 +100,7 @@ export function formatSiteTypeLabel(siteType: string, siteTypes?: SiteTypeInfo[]
   if (t === 'zhipu') return 'GLM'
   if (t === 'glm_code') return 'GLM Code'
   if (t === 'cline_pass') return 'ClinePass'
+  if (t === 'factory') return 'Factory'
   if (t === 'typesafe') return 'TypeSafe'
   return siteType
 }
@@ -243,6 +244,9 @@ export function formatQuotaProbeBalance(probe: SiteQuotaProbeSummary | null | un
   if (probe.probe_type === 'kimi' || probe.probe_type === 'glm' || probe.probe_type === 'cline_pass') {
     return formatFiveHourWeeklyQuotaBalance(probe)
   }
+  if (probe.probe_type === 'factory') {
+    return formatFactoryQuotaBalance(probe)
+  }
   if (typeof probe.remaining_min !== 'number') {
     if (probe.unlimited !== true) return undefined
     if (typeof probe.used_total === 'number') {
@@ -294,6 +298,17 @@ export type SiteBalanceDetailLabel =
   | 'dailyQuota'
   | 'monthlyQuota'
   | 'mcpMonthlyQuota'
+  | 'fiveHourWindow'
+  | 'weeklyWindow'
+  | 'monthlyWindow'
+  | 'standardFiveHour'
+  | 'standardWeekly'
+  | 'standardMonthly'
+  | 'standardQuota'
+  | 'coreQuota'
+  | 'coreStatus'
+  | 'available'
+  | 'unavailable'
 
 export type SiteBalanceDetail = {
   /** i18n key 后缀（table.quotaDetails.*）；entry 类行用 labelText 直传 */
@@ -351,6 +366,9 @@ export function siteBalanceDetails(site: Site, language?: string): SiteBalanceDe
     if (probeType === 'kimi' || probeType === 'glm' || probeType === 'cline_pass') {
       return fiveHourWeeklyQuotaDetails(probe, language)
     }
+    if (probeType === 'factory') {
+      return factoryQuotaDetails(probe, language)
+    }
     const { prefix, suffix } = quotaProbeCurrency(probe.unit)
     const amount = (value: number) => `${prefix}${formatProbeAmount(value)}${suffix}`
     if (typeof probe.remaining_min !== 'number') {
@@ -394,6 +412,216 @@ export function commandCodeQuotaWindows(probe: SiteQuotaProbeSummary | null | un
       valuePrefix: 'remaining' as const,
     }]
   })
+}
+
+export type FactoryStandardWindowKey = 'five_hour' | 'weekly' | 'monthly'
+
+const FACTORY_WINDOW_ORDER: FactoryStandardWindowKey[] = ['five_hour', 'weekly', 'monthly']
+
+const FACTORY_WINDOW_LABELS: Record<FactoryStandardWindowKey, SiteBalanceDetailLabel> = {
+  five_hour: 'fiveHourWindow',
+  weekly: 'weeklyWindow',
+  monthly: 'monthlyWindow',
+}
+
+type FactoryWindowData = {
+  percentUsed?: number
+  used?: number
+  limit?: number
+  remaining?: number
+  resetAt?: string
+}
+
+function extractFactoryStandardWindow(
+  probe: SiteQuotaProbeSummary | SiteQuotaProbeResult | null | undefined,
+  windowKey: FactoryStandardWindowKey,
+): FactoryWindowData | null {
+  if (!probe) return null
+
+  // 1. Check probe.limits.standard, probe.raw.limits.standard, or probe.standard
+  const probeObj = probe as Record<string, any>
+  const limits = getObject(probeObj.limits) ?? getObject(probeObj.raw?.limits) ?? getObject(probeObj.metadata?.limits)
+  const standard = getObject(limits?.standard) ?? getObject(probeObj.standard)
+  if (standard) {
+    let rawWindow: unknown
+    if (windowKey === 'five_hour') {
+      rawWindow = standard.rolling_5_hour ?? standard.five_hour ?? standard['5h'] ?? standard.rolling5Hour
+    } else if (windowKey === 'weekly') {
+      rawWindow = standard.weekly ?? standard.week
+    } else if (windowKey === 'monthly') {
+      rawWindow = standard.monthly ?? standard.month
+    }
+    if (rawWindow !== undefined) {
+      if (typeof rawWindow === 'number') {
+        return { percentUsed: rawWindow }
+      }
+      const rawObj = getObject(rawWindow)
+      if (rawObj) {
+        const percentUsed = getNumber(rawObj.percent_used) ?? getNumber(rawObj.percentUsed) ?? getNumber(rawObj.used_percent)
+        const used = getNumber(rawObj.used)
+        const limit = getNumber(rawObj.limit)
+        const remaining = getNumber(rawObj.remaining)
+        const resetAt = getString(rawObj.reset_at) ?? getString(rawObj.resets_at) ?? getString(rawObj.resetAt) ?? getString(rawObj.resetsAt)
+        let resolvedPercent = percentUsed
+        if (typeof resolvedPercent !== 'number' && typeof used === 'number') {
+          if (typeof limit === 'number' && limit > 0) {
+            resolvedPercent = (used / limit) * 100
+          } else {
+            resolvedPercent = used
+          }
+        }
+        return { percentUsed: resolvedPercent, used, limit, remaining, resetAt }
+      }
+    }
+  }
+
+  // 2. Check probe.entries
+  const entries = probe.entries ?? []
+  const entry = entries.find((e) => {
+    const l = e.label.toLowerCase()
+    if (windowKey === 'five_hour') {
+      return l === 'five_hour' || l === 'standard_five_hour' || l === 'rolling_5_hour' || l === '5h' || l === 'standard:five_hour'
+    }
+    if (windowKey === 'weekly') {
+      return l === 'weekly' || l === 'standard_weekly' || l === 'week' || l === 'standard:weekly'
+    }
+    if (windowKey === 'monthly') {
+      return l === 'monthly' || l === 'standard_monthly' || l === 'month' || l === 'standard:monthly'
+    }
+    return false
+  })
+
+  if (entry) {
+    let percentUsed: number | undefined
+    if (typeof entry.used === 'number') {
+      if (typeof entry.limit === 'number' && entry.limit > 0 && entry.limit !== 100) {
+        percentUsed = (entry.used / entry.limit) * 100
+      } else {
+        percentUsed = entry.used
+      }
+    } else if (typeof entry.remaining === 'number' && typeof entry.limit === 'number' && entry.limit > 0) {
+      percentUsed = Math.max(0, ((entry.limit - entry.remaining) / entry.limit) * 100)
+    } else if (typeof entry.remaining === 'number' && entry.unit === 'percent') {
+      percentUsed = Math.max(0, 100 - entry.remaining)
+    }
+    return {
+      percentUsed,
+      used: entry.used,
+      limit: entry.limit,
+      remaining: entry.remaining,
+      resetAt: entry.reset_at,
+    }
+  }
+
+  return null
+}
+
+export function factoryQuotaWindows(
+  probe: SiteQuotaProbeSummary | SiteQuotaProbeResult | null | undefined,
+  language?: string,
+): SiteBalanceDetail[] {
+  if (!probe || (probe.probe_type && probe.probe_type !== 'factory')) return []
+  return FACTORY_WINDOW_ORDER.flatMap((key) => {
+    const data = extractFactoryStandardWindow(probe, key)
+    if (!data || typeof data.percentUsed !== 'number') return []
+    let extra: string | undefined
+    if (data.resetAt) {
+      const resetTime = formatDateTime(data.resetAt, language, 'h23')
+      if (resetTime) extra = resetTime
+    }
+    return [{
+      label: FACTORY_WINDOW_LABELS[key],
+      value: formatProbePercent(Math.min(100, Math.max(0, data.percentUsed))),
+      valuePrefix: 'used' as const,
+      extra,
+    }]
+  })
+}
+
+function extractFactoryCore(probe: SiteQuotaProbeSummary | SiteQuotaProbeResult | null | undefined): SiteBalanceDetail | null {
+  if (!probe) return null
+  const probeObj = probe as Record<string, any>
+  const limits = getObject(probeObj.limits) ?? getObject(probeObj.raw?.limits) ?? getObject(probeObj.metadata?.limits)
+  const core = getObject(limits?.core) ?? getObject(probeObj.core)
+  if (core) {
+    const status = getString(core.status)
+    const available = core.available ?? core.allowed
+    const used = getNumber(core.used)
+    const remaining = getNumber(core.remaining)
+    const limit = getNumber(core.limit)
+    if (typeof remaining === 'number') {
+      const val = typeof limit === 'number' ? `${remaining} / ${limit}` : `${remaining}`
+      return { label: 'coreQuota', value: val }
+    }
+    if (typeof used === 'number') {
+      const val = typeof limit === 'number' ? `${used} / ${limit}` : `${used}`
+      return { label: 'coreQuota', value: val, valuePrefix: 'used' }
+    }
+    if (typeof available === 'boolean') {
+      return { label: 'coreQuota', value: available ? 'available' : 'unavailable' }
+    }
+    if (status) {
+      return { label: 'coreQuota', value: status }
+    }
+  }
+
+  const entries = probe.entries ?? []
+  const coreEntry = entries.find((e) => {
+    const l = e.label.toLowerCase()
+    return l === 'core' || l === 'core_limit' || l === 'core_quota' || l === 'standard_core'
+  })
+  if (coreEntry) {
+    if (coreEntry.unlimited) {
+      return { label: 'coreQuota', value: '∞' }
+    }
+    if (typeof coreEntry.remaining === 'number') {
+      if (typeof coreEntry.limit === 'number' && coreEntry.limit > 0) {
+        if (coreEntry.unit === 'percent') {
+          return { label: 'coreQuota', value: formatProbePercent(coreEntry.remaining), valuePrefix: 'remaining' }
+        }
+        return { label: 'coreQuota', value: `${coreEntry.remaining} / ${coreEntry.limit}` }
+      }
+      return { label: 'coreQuota', value: `${coreEntry.remaining}` }
+    }
+    if (typeof coreEntry.used === 'number') {
+      if (typeof coreEntry.limit === 'number' && coreEntry.limit > 0) {
+        return { label: 'coreQuota', value: `${coreEntry.used} / ${coreEntry.limit}`, valuePrefix: 'used' }
+      }
+      return { label: 'coreQuota', value: `${coreEntry.used}`, valuePrefix: 'used' }
+    }
+    const status = (coreEntry as any).status
+    if (status) {
+      return { label: 'coreQuota', value: String(status) }
+    }
+  }
+
+  return null
+}
+
+export function factoryQuotaDetails(
+  probe: SiteQuotaProbeSummary | SiteQuotaProbeResult | null | undefined,
+  language?: string,
+): SiteBalanceDetail[] {
+  if (!probe) return []
+  const windows = factoryQuotaWindows(probe, language)
+  const core = extractFactoryCore(probe)
+  const rows = [...windows]
+  if (core) {
+    rows.push(core)
+  }
+  return rows
+}
+
+function formatFactoryQuotaBalance(probe: SiteQuotaProbeSummary) {
+  if (probe.plan) return probe.plan
+  const windows = factoryQuotaWindows(probe)
+  if (windows.length > 0) {
+    return windows.slice(0, 2).map((w) => w.value).join(' / ')
+  }
+  if (typeof probe.remaining_min === 'number') {
+    return formatProbePercent(probe.remaining_min)
+  }
+  return '-'
 }
 
 function fiveHourWeeklyQuotaDetails(probe: SiteQuotaProbeSummary, language?: string): SiteBalanceDetail[] {
