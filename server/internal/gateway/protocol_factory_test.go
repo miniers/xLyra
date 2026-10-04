@@ -231,37 +231,52 @@ func TestFactoryProtocolAdapterEnsuresSystemPrompt(t *testing.T) {
 func TestFactoryProtocolAdapterStripsEmptyTools(t *testing.T) {
 	t.Parallel()
 
-	req := gatewayRequest{
-		DownstreamPath: gatewayEndpointChatCompletions,
-		RequestedModel: "claude-opus-5-5",
-		Payload: map[string]any{
-			"model":       "claude-opus-5-5",
-			"messages":    []any{map[string]any{"role": "user", "content": "hi"}},
-			"tools":       []any{},
-			"tool_choice": "auto",
-		},
-	}
-	cand := routeengine.Candidate{
-		Site: routeengine.CandidateSite{
-			SiteType: "factory",
-			BaseURL:  "https://api.factory.ai",
-		},
-		Model: routeengine.CandidateModel{
-			UpstreamName: "claude-opus-5-5",
-		},
-	}
+	for _, tc := range []struct {
+		name       string
+		tools      any
+		toolChoice any
+	}{
+		{name: "empty_slice", tools: []any{}, toolChoice: "auto"},
+		{name: "nil_tools", tools: nil, toolChoice: "auto"},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	adapter := newFactoryProtocolAdapter(req, cand)
-	payload, err := adapter.BuildUpstreamPayload(req, cand)
-	if err != nil {
-		t.Fatalf("BuildUpstreamPayload error: %v", err)
-	}
+			payloadMap := map[string]any{
+				"model":       "claude-opus-5-5",
+				"messages":    []any{map[string]any{"role": "user", "content": "hi"}},
+				"tools":       tc.tools,
+				"tool_choice": tc.toolChoice,
+			}
+			req := gatewayRequest{
+				DownstreamPath: gatewayEndpointChatCompletions,
+				RequestedModel: "claude-opus-5-5",
+				Payload:        payloadMap,
+			}
+			cand := routeengine.Candidate{
+				Site: routeengine.CandidateSite{
+					SiteType: "factory",
+					BaseURL:  "https://api.factory.ai",
+				},
+				Model: routeengine.CandidateModel{
+					UpstreamName: "claude-opus-5-5",
+				},
+			}
 
-	if _, exists := payload["tools"]; exists {
-		t.Errorf("empty tools was not removed from payload: %#v", payload["tools"])
-	}
-	if _, exists := payload["tool_choice"]; exists {
-		t.Errorf("tool_choice was not removed when tools is empty: %#v", payload["tool_choice"])
+			adapter := newFactoryProtocolAdapter(req, cand)
+			payload, err := adapter.BuildUpstreamPayload(req, cand)
+			if err != nil {
+				t.Fatalf("BuildUpstreamPayload error: %v", err)
+			}
+
+			if _, exists := payload["tools"]; exists {
+				t.Errorf("tools was not removed from payload: %#v", payload["tools"])
+			}
+			if _, exists := payload["tool_choice"]; exists {
+				t.Errorf("tool_choice was not removed: %#v", payload["tool_choice"])
+			}
+		})
 	}
 }
 
@@ -352,5 +367,31 @@ func TestFactoryProtocolAdapterHeadersPassthrough(t *testing.T) {
 	}
 	if sdk := httpReqCli.Header.Get("X-Factory-Sdk"); sdk != "" {
 		t.Errorf("X-Factory-Sdk = %q, want empty for cli client", sdk)
+	}
+
+	// Test downstream uppercase SDK client gets default sdk
+	downstreamSdkUpper := http.Header{}
+	downstreamSdkUpper.Set("X-Factory-Client", "SDK")
+
+	reqSdkUpper := gatewayRequest{
+		DownstreamPath:    gatewayEndpointChatCompletions,
+		RequestedModel:    "auto",
+		DownstreamHeaders: downstreamSdkUpper,
+		Payload: map[string]any{
+			"model":    "auto",
+			"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+		},
+	}
+	adapterSdkUpper := newFactoryProtocolAdapter(reqSdkUpper, cand)
+	httpReqSdkUpper, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://api.factory.ai", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapterSdkUpper.ApplyUpstreamHeaders(httpReqSdkUpper, "test-api-key", "", false)
+	if client := httpReqSdkUpper.Header.Get("X-Factory-Client"); client != "SDK" {
+		t.Errorf("X-Factory-Client = %q, want SDK", client)
+	}
+	if sdk := httpReqSdkUpper.Header.Get("X-Factory-Sdk"); sdk != "typescript/0.9.1" {
+		t.Errorf("X-Factory-Sdk = %q, want typescript/0.9.1 for uppercase SDK client", sdk)
 	}
 }

@@ -15,14 +15,15 @@ import (
 )
 
 const (
-	factorySystemPrefix        = "You are Droid, an AI software engineering agent built by Factory.\n\n"
-	factorySystemDeclaration   = "You are Droid, an AI software engineering agent built by Factory."
-	factoryHeaderClientVersion = "0.232.0"
-	factoryHeaderUserAgent     = "factory-cli/0.232.0"
-	factoryHeaderClient        = "sdk"
-	factoryHeaderSdk           = "typescript/0.9.1"
-	factoryOpenAIPlatform      = "org-bHuLtG1fGmYk5YaOihAAXFBw"
-	factoryAnthropicVersion    = "2023-06-01"
+	factorySystemPrefix          = "You are Droid, an AI software engineering agent built by Factory.\n\n"
+	factorySystemDeclaration     = "You are Droid, an AI software engineering agent built by Factory."
+	factoryHeaderClientVersion   = adapter.FactoryDefaultClientVersion
+	factoryHeaderUserAgent       = adapter.FactoryDefaultUserAgent
+	factoryHeaderClient          = adapter.FactoryDefaultClientHeader
+	factoryHeaderSdk             = adapter.FactoryDefaultSDKHeader
+	factoryHeaderProtocolVersion = adapter.FactoryDefaultProtocolVersion
+	factoryOpenAIPlatform        = "org-bHuLtG1fGmYk5YaOihAAXFBw"
+	factoryAnthropicVersion      = "2023-06-01"
 )
 
 type factoryRouteTarget int
@@ -72,12 +73,14 @@ func classifyFactoryRoute(model string) factoryRouteTarget {
 }
 
 type factoryProtocolAdapter struct {
-	request    gatewayRequest
-	candidate  routeengine.Candidate
-	target     factoryRouteTarget
-	delegate   gatewayProtocolAdapter
-	db         *store.Store
-	downstream canonicalProtocol
+	request       gatewayRequest
+	candidate     routeengine.Candidate
+	target        factoryRouteTarget
+	delegate      gatewayProtocolAdapter
+	db            *store.Store
+	downstream    canonicalProtocol
+	resolvedOrgID string
+	orgIDResolved bool
 }
 
 var (
@@ -168,7 +171,10 @@ func (a *factoryProtocolAdapter) BuildUpstreamPayload(request gatewayRequest, ca
 
 	delete(payload, "stream_options")
 	if tools, exists := payload["tools"]; exists {
-		if toolsSlice, ok := tools.([]any); ok && len(toolsSlice) == 0 {
+		if tools == nil {
+			delete(payload, "tools")
+			delete(payload, "tool_choice")
+		} else if toolsSlice, ok := tools.([]any); ok && len(toolsSlice) == 0 {
 			delete(payload, "tools")
 			delete(payload, "tool_choice")
 		}
@@ -206,14 +212,14 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 	if a.request.DownstreamHeaders != nil {
 		sdk = strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Sdk"))
 	}
-	if sdk == "" && client == "sdk" {
+	if sdk == "" && strings.EqualFold(client, "sdk") {
 		sdk = factoryHeaderSdk
 	}
 	if sdk != "" {
 		req.Header.Set("X-Factory-Sdk", sdk)
 	}
 
-	protoVer := "1.244.0"
+	protoVer := factoryHeaderProtocolVersion
 	if a.request.DownstreamHeaders != nil {
 		if v := strings.TrimSpace(a.request.DownstreamHeaders.Get("X-Factory-Protocol-Version")); v != "" {
 			protoVer = v
@@ -224,7 +230,7 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 	req.Header.Set("X-Client-Version", factoryHeaderClientVersion)
 	req.Header.Set("User-Agent", factoryHeaderUserAgent)
 
-	if orgID := a.resolveOrgID(accountID); orgID != "" {
+	if orgID := a.resolveOrgID(req.Context(), accountID); orgID != "" {
 		req.Header.Set("X-Factory-Org-Id", orgID)
 	}
 
@@ -281,41 +287,56 @@ func (a *factoryProtocolAdapter) ApplyUpstreamHeaders(req *http.Request, upstrea
 	}
 }
 
-func (a *factoryProtocolAdapter) resolveOrgID(accountID string) string {
+func (a *factoryProtocolAdapter) resolveOrgID(ctx context.Context, accountID string) string {
+	if a.orgIDResolved {
+		return a.resolvedOrgID
+	}
+	defer func() {
+		a.orgIDResolved = true
+	}()
+
 	if trimmed := strings.TrimSpace(accountID); trimmed != "" {
-		return trimmed
+		a.resolvedOrgID = trimmed
+		return a.resolvedOrgID
 	}
 	if a.request.DownstreamHeaders != nil {
 		for _, key := range []string{"X-Factory-Org-Id", "x-factory-org-id", "x-org-id", "X-Org-Id"} {
 			if v := strings.TrimSpace(a.request.DownstreamHeaders.Get(key)); v != "" {
-				return v
+				a.resolvedOrgID = v
+				return a.resolvedOrgID
 			}
 		}
 	}
 	if a.candidate.Credential.GroupName != nil && strings.TrimSpace(*a.candidate.Credential.GroupName) != "" {
-		return strings.TrimSpace(*a.candidate.Credential.GroupName)
+		a.resolvedOrgID = strings.TrimSpace(*a.candidate.Credential.GroupName)
+		return a.resolvedOrgID
 	}
 	if a.db != nil {
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		if a.candidate.Credential.ID != nil {
-			cred, err := store.NewSiteCredentialRepository(a.db.DB()).GetByID(context.Background(), *a.candidate.Credential.ID)
+			cred, err := store.NewSiteCredentialRepository(a.db.DB()).GetByID(ctx, *a.candidate.Credential.ID)
 			if err == nil && len(cred.Meta) > 0 {
 				var credMeta map[string]any
 				if json.Unmarshal(cred.Meta, &credMeta) == nil {
 					for _, k := range []string{"orgId", "org_id", "organization", "org"} {
 						if v, ok := credMeta[k].(string); ok && strings.TrimSpace(v) != "" {
-							return strings.TrimSpace(v)
+							a.resolvedOrgID = strings.TrimSpace(v)
+							return a.resolvedOrgID
 						}
 					}
 				}
 			}
 		}
-		site, err := store.NewSiteRepository(a.db.DB()).GetByID(context.Background(), a.candidate.Site.ID)
+		site, err := store.NewSiteRepository(a.db.DB()).GetByID(ctx, a.candidate.Site.ID)
 		if err == nil && len(site.Meta) > 0 {
 			var siteMeta map[string]any
 			if json.Unmarshal(site.Meta, &siteMeta) == nil {
 				for _, k := range []string{"orgId", "org_id", "organization", "org"} {
 					if v, ok := siteMeta[k].(string); ok && strings.TrimSpace(v) != "" {
-						return strings.TrimSpace(v)
+						a.resolvedOrgID = strings.TrimSpace(v)
+						return a.resolvedOrgID
 					}
 				}
 			}

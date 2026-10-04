@@ -13,17 +13,22 @@ import (
 )
 
 const (
-	FactorySiteType       = "factory"
-	FactoryDefaultBaseURL = "https://api.factory.ai"
+	FactorySiteType               = "factory"
+	FactoryDefaultBaseURL         = "https://api.factory.ai"
+	FactoryDefaultUserAgent       = "factory-cli/0.232.0"
+	FactoryDefaultClientVersion   = "0.232.0"
+	FactoryDefaultClientHeader    = "sdk"
+	FactoryDefaultSDKHeader       = "typescript/0.9.1"
+	FactoryDefaultProtocolVersion = "1.244.0"
 
 	factorySiteType       = FactorySiteType
 	factoryDefaultBaseURL = FactoryDefaultBaseURL
 
-	factoryUserAgent       = "factory-cli/0.232.0"
-	factoryClientVersion   = "0.232.0"
-	factoryClientHeader    = "sdk"
-	factorySdkHeader       = "typescript/0.9.1"
-	factoryProtocolVersion = "1.244.0"
+	factoryUserAgent       = FactoryDefaultUserAgent
+	factoryClientVersion   = FactoryDefaultClientVersion
+	factoryClientHeader    = FactoryDefaultClientHeader
+	factorySdkHeader       = FactoryDefaultSDKHeader
+	factoryProtocolVersion = FactoryDefaultProtocolVersion
 )
 
 var factoryCuratedModels = []struct {
@@ -186,8 +191,22 @@ func (Factory) Scope() HealthProbeScope {
 }
 
 type FactoryWhoamiResponse struct {
-	OrgID  string `json:"orgId"`
-	UserID string `json:"userId"`
+	OrgID       string `json:"orgId"`
+	UserID      string `json:"userId"`
+	OrgIDSnake  string `json:"org_id"`
+	UserIDSnake string `json:"user_id"`
+}
+
+func (a Factory) applyDefaultHeaders(req *http.Request, apiKey string) {
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+	req.Header.Set("User-Agent", factoryUserAgent)
+	req.Header.Set("X-Client-Version", factoryClientVersion)
+	req.Header.Set("X-Factory-Client", factoryClientHeader)
+	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
+	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
+	req.Header.Set("Accept", "application/json")
 }
 
 func (a Factory) ValidateCredentials(ctx context.Context, site SiteConfig, apiKey string) error {
@@ -207,13 +226,7 @@ func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (st
 		return "", "", fmt.Errorf("create whoami request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	req.Header.Set("User-Agent", factoryUserAgent)
-	req.Header.Set("X-Client-Version", factoryClientVersion)
-	req.Header.Set("X-Factory-Client", factoryClientHeader)
-	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
-	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
-	req.Header.Set("Accept", "application/json")
+	a.applyDefaultHeaders(req, apiKey)
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
 	if err != nil {
@@ -226,12 +239,7 @@ func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (st
 		return "", "", upstream.NewHTTPError("upstream returned", resp.StatusCode, resp.Header, body)
 	}
 
-	var payload struct {
-		OrgID       string `json:"orgId"`
-		UserID      string `json:"userId"`
-		OrgIDSnake  string `json:"org_id"`
-		UserIDSnake string `json:"user_id"`
-	}
+	var payload FactoryWhoamiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return "", "", fmt.Errorf("decode whoami response: %w", err)
 	}
@@ -290,13 +298,7 @@ func (a Factory) fetchRemoteModels(ctx context.Context, site SiteConfig, apiKey 
 		return nil, fmt.Errorf("create models request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	req.Header.Set("User-Agent", factoryUserAgent)
-	req.Header.Set("X-Client-Version", factoryClientVersion)
-	req.Header.Set("X-Factory-Client", factoryClientHeader)
-	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
-	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
-	req.Header.Set("Accept", "application/json")
+	a.applyDefaultHeaders(req, apiKey)
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
 	if err != nil {
@@ -432,15 +434,7 @@ func (a Factory) FetchBalanceWithKey(ctx context.Context, site SiteConfig, apiKe
 		return BalanceSnapshot{}, fmt.Errorf("create limits request: %w", err)
 	}
 
-	if strings.TrimSpace(apiKey) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	}
-	req.Header.Set("User-Agent", factoryUserAgent)
-	req.Header.Set("X-Client-Version", factoryClientVersion)
-	req.Header.Set("X-Factory-Client", factoryClientHeader)
-	req.Header.Set("X-Factory-Sdk", factorySdkHeader)
-	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
-	req.Header.Set("Accept", "application/json")
+	a.applyDefaultHeaders(req, apiKey)
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
 	if err != nil {
