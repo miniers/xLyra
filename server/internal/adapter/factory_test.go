@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"xlyra/server/internal/upstream"
 )
@@ -333,6 +334,120 @@ func TestFactoryValidateCredentials_Errors(t *testing.T) {
 	})
 }
 
+func TestFactoryFetchCredentialMetadataAllowsPartialWhoamiButValidationRemainsStrict(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/cli/whoami" {
+			t.Fatalf("path = %s, want /api/cli/whoami", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"email":"factory@example.com","region":"eu","premBaseHostV2":"https://enterprise.factory.example"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	f := NewFactory()
+	metadata, err := f.FetchCredentialMetadata(context.Background(), SiteConfig{BaseURL: server.URL}, "partial-key")
+	if err != nil {
+		t.Fatalf("FetchCredentialMetadata returned unexpected error: %v", err)
+	}
+	if len(metadata) != 1 {
+		t.Fatalf("metadata top-level keys = %#v, want only factory_identity", metadata)
+	}
+	identity, ok := metadata["factory_identity"].(map[string]any)
+	if !ok {
+		t.Fatalf("factory_identity = %#v, want object", metadata["factory_identity"])
+	}
+	if _, ok := identity["org_id"]; ok {
+		t.Fatalf("factory_identity leaked org_id: %#v", identity)
+	}
+	if identity["email"] != "factory@example.com" {
+		t.Fatalf("identity = %#v, want email", identity)
+	}
+	if identity["region"] != "eu" || identity["prem_base_host"] != "https://enterprise.factory.example" {
+		t.Fatalf("identity routing hints = %#v", identity)
+	}
+	if syncedAt, ok := identity["synced_at"].(string); !ok {
+		t.Fatalf("synced_at = %#v, want RFC3339 string", identity["synced_at"])
+	} else if _, err := time.Parse(time.RFC3339, syncedAt); err != nil {
+		t.Fatalf("synced_at = %q is not RFC3339: %v", syncedAt, err)
+	}
+
+	if err := f.ValidateCredentials(context.Background(), SiteConfig{BaseURL: server.URL}, "partial-key"); err == nil {
+		t.Fatal("ValidateCredentials accepted whoami without orgId")
+	}
+}
+
+func TestResolveFactoryBaseURLFromMetadataPrecedenceAndSafety(t *testing.T) {
+	t.Parallel()
+
+	identity := map[string]any{
+		"factory_identity": map[string]any{
+			"region":         "eu",
+			"prem_base_host": "https://identity.factory.example/",
+		},
+	}
+
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL,
+		map[string]any{"premBaseHost": "https://credential.factory.example"},
+		map[string]any{"premBaseHost": "https://site.factory.example"}); got != "https://credential.factory.example" {
+		t.Fatalf("credential manual host = %q, want credential host", got)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL, nil,
+		map[string]any{"prem_base_host_v2": "https://site.factory.example"}); got != "https://site.factory.example" {
+		t.Fatalf("site manual host = %q, want site host", got)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL, identity, nil); got != "https://identity.factory.example" {
+		t.Fatalf("identity host = %q, want identity host", got)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL, identity,
+		map[string]any{"region": "eu"}); got != FactoryDefaultEUBaseURL {
+		t.Fatalf("manual site region = %q, want %q", got, FactoryDefaultEUBaseURL)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL, map[string]any{"region": "eu"}, nil); got != FactoryDefaultEUBaseURL {
+		t.Fatalf("EU region = %q, want %q", got, FactoryDefaultEUBaseURL)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata("https://custom.proxy.example", identity, nil); got != "https://custom.proxy.example" {
+		t.Fatalf("custom base = %q, want custom base", got)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL, map[string]any{
+		"factory_identity": map[string]any{"prem_base_host": "javascript:alert(1)", "region": "eu"},
+	}, nil); got != FactoryDefaultEUBaseURL {
+		t.Fatalf("invalid identity host fallback = %q, want %q", got, FactoryDefaultEUBaseURL)
+	}
+	if got := ResolveFactoryBaseURLFromMetadata(FactoryDefaultBaseURL, map[string]any{
+		"premBaseHost": "https://user:secret@factory.example",
+	}, nil); got != FactoryDefaultBaseURL {
+		t.Fatalf("userinfo host fallback = %q, want %q", got, FactoryDefaultBaseURL)
+	}
+}
+
+func TestFactoryListModelsUsesFactoryIdentityBaseURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/models" {
+			t.Fatalf("path = %s, want /api/models", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"identity-model","name":"Identity Model"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	models, err := NewFactory().ListModels(context.Background(), SiteConfig{
+		Meta: map[string]any{"factory_identity": map[string]any{"prem_base_host": server.URL}},
+	}, "factory-key")
+	if err != nil {
+		t.Fatalf("ListModels returned unexpected error: %v", err)
+	}
+	for _, model := range models {
+		if model.UpstreamName == "identity-model" {
+			return
+		}
+	}
+	t.Fatalf("ListModels did not include identity-model: %#v", models)
+}
+
 func TestFactoryFetchBalance_Success(t *testing.T) {
 	t.Parallel()
 
@@ -494,6 +609,9 @@ func TestFactoryRegistryIntegration(t *testing.T) {
 
 	if _, ok := AsCredentialValidator(mod); !ok {
 		t.Fatal("factory module does not implement CredentialValidator")
+	}
+	if _, ok := AsCredentialMetadataFetcher(mod); !ok {
+		t.Fatal("factory module does not implement CredentialMetadataFetcher")
 	}
 	if _, ok := AsGatewayModelLister(mod); !ok {
 		t.Fatal("factory module does not implement GatewayModelLister")

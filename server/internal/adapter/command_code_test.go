@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -168,12 +169,16 @@ func TestCommandCodeCatalogFetch(t *testing.T) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
+			if r.Header.Get("x-api-key") != "test-key" {
+				http.Error(w, "missing x-api-key", http.StatusBadRequest)
+				return
+			}
 			if r.Header.Get("User-Agent") != "cli" {
 				http.Error(w, "bad user-agent", http.StatusBadRequest)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"data":[{"id":"custom-model-1","context_length":128000},{"id":"MiniMaxAI/MiniMax-M3"},{"id":"poolside/laguna-s-2.1-free"}]}`))
+			w.Write([]byte(`{"data":[{"id":"custom-model-1","context_length":128000,"display_name":"Custom Model","supported_endpoints":["/v1/responses"]},{"id":"MiniMaxAI/MiniMax-M3"},{"id":"poolside/laguna-s-2.1-free"}]}`))
 			return
 		}
 		http.NotFound(w, r)
@@ -191,6 +196,13 @@ func TestCommandCodeCatalogFetch(t *testing.T) {
 	if models[0].Capabilities["context_length"] != 128000 {
 		t.Fatalf("expected context_length 128000, got %v", models[0].Capabilities["context_length"])
 	}
+	if models[0].DisplayName != "Custom Model" {
+		t.Fatalf("expected display_name Custom Model, got %q", models[0].DisplayName)
+	}
+	endpoints, _ := models[0].Capabilities["supported_endpoint_types"].([]string)
+	if len(endpoints) != 1 || endpoints[0] != "openai-response" {
+		t.Fatalf("expected response-only capability, got %#v", endpoints)
+	}
 	if models[0].Pricing != nil {
 		t.Fatal("unknown live model must not get pricing metadata")
 	}
@@ -206,5 +218,141 @@ func TestCommandCodeCatalogFetch(t *testing.T) {
 	}
 	if pricing := byName["poolside/laguna-s-2.1-free"].Pricing; pricing == nil || !pricing.HasInputValue || pricing.InputValue != 0 {
 		t.Fatalf("free live model pricing = %#v, want valid zero input price", pricing)
+	}
+}
+
+func TestCommandCodeModelCatalogParsesNameModalitiesAndLegacyCapabilities(t *testing.T) {
+	models := commandCodeModelsFromItems([]commandCodeModelItem{
+		{
+			Name:        "named-model",
+			DisplayName: "Named Model",
+			Modalities:  commandCodeModelModalities{Input: []string{"text", "image"}},
+		},
+		{ID: "legacy-model"},
+		{ID: "embedding-only-model", SupportedEndpoints: []string{"embeddings"}},
+	})
+	if len(models) != 2 || models[0].UpstreamName != "named-model" || models[0].DisplayName != "Named Model" {
+		t.Fatalf("models = %#v", models)
+	}
+	modalities, _ := models[0].Capabilities["modalities_input"].([]string)
+	if len(modalities) != 2 || modalities[1] != "image" {
+		t.Fatalf("modalities = %#v", modalities)
+	}
+	legacy, _ := models[1].Capabilities["supported_endpoint_types"].([]string)
+	if len(legacy) != 3 {
+		t.Fatalf("legacy endpoints = %#v", legacy)
+	}
+}
+
+func TestCommandCodeProbeHealthValidatesCredentialBeforeCatalogFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/alpha/whoami":
+			if r.Header.Get("Authorization") != "Bearer valid-key" || r.Header.Get("x-api-key") != "valid-key" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/provider/v1/models":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewCommandCode()
+	models, err := adapter.ProbeHealth(t.Context(), SiteConfig{BaseURL: server.URL}, "valid-key")
+	if err != nil || len(models) == 0 {
+		t.Fatalf("valid credential should survive catalog fallback: models=%d err=%v", len(models), err)
+	}
+	if _, err := adapter.ProbeHealth(t.Context(), SiteConfig{BaseURL: server.URL}, "bad-key"); err == nil {
+		t.Fatal("invalid credential should fail before catalog fallback")
+	}
+}
+
+func TestCommandCodeSubscriptionPlanPrefixes(t *testing.T) {
+	tests := map[string]string{
+		"individual-provider-v2": "Provider",
+		"individual-pro-v1":      "Pro",
+		"individual-goat":        "GOAT",
+		"individual-go":          "Go",
+		"teams-pro-enterprise":   "Teams Pro",
+	}
+	for planID, want := range tests {
+		if got, ok := CommandCodeSubscriptionPlan(planID); !ok || got != want {
+			t.Errorf("commandCodeSubscriptionPlan(%q) = (%q, %v), want (%q, true)", planID, got, ok, want)
+		}
+	}
+	if _, ok := CommandCodeSubscriptionPlan("individual-unknown"); ok {
+		t.Fatal("unknown plan must not be treated as a known subscription")
+	}
+}
+
+func TestCommandCodeFetchCredentialMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/alpha/billing/subscriptions" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer cc-key" || r.Header.Get("x-api-key") != "cc-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"planId":"individual-goat","status":"active","currentPeriodEnd":1770000000000}}`))
+	}))
+	defer server.Close()
+
+	metadata, err := NewCommandCode().FetchCredentialMetadata(t.Context(), SiteConfig{BaseURL: server.URL}, "cc-key")
+	if err != nil {
+		t.Fatalf("FetchCredentialMetadata failed: %v", err)
+	}
+	subscription, ok := metadata["command_code_subscription"].(map[string]any)
+	if !ok || subscription["plan"] != "GOAT" || subscription["plan_id"] != "individual-goat" || subscription["status"] != "active" {
+		t.Fatalf("subscription metadata = %#v", metadata)
+	}
+	if _, ok := subscription["current_period_end"]; !ok || subscription["synced_at"] == "" {
+		t.Fatalf("subscription timestamps missing: %#v", subscription)
+	}
+}
+
+func TestCommandCodeFetchCredentialMetadataRecordsUnknownSubscription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"success":true,"data":{"planId":"individual-mystery","status":"active"}}`))
+	}))
+	defer server.Close()
+
+	metadata, err := NewCommandCode().FetchCredentialMetadata(t.Context(), SiteConfig{BaseURL: server.URL}, "cc-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription := metadata["command_code_subscription"].(map[string]any)
+	if subscription["plan_id"] != "individual-mystery" || subscription["plan"] != "" {
+		t.Fatalf("unknown plan metadata must replace the previous subscription: %#v", metadata)
+	}
+}
+
+func TestCommandCodeFetchCredentialMetadataWithoutSubscription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	t.Cleanup(server.Close)
+	metadata, err := NewCommandCode().FetchCredentialMetadata(t.Context(), SiteConfig{BaseURL: server.URL}, "cc-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription := metadata["command_code_subscription"].(map[string]any)
+	if subscription["plan_id"] != "" || subscription["plan"] != "" || subscription["status"] != "" {
+		t.Fatalf("missing subscription must clear the previous plan: %#v", metadata)
+	}
+}
+
+func TestCommandCodeSubscriptionResponseShape(t *testing.T) {
+	var payload commandCodeSubscriptionResponse
+	if err := json.Unmarshal([]byte(`{"success":true,"data":{"planId":"individual-pro","status":"active","currentPeriodEnd":"2026-10-07T00:00:00Z"}}`), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data == nil || payload.Data.PlanID != "individual-pro" || string(payload.Data.CurrentPeriodEnd) != `"2026-10-07T00:00:00Z"` {
+		t.Fatalf("payload = %#v", payload)
 	}
 }

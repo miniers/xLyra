@@ -180,6 +180,8 @@ func (h Handler) forwardGatewayRequest(
 	}
 	sameSiteRetryLimit := h.sameSiteCredentialRetryLimitForConfig(sitePolicyConfig)
 	sameSiteRetriesUsed := 0
+	_, commandCodeProtocol := protocol.(*commandCodeProtocolAdapter)
+	_, factoryProtocol := protocol.(*factoryProtocolAdapter)
 
 	var lastResult gatewayAttemptResult
 	requestControl := gatewayRequestControlFromContext(ctx)
@@ -256,9 +258,25 @@ func (h Handler) forwardGatewayRequest(
 			}
 			defer releaseCredentialSelection()
 		}
-		if resolver := credentialProtocolResolverFromContext(ctx); resolver != nil && len(selectedCredential.SupportedEndpointTypes) > 0 {
-			keyCandidate := candidate
+		keyCandidate := candidate
+		keyCandidate.Credential.ID = &selectedCredential.Credential.ID
+		keyCandidate.Credential.GroupName = nil
+		if selectedCredential.GroupName.Valid {
+			groupName := selectedCredential.GroupName.String
+			keyCandidate.Credential.GroupName = &groupName
+		}
+		if len(selectedCredential.SupportedEndpointTypes) > 0 {
 			keyCandidate.Model.SupportedEndpointTypes = append([]string(nil), selectedCredential.SupportedEndpointTypes...)
+		}
+		if commandCodeProtocol {
+			resolved, resolveErr := resolveCommandCodeCredentialProtocol(request, keyCandidate, selectedCredential.Credential.Meta)
+			if resolveErr != nil {
+				continue
+			}
+			protocol = resolved
+		} else if factoryProtocol {
+			protocol = newFactoryProtocolAdapter(request, keyCandidate, h.db)
+		} else if resolver := credentialProtocolResolverFromContext(ctx); resolver != nil && len(selectedCredential.SupportedEndpointTypes) > 0 {
 			resolved, resolveErr := resolver.Resolve(ctx, request, keyCandidate)
 			if resolveErr != nil {
 				continue
@@ -533,7 +551,7 @@ func (h Handler) forwardGatewayRequest(
 		if headerAdapter, ok := protocol.(gatewayProtocolHeaderAdapter); ok {
 			headerAdapter.ApplyUpstreamHeaders(req, upstreamKey, accountID, upstreamStream)
 		}
-		if isCommandCodeSite(candidate.Site.SiteType) {
+		if _, legacyCommandCode := protocol.(*commandCodeProtocolAdapter); legacyCommandCode {
 			baseURL := strings.TrimRight(strings.TrimSpace(candidate.Site.BaseURL), "/")
 			if baseURL == "" {
 				baseURL = "https://api.commandcode.ai"

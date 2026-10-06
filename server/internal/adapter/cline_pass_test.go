@@ -146,6 +146,58 @@ func TestClinePassListModelsFiltersOpenRouterModels(t *testing.T) {
 	}
 }
 
+func TestClinePassProbeHealthRejectsCatalogFailures(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, body: `{"error":"invalid"}`},
+		{name: "rate limited", statusCode: http.StatusTooManyRequests, body: `{"error":"busy"}`},
+		{name: "server error", statusCode: http.StatusBadGateway, body: `{"error":"down"}`},
+		{name: "bad json", statusCode: http.StatusOK, body: `{not-json`},
+		{name: "filtered catalog", statusCode: http.StatusOK, body: `{"data":[{"id":"openai/gpt-4o"}]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/models" {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				w.WriteHeader(tc.statusCode)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			if _, err := NewClinePass().ProbeHealth(t.Context(), SiteConfig{BaseURL: server.URL}, "test-key"); err == nil {
+				t.Fatal("ProbeHealth returned nil error for an invalid catalog")
+			}
+		})
+	}
+}
+
+func TestClinePassProbeHealthReturnsOnlySubscriptionModels(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/models" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"cline-pass/qwen3.7-max"},{"id":"openai/gpt-4o"}]}`))
+	}))
+	defer server.Close()
+
+	models, err := NewClinePass().ProbeHealth(t.Context(), SiteConfig{BaseURL: server.URL}, "test-key")
+	if err != nil {
+		t.Fatalf("ProbeHealth returned error: %v", err)
+	}
+	if len(models) != 1 || models[0].UpstreamName != "qwen3.7-max" {
+		t.Fatalf("ProbeHealth models = %#v, want one subscription model", models)
+	}
+}
+
 func TestClinePassValidateCredentials(t *testing.T) {
 	t.Parallel()
 

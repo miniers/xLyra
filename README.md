@@ -133,6 +133,9 @@ Concurrency queue timeouts (`upstream_concurrency_wait_timeout`) never trigger a
 | Anthropic | Messages forwarding, plus Chat / Responses ↔ Messages conversion |
 | Grok | OAuth CLI channel, multi-account management, image generation, tier-based model availability |
 | OpenCode Go | Subscription plan models and quota-based routing |
+| ClinePass | Subscription model sync with a curated fallback; health probes use live upstream results |
+| Command Code | Per-key subscription sync; valid non-Go plans use the Provider API, while Go and unknown plans retain the CLI channel |
+| Factory | Per-key identity, region, and enterprise host sync, preserving manual settings and proxy addresses |
 | DeepSeek / Minimax / Moonshot / Kimi Code / Xiaomi MiMo / Google Gemini | Credential, model sync, or compatible protocol forwarding depending on site type |
 | GLM / GLM Code (Zhipu) | General API and Coding Plan credential validation, model sync, and compatible protocol forwarding |
 | xLyra | Cascade relay: model sync with ETag caching, downstream API key list and summary, admin user summary |

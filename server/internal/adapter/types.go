@@ -204,6 +204,10 @@ type CredentialValidator interface {
 	ValidateCredentials(ctx context.Context, site SiteConfig, apiKey string) error
 }
 
+type CredentialMetadataFetcher interface {
+	FetchCredentialMetadata(ctx context.Context, site SiteConfig, apiKey string) (map[string]any, error)
+}
+
 type SystemCredentialValidator interface {
 	ValidateSystemCredentials(ctx context.Context, site SiteConfig, auth SystemAuth) error
 }
@@ -366,6 +370,11 @@ func AsCheckinExecutor(module Module) (CheckinExecutor, bool) {
 
 func AsMetadataFetcher(module Module) (MetadataFetcher, bool) {
 	value, ok := module.(MetadataFetcher)
+	return value, ok
+}
+
+func AsCredentialMetadataFetcher(module Module) (CredentialMetadataFetcher, bool) {
+	value, ok := module.(CredentialMetadataFetcher)
 	return value, ok
 }
 

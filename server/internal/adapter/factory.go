@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,14 +16,16 @@ import (
 const (
 	FactorySiteType               = "factory"
 	FactoryDefaultBaseURL         = "https://api.factory.ai"
+	FactoryDefaultEUBaseURL       = "https://api.eu.factory.ai"
 	FactoryDefaultUserAgent       = "factory-cli/0.232.0"
 	FactoryDefaultClientVersion   = "0.232.0"
 	FactoryDefaultClientHeader    = "cli"
 	FactoryDefaultSDKHeader       = "typescript/0.9.1"
 	FactoryDefaultProtocolVersion = "1.244.0"
 
-	factorySiteType       = FactorySiteType
-	factoryDefaultBaseURL = FactoryDefaultBaseURL
+	factorySiteType         = FactorySiteType
+	factoryDefaultBaseURL   = FactoryDefaultBaseURL
+	factoryDefaultEUBaseURL = FactoryDefaultEUBaseURL
 
 	factoryUserAgent       = FactoryDefaultUserAgent
 	factoryClientVersion   = FactoryDefaultClientVersion
@@ -160,13 +163,14 @@ func NewFactory() Factory {
 }
 
 var (
-	_ Module                 = Factory{}
-	_ DefaultBaseURLProvider = Factory{}
-	_ CapabilityDescriber    = Factory{}
-	_ CredentialValidator    = Factory{}
-	_ GatewayModelLister     = Factory{}
-	_ HealthProbe            = Factory{}
-	_ BalanceFetcher         = Factory{}
+	_ Module                    = Factory{}
+	_ DefaultBaseURLProvider    = Factory{}
+	_ CapabilityDescriber       = Factory{}
+	_ CredentialValidator       = Factory{}
+	_ CredentialMetadataFetcher = Factory{}
+	_ GatewayModelLister        = Factory{}
+	_ HealthProbe               = Factory{}
+	_ BalanceFetcher            = Factory{}
 )
 
 func (Factory) SiteTypes() []string {
@@ -191,10 +195,15 @@ func (Factory) Scope() HealthProbeScope {
 }
 
 type FactoryWhoamiResponse struct {
-	OrgID       string `json:"orgId"`
-	UserID      string `json:"userId"`
-	OrgIDSnake  string `json:"org_id"`
-	UserIDSnake string `json:"user_id"`
+	OrgID             string `json:"orgId"`
+	UserID            string `json:"userId"`
+	OrgIDSnake        string `json:"org_id"`
+	UserIDSnake       string `json:"user_id"`
+	Email             string `json:"email"`
+	Region            string `json:"region"`
+	PremBaseHostV2    string `json:"premBaseHostV2"`
+	PremBaseHost      string `json:"premBaseHost"`
+	PremBaseHostSnake string `json:"prem_base_host"`
 }
 
 func (a Factory) applyDefaultHeaders(req *http.Request, apiKey string) {
@@ -208,6 +217,7 @@ func (a Factory) applyDefaultHeaders(req *http.Request, apiKey string) {
 		req.Header.Set("X-Factory-Sdk", factorySdkHeader)
 	}
 	req.Header.Set("X-Factory-Protocol-Version", factoryProtocolVersion)
+	req.Header.Set("X-Factory-Whoami-Extended", "true")
 	req.Header.Set("Accept", "application/json")
 }
 
@@ -217,6 +227,45 @@ func (a Factory) ValidateCredentials(ctx context.Context, site SiteConfig, apiKe
 }
 
 func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (string, string, error) {
+	resp, err := a.WhoamiExtended(ctx, site, apiKey)
+	if err != nil {
+		return "", "", err
+	}
+	return resp.OrgID, resp.UserID, nil
+}
+
+func (a Factory) WhoamiExtended(ctx context.Context, site SiteConfig, apiKey string) (FactoryWhoamiResponse, error) {
+	return a.fetchWhoami(ctx, site, apiKey, true)
+}
+
+// FetchCredentialMetadata records identity and routing hints without making the
+// org/user fields a prerequisite for a successful HTTP 200 whoami response.
+func (a Factory) FetchCredentialMetadata(ctx context.Context, site SiteConfig, apiKey string) (map[string]any, error) {
+	payload, err := a.fetchWhoami(ctx, site, apiKey, false)
+	if err != nil {
+		return nil, err
+	}
+
+	identity := map[string]any{
+		"synced_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	if value := strings.TrimSpace(payload.Email); value != "" {
+		identity["email"] = value
+	}
+	if value := strings.TrimSpace(payload.UserID); value != "" {
+		identity["user_id"] = value
+	}
+	if value := strings.TrimSpace(payload.Region); value != "" {
+		identity["region"] = value
+	}
+	if value := factoryPremBaseHost(payload); value != "" {
+		identity["prem_base_host"] = value
+	}
+
+	return map[string]any{"factory_identity": identity}, nil
+}
+
+func (a Factory) fetchWhoami(ctx context.Context, site SiteConfig, apiKey string, requireOrgOrUser bool) (FactoryWhoamiResponse, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(site.BaseURL), "/")
 	if baseURL == "" {
 		baseURL = factoryDefaultBaseURL
@@ -225,25 +274,25 @@ func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (st
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("create whoami request: %w", err)
+		return FactoryWhoamiResponse{}, fmt.Errorf("create whoami request: %w", err)
 	}
 
 	a.applyDefaultHeaders(req, apiKey)
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("call whoami: %w", err)
+		return FactoryWhoamiResponse{}, fmt.Errorf("call whoami: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", "", upstream.NewHTTPError("upstream returned", resp.StatusCode, resp.Header, body)
+		return FactoryWhoamiResponse{}, upstream.NewHTTPError("upstream returned", resp.StatusCode, resp.Header, body)
 	}
 
 	var payload FactoryWhoamiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", "", fmt.Errorf("decode whoami response: %w", err)
+		return FactoryWhoamiResponse{}, fmt.Errorf("decode whoami response: %w", err)
 	}
 
 	orgID := strings.TrimSpace(payload.OrgID)
@@ -255,14 +304,27 @@ func (a Factory) Whoami(ctx context.Context, site SiteConfig, apiKey string) (st
 		userID = strings.TrimSpace(payload.UserIDSnake)
 	}
 
-	if orgID == "" && userID == "" {
-		return "", "", fmt.Errorf("whoami response missing orgId and userId")
+	if requireOrgOrUser && orgID == "" && userID == "" {
+		return FactoryWhoamiResponse{}, fmt.Errorf("whoami response missing orgId and userId")
 	}
 
-	return orgID, userID, nil
+	payload.OrgID = orgID
+	payload.UserID = userID
+	return payload, nil
+}
+
+func factoryPremBaseHost(payload FactoryWhoamiResponse) string {
+	for _, value := range []string{payload.PremBaseHostV2, payload.PremBaseHost, payload.PremBaseHostSnake} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (a Factory) ListModels(ctx context.Context, site SiteConfig, apiKey string) ([]Model, error) {
+	// The sync worker passes the current credential metadata in SiteConfig.Meta.
+	site.BaseURL = ResolveFactoryBaseURLFromMetadata(site.BaseURL, site.Meta, nil)
 	if strings.TrimSpace(apiKey) != "" {
 		remoteModels, err := a.fetchRemoteModels(ctx, site, apiKey)
 		if err == nil && len(remoteModels) > 0 {
@@ -486,6 +548,122 @@ func (a Factory) FetchBalanceWithKey(ctx context.Context, site SiteConfig, apiKe
 	}
 
 	return BalanceSnapshot{Raw: balance}, nil
+}
+
+// ResolveFactoryBaseURL resolves a legacy pair of manually supplied Factory
+// hints. New callers should use ResolveFactoryBaseURLFromMetadata so that the
+// manual-vs-synced identity precedence stays in one place.
+func ResolveFactoryBaseURL(configuredBaseURL string, region string, premHost string) string {
+	return ResolveFactoryBaseURLFromMetadata(configuredBaseURL, map[string]any{
+		"region":       region,
+		"premBaseHost": premHost,
+	}, nil)
+}
+
+// ResolveFactoryBaseURLFromMetadata resolves a Factory base URL using manual
+// credential metadata, manual site metadata, and finally the credential's
+// synced factory_identity namespace. Synced identity is only allowed to affect
+// the official Factory endpoints; a configured custom/proxy endpoint remains
+// authoritative.
+func ResolveFactoryBaseURLFromMetadata(configuredBaseURL string, credentialMeta map[string]any, siteMeta map[string]any) string {
+	base := strings.TrimRight(strings.TrimSpace(configuredBaseURL), "/")
+
+	manualRegion := firstFactoryMetadataString(credentialMeta, siteMeta, "region")
+	manualPremHost := firstValidFactoryPremBaseHost(credentialMeta, siteMeta)
+	if manualPremHost != "" {
+		return manualPremHost
+	}
+
+	if !factoryBaseAllowsAutomaticIdentity(base) {
+		return factoryDefaultBaseURLOr(base)
+	}
+
+	// A manually supplied region is an explicit routing choice. It must not be
+	// replaced by an automatically discovered enterprise host from the account.
+	if manualRegion != "" {
+		if strings.EqualFold(manualRegion, "eu") {
+			return FactoryDefaultEUBaseURL
+		}
+		return factoryDefaultBaseURLOr(base)
+	}
+
+	identity := factoryIdentityMetadata(credentialMeta)
+
+	if identity != nil {
+		if host, ok := normalizeFactoryPremBaseHost(factoryMetadataString(identity,
+			"prem_base_host", "premBaseHostV2", "prem_base_host_v2", "premBaseHost")); ok {
+			return host
+		}
+		if strings.EqualFold(factoryMetadataString(identity, "region"), "eu") {
+			return FactoryDefaultEUBaseURL
+		}
+	}
+	return factoryDefaultBaseURLOr(base)
+}
+
+func factoryDefaultBaseURLOr(base string) string {
+	if base == "" {
+		return FactoryDefaultBaseURL
+	}
+	return base
+}
+
+func factoryBaseAllowsAutomaticIdentity(base string) bool {
+	return base == "" || strings.EqualFold(base, FactoryDefaultBaseURL) || strings.EqualFold(base, FactoryDefaultEUBaseURL)
+}
+
+func firstFactoryMetadataString(primary, secondary map[string]any, keys ...string) string {
+	if value := factoryMetadataString(primary, keys...); value != "" {
+		return value
+	}
+	return factoryMetadataString(secondary, keys...)
+}
+
+func factoryMetadataString(metadata map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := metadata[key].(string); ok {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return ""
+}
+
+func firstValidFactoryPremBaseHost(primary, secondary map[string]any) string {
+	for _, metadata := range []map[string]any{primary, secondary} {
+		if host, ok := normalizeFactoryPremBaseHost(factoryMetadataString(metadata,
+			"premBaseHostV2", "prem_base_host_v2", "premBaseHost", "prem_base_host")); ok {
+			return host
+		}
+	}
+	return ""
+}
+
+func factoryIdentityMetadata(metadata map[string]any) map[string]any {
+	identity, _ := metadata["factory_identity"].(map[string]any)
+	return identity
+}
+
+func normalizeFactoryPremBaseHost(raw string) (string, bool) {
+	host := strings.TrimSpace(raw)
+	if host == "" {
+		return "", false
+	}
+	if !strings.Contains(host, "://") {
+		host = "https://" + host
+	}
+	parsed, err := url.Parse(host)
+	if err != nil || parsed.User != nil || parsed.Host == "" || parsed.Hostname() == "" {
+		return "", false
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return "", false
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+	return strings.TrimRight(parsed.String(), "/"), true
 }
 
 func parseFactoryLimitWindow(raw any) map[string]any {

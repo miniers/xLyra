@@ -146,18 +146,41 @@ func (a ClinePass) ValidateCredentials(ctx context.Context, site SiteConfig, api
 }
 
 func (a ClinePass) ProbeHealth(ctx context.Context, site SiteConfig, apiKey string) ([]Model, error) {
-	return a.ListModels(ctx, site, apiKey)
+	items, err := a.fetchModels(ctx, site, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	models := clinePassModelsFromItems(items)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("ClinePass health probe returned no usable subscription models")
+	}
+	return models, nil
 }
 
 func (a ClinePass) ListModels(ctx context.Context, site SiteConfig, apiKey string) ([]Model, error) {
-	baseURL := clinePassBaseURL(site.BaseURL)
-	modelsURL := baseURL + "/models"
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
+	items, err := a.fetchModels(ctx, site, apiKey)
 	if err != nil {
+		if httpErr, ok := err.(*upstream.HTTPError); ok && (httpErr.Failure.StatusCode == http.StatusUnauthorized || httpErr.Failure.StatusCode == http.StatusForbidden) {
+			return nil, err
+		}
 		return a.fallbackModels(), nil
 	}
+	models := clinePassModelsFromItems(items)
+	if len(models) == 0 {
+		return a.fallbackModels(), nil
+	}
+	return models, nil
+}
 
+// fetchModels keeps the upstream request and decoding errors visible to the
+// strict health probe. ListModels deliberately maps non-auth failures to the
+// curated catalog for compatibility with mirrors that do not expose /models.
+func (a ClinePass) fetchModels(ctx context.Context, site SiteConfig, apiKey string) ([]clinePassModelItem, error) {
+	baseURL := clinePassBaseURL(site.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create models request: %w", err)
+	}
 	if strings.TrimSpace(apiKey) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	}
@@ -165,33 +188,30 @@ func (a ClinePass) ListModels(ctx context.Context, site SiteConfig, apiKey strin
 
 	resp, err := httpClientForSite(site, a.client).Do(req)
 	if err != nil {
-		return a.fallbackModels(), nil
+		return nil, fmt.Errorf("call models: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, upstream.NewHTTPError("upstream returned", resp.StatusCode, resp.Header, body)
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return a.fallbackModels(), nil
-	}
-
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return a.fallbackModels(), nil
+		return nil, fmt.Errorf("read models response: %w", err)
 	}
-
 	var payload struct {
 		Data []clinePassModelItem `json:"data"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil || len(payload.Data) == 0 {
-		return a.fallbackModels(), nil
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode models: %w", err)
 	}
+	return payload.Data, nil
+}
 
-	models := make([]Model, 0, len(payload.Data))
-	for _, item := range payload.Data {
+func clinePassModelsFromItems(items []clinePassModelItem) []Model {
+	models := make([]Model, 0, len(items))
+	for _, item := range items {
 		rawModelID := strings.TrimSpace(item.ID)
 		if !strings.HasPrefix(rawModelID, "cline-pass/") {
 			continue
@@ -224,11 +244,7 @@ func (a ClinePass) ListModels(ctx context.Context, site SiteConfig, apiKey strin
 			Capabilities: capabilities,
 		})
 	}
-
-	if len(models) == 0 {
-		return a.fallbackModels(), nil
-	}
-	return models, nil
+	return models
 }
 
 func (a ClinePass) fallbackModels() []Model {

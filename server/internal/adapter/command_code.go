@@ -71,6 +71,7 @@ func (CommandCode) Capabilities() []Capability {
 		CapabilityValidateCredential,
 		CapabilityListModels,
 		CapabilityHealthProbe,
+		CapabilityFetchMetadata,
 	}
 }
 
@@ -83,11 +84,19 @@ func (CommandCode) Scope() HealthProbeScope {
 }
 
 type commandCodeModelItem struct {
-	ID            string `json:"id"`
-	Object        string `json:"object"`
-	Created       int64  `json:"created"`
-	OwnedBy       string `json:"owned_by"`
-	ContextLength int    `json:"context_length"`
+	ID                 string                     `json:"id"`
+	Name               string                     `json:"name"`
+	DisplayName        string                     `json:"display_name"`
+	Object             string                     `json:"object"`
+	Created            int64                      `json:"created"`
+	OwnedBy            string                     `json:"owned_by"`
+	ContextLength      int                        `json:"context_length"`
+	Modalities         commandCodeModelModalities `json:"modalities"`
+	SupportedEndpoints []string                   `json:"supported_endpoints"`
+}
+
+type commandCodeModelModalities struct {
+	Input []string `json:"input"`
 }
 
 func (a CommandCode) ValidateCredentials(ctx context.Context, site SiteConfig, apiKey string) error {
@@ -112,18 +121,12 @@ func (a CommandCode) ValidateCredentials(ctx context.Context, site SiteConfig, a
 }
 
 func (a CommandCode) ProbeHealth(ctx context.Context, site SiteConfig, credential string) ([]Model, error) {
-	items, err := a.fetchModelCatalog(ctx, site, credential)
-	if err != nil {
+	if err := a.ValidateCredentials(ctx, site, credential); err != nil {
 		return nil, err
 	}
-	if len(items) == 0 {
-		return nil, fmt.Errorf("Command Code health probe returned no models")
-	}
-	models := commandCodeModelsFromItems(items)
-	if len(models) == 0 {
-		return nil, fmt.Errorf("Command Code health probe returned no usable models")
-	}
-	return models, nil
+	// /provider/v1/models is a catalog hint rather than a credential check.
+	// Keep the curated list when this endpoint is unavailable for Go keys.
+	return a.ListModels(ctx, site, credential)
 }
 
 func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential string) ([]Model, error) {
@@ -132,7 +135,11 @@ func (a CommandCode) ListModels(ctx context.Context, site SiteConfig, credential
 		return commandCodeFallbackModelList(), nil
 	}
 
-	return commandCodeModelsFromItems(items), nil
+	models := commandCodeModelsFromItems(items)
+	if len(models) == 0 {
+		return commandCodeFallbackModelList(), nil
+	}
+	return models, nil
 }
 
 func commandCodeModelsFromItems(items []commandCodeModelItem) []Model {
@@ -140,14 +147,27 @@ func commandCodeModelsFromItems(items []commandCodeModelItem) []Model {
 	for _, item := range items {
 		modelID := strings.TrimSpace(item.ID)
 		if modelID == "" {
+			modelID = strings.TrimSpace(item.Name)
+		}
+		if modelID == "" {
 			continue
+		}
+		endpointTypes := normalizeCommandCodeEndpointTypes(item.SupportedEndpoints)
+		if len(endpointTypes) == 0 {
+			if len(item.SupportedEndpoints) > 0 {
+				continue
+			}
+			endpointTypes = commandCodeLegacyEndpointTypes()
 		}
 		caps := map[string]any{
 			"source":                   "command_code_spec",
-			"supported_endpoint_types": []string{"openai", "anthropic-messages", "openai-response"},
+			"supported_endpoint_types": endpointTypes,
 			"tool_call":                true,
 			"supports_tools":           true,
 			"streaming":                true,
+		}
+		if len(item.Modalities.Input) > 0 {
+			caps["modalities_input"] = append([]string(nil), item.Modalities.Input...)
 		}
 		if item.ContextLength > 0 {
 			caps["context_length"] = item.ContextLength
@@ -155,7 +175,7 @@ func commandCodeModelsFromItems(items []commandCodeModelItem) []Model {
 		pricing, _ := commandCodeModelPricing(modelID)
 		models = append(models, Model{
 			UpstreamName: modelID,
-			DisplayName:  modelID,
+			DisplayName:  firstNonEmptyString(strings.TrimSpace(item.DisplayName), strings.TrimSpace(item.Name), modelID),
 			Capabilities: caps,
 			Pricing:      pricing,
 		})
@@ -215,7 +235,9 @@ func commandCodeFallbackModelList() []Model {
 }
 
 func applyCommandCodeAuthHeaders(req *http.Request, apiKey string) {
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	key := strings.TrimSpace(apiKey)
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("x-api-key", key)
 	req.Header.Set("User-Agent", CommandCodeUserAgent)
 	req.Header.Set("x-command-code-version", CommandCodeProtocolVersion)
 	req.Header.Set("x-cli-environment", "production")
@@ -228,4 +250,115 @@ func commandCodeBaseURL(raw string) string {
 		return commandCodeDefaultBaseURL
 	}
 	return baseURL
+}
+
+func commandCodeLegacyEndpointTypes() []string {
+	return []string{"openai", "anthropic-messages", "openai-response"}
+}
+
+func normalizeCommandCodeEndpointTypes(raw []string) []string {
+	result := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, value := range raw {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		normalized = strings.ReplaceAll(normalized, "_", "-")
+		switch {
+		case normalized == "openai", strings.Contains(normalized, "chat"):
+			normalized = "openai"
+		case normalized == "openai-response", strings.Contains(normalized, "response"):
+			normalized = "openai-response"
+		case normalized == "anthropic-messages", normalized == "messages", strings.Contains(normalized, "message"):
+			normalized = "anthropic-messages"
+		default:
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+type commandCodeSubscriptionResponse struct {
+	Success *bool `json:"success"`
+	Data    *struct {
+		PlanID           string          `json:"planId"`
+		Status           string          `json:"status"`
+		CurrentPeriodEnd json.RawMessage `json:"currentPeriodEnd"`
+	} `json:"data"`
+}
+
+var commandCodeSubscriptionPlans = []struct {
+	Prefix string
+	Plan   string
+}{
+	{Prefix: "individual-provider", Plan: "Provider"},
+	{Prefix: "individual-pro-v1", Plan: "Pro"},
+	{Prefix: "individual-goat", Plan: "GOAT"},
+	{Prefix: "individual-ultra", Plan: "Ultra"},
+	{Prefix: "individual-max", Plan: "Max"},
+	{Prefix: "individual-pro", Plan: "Pro"},
+	{Prefix: "individual-go", Plan: "Go"},
+	{Prefix: "teams-pro", Plan: "Teams Pro"},
+}
+
+func (a CommandCode) FetchCredentialMetadata(ctx context.Context, site SiteConfig, apiKey string) (map[string]any, error) {
+	baseURL := commandCodeBaseURL(site.BaseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/alpha/billing/subscriptions", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create subscriptions request: %w", err)
+	}
+	applyCommandCodeAuthHeaders(req, apiKey)
+	resp, err := httpClientForSite(site, a.client).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call subscriptions: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, upstream.NewHTTPError("Command Code subscriptions returned", resp.StatusCode, resp.Header, body)
+	}
+
+	var payload commandCodeSubscriptionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode Command Code subscriptions: %w", err)
+	}
+	if payload.Success != nil && !*payload.Success {
+		return nil, fmt.Errorf("Command Code subscriptions response is unavailable")
+	}
+	subscription := map[string]any{
+		"plan_id":            "",
+		"plan":               "",
+		"status":             "",
+		"current_period_end": nil,
+		"synced_at":          time.Now().UTC().Format(time.RFC3339),
+	}
+	if payload.Data == nil {
+		return map[string]any{"command_code_subscription": subscription}, nil
+	}
+	planID := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(payload.Data.PlanID), "_", "-"))
+	plan, _ := CommandCodeSubscriptionPlan(planID)
+	subscription["plan_id"] = planID
+	subscription["plan"] = plan
+	subscription["status"] = strings.TrimSpace(payload.Data.Status)
+	if len(payload.Data.CurrentPeriodEnd) > 0 && string(payload.Data.CurrentPeriodEnd) != "null" {
+		var periodEnd any
+		if err := json.Unmarshal(payload.Data.CurrentPeriodEnd, &periodEnd); err != nil {
+			return nil, fmt.Errorf("decode Command Code currentPeriodEnd: %w", err)
+		}
+		subscription["current_period_end"] = periodEnd
+	}
+	return map[string]any{"command_code_subscription": subscription}, nil
+}
+
+func CommandCodeSubscriptionPlan(planID string) (string, bool) {
+	planID = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(planID), "_", "-"))
+	for _, item := range commandCodeSubscriptionPlans {
+		if strings.HasPrefix(planID, item.Prefix) {
+			return item.Plan, true
+		}
+	}
+	return "", false
 }

@@ -129,11 +129,30 @@ func (a *factoryProtocolAdapter) CredentialEndpointTypes() []string {
 	return textCredentialEndpointTypes()
 }
 
-func (a *factoryProtocolAdapter) UpstreamPath(baseURL string) string {
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		base = adapter.FactoryDefaultBaseURL
+func (a *factoryProtocolAdapter) resolveBaseURL(baseURL string) string {
+	var credentialMeta map[string]any
+	var siteMeta map[string]any
+	if a.db != nil {
+		ctx := context.Background()
+		if a.candidate.Credential.ID != nil {
+			if cred, err := store.NewSiteCredentialRepository(a.db.DB()).GetByID(ctx, *a.candidate.Credential.ID); err == nil && len(cred.Meta) > 0 {
+				if json.Unmarshal(cred.Meta, &credentialMeta) != nil {
+					credentialMeta = nil
+				}
+			}
+		}
+		if site, err := store.NewSiteRepository(a.db.DB()).GetByID(ctx, a.candidate.Site.ID); err == nil && len(site.Meta) > 0 {
+			if json.Unmarshal(site.Meta, &siteMeta) != nil {
+				siteMeta = nil
+			}
+		}
 	}
+
+	return adapter.ResolveFactoryBaseURLFromMetadata(baseURL, credentialMeta, siteMeta)
+}
+
+func (a *factoryProtocolAdapter) UpstreamPath(baseURL string) string {
+	base := a.resolveBaseURL(baseURL)
 	switch a.target {
 	case factoryRouteClaude, factoryRouteMiniMax:
 		return base + "/api/llm/a/v1/messages"

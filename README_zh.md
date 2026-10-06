@@ -132,6 +132,9 @@ xLyra 在下游和上游协议格式之间透明转换。Failover 只允许发�
 | Anthropic | Messages 协议转发，支持 Chat / Responses ↔ Messages 转换 |
 | Grok | OAuth CLI 通道、多账号管理、图片生成、按 tier 分档模型可用性 |
 | OpenCode Go | 订阅套餐模型与额度路由 |
+| ClinePass | 订阅模型同步与静态目录回退；健康探测严格使用上游请求结果 |
+| Command Code | 按凭证同步套餐；有效非 Go 套餐使用 Provider API，Go 和未知套餐保留 CLI 通道 |
+| Factory | 按凭证同步身份、区域和企业 host；保留手工配置与代理地址优先级 |
 | DeepSeek / Minimax / Moonshot / Kimi Code / 小米 MiMo / Google Gemini | 按站型适配凭证、模型同步或兼容协议转发 |
 | GLM / GLM Code（智谱） | 通用 API 与 Coding Plan 凭证校验、模型同步、兼容协议转发 |
 | xLyra | 级联中转：带 ETag 缓存的模型同步、下游 API Key 清单与摘要、管理员用户摘要 |

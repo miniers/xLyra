@@ -1214,6 +1214,10 @@ func (s *Service) syncModelsLocked(ctx context.Context, siteID uuid.UUID) (SyncR
 			continue
 		}
 		enabledKeyCount++
+		adapterSite, metadataErr := s.syncCredentialMetadata(ctx, module, site, &apiKey)
+		if metadataErr != nil {
+			return SyncResult{}, fmt.Errorf("sync credential metadata: %w", metadataErr)
+		}
 		secret := apiKey.Secret
 		var err error
 		if isGrok {
@@ -1226,7 +1230,7 @@ func (s *Service) syncModelsLocked(ctx context.Context, siteID uuid.UUID) (SyncR
 				summary, err = summaryFetcher.SummarizeAPIKey(ctx, s.toAdapterSite(ctx, site), secret)
 				models = summary.Models
 			} else {
-				models, err = modelLister.ListModels(ctx, s.toAdapterSite(ctx, site), secret)
+				models, err = modelLister.ListModels(ctx, adapterSite, secret)
 			}
 		}
 		if err != nil {
